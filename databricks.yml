@@ -5,6 +5,9 @@
 bundle:
   name: coolcheck
 
+include:
+  - smoke/*.yml
+
 variables:
   catalog:
     description: Unity Catalog catalog that holds the bronze, silver, gold and ml schemas.

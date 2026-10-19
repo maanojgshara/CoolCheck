@@ -1,0 +1,11 @@
+resources:
+  jobs:
+    network_check:
+      name: "coolcheck network check"
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: check
+          max_retries: 0
+          # No cluster settings: runs on serverless.
+          notebook_task:
+            notebook_path: network_check.py

@@ -1,0 +1,13 @@
+resources:
+  jobs:
+    smoke:
+      name: "[${bundle.target}] coolcheck smoke"
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: hello
+          # No cluster settings: runs on serverless.
+          notebook_task:
+            notebook_path: hello.py
+            base_parameters:
+              catalog: ${var.catalog}
+              experiment_path: /Users/${workspace.current_user.userName}/coolcheck_smoke
