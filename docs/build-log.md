@@ -59,3 +59,23 @@ A shared record of what was tried, what was learned, decisions, blockers and que
 **Challenges and questions**
 - The duplicate `CoolCheck` profile is not removed yet; decide whether to delete it from `.databrickscfg`.
 - `daisi` is unused; unclear if the organisers expect anything in it.
+
+## 2026-10-19: Bundle variable, free target and trial end date
+
+**Tried and approach**
+- Added a bundle variable `catalog` (default `coolcheck`) and a second target `free` (`mode: development`, no default, placeholder host) to `databricks.yml`. Ran `databricks bundle validate -t dev`: "Validation OK!". Nothing deployed (commit 047cd7f).
+- `free` was not validated: its host is still a placeholder.
+
+**Learned**
+- The trial banner shows the trial ending 30 Oct (read from the banner by the team, not checked in the API). The finale at the Databricks office is 4 Nov, so the trial ends before the finale.
+- Not verified: the 14 trial days may be shared across workspaces on the account. This is a guess.
+
+**Decisions and why**
+- The Day 7 clean redeploy will target the Free Edition workspace through bundle target `free`, so the project has a home after 30 Oct. Rejected: relying on the trial workspace, which expires before the finale.
+
+**Stuck**
+- Nothing blocked this session.
+
+**Challenges and questions**
+- Question for mentor: will organisers provide a workspace or extend credits for finalists, or should we plan a recorded demo plus a personal Free Edition workspace?
+- The `free` host is a placeholder and must be filled in. Free Edition limits (serverless only, no extra compute) are not yet checked against the plan.
