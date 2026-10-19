@@ -5,12 +5,23 @@
 bundle:
   name: coolcheck
 
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds the bronze, silver, gold and ml schemas.
+    default: coolcheck
+
 targets:
   dev:
     mode: development
     default: true
     workspace:
       host: https://dbc-2152ed82-df35.cloud.databricks.com
+
+  # Second workspace (e.g. Free Edition). Fill in the host before using this target.
+  free:
+    mode: development
+    workspace:
+      host: https://REPLACE-WITH-FREE-WORKSPACE-HOST
 
   ## Optionally, there could be 'staging' or 'prod' targets here.
   #
