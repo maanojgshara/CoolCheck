@@ -34,3 +34,28 @@ A shared record of what was tried, what was learned, decisions, blockers and que
 - Which workspace will judges check, and does it need to stay live after submission?
 - Are three near-real-time streams (1 to 15 minutes) enough for "at least 2 real-time streams"?
 - How many High-heat days are needed before a recall figure is convincing? If they are rare, is reporting High vs not-High acceptable?
+
+## 2026-10-19: Catalog and schemas created
+
+**Tried and approach**
+- Ran `databricks:doctor` for the `coolcheck` profile: CLI v1.21.0, OAuth valid, workspace reachable.
+- Listed catalogs and the session time zone through Databricks Connect on serverless (`test_connect.py`).
+- Wrote `setup_catalog.py` (idempotent `IF NOT EXISTS`; stops with the exact error if `CREATE CATALOG` fails; no storage locations or credentials created). Reviewed it, then ran it with approval.
+- Checked the result with `databricks schemas list coolcheck`.
+
+**Learned**
+- Serverless session time zone is `Etc/UTC`, so jobs must set `Asia/Singapore` and derive `sgt_date`.
+- Before setup the workspace had no `coolcheck` catalog; the only managed catalog was `daisi` (others: `system`, `samples`).
+- `CREATE CATALOG` worked on the trial with default storage. `coolcheck` now has `bronze`, `silver`, `gold` and `ml` (plus auto-created `default` and `information_schema`).
+- `.databrickscfg` has a duplicate `CoolCheck` profile and an empty `[DEFAULT]` section next to `coolcheck`.
+
+**Decisions and why**
+- Use a separate `coolcheck` catalog, not the pre-existing `daisi`: the project's tables stay isolated from the workspace's default catalog, so they are easy to find, grant, clean up and show to judges, and the table names match the plan.
+- Creating the catalog was permitted on the trial with default storage, so no fallback (such as using `daisi`) was needed.
+
+**Stuck**
+- Nothing blocked. `CREATE CATALOG` did not fail, so no workaround was needed.
+
+**Challenges and questions**
+- The duplicate `CoolCheck` profile is not removed yet; decide whether to delete it from `.databrickscfg`.
+- `daisi` is unused; unclear if the organisers expect anything in it.
