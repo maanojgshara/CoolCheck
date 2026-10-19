@@ -79,3 +79,51 @@ A shared record of what was tried, what was learned, decisions, blockers and que
 **Challenges and questions**
 - Question for mentor: will organisers provide a workspace or extend credits for finalists, or should we plan a recorded demo plus a personal Free Edition workspace?
 - The `free` host is a placeholder and must be filled in. Free Edition limits (serverless only, no extra compute) are not yet checked against the plan.
+
+## 2026-10-19: Smoke job and network check
+
+**Tried and approach**
+- Smoke job (`smoke/hello.py`, serverless): wrote 3 rows to `coolcheck.bronze._smoke`, logged one MLflow run, then one HTTPS GET to the data.gov.sg real-time air temperature endpoint. The URL was from my own knowledge; `DAISI.md` has none.
+- Second job `network_check` (run 348652983808900, `max_retries: 0`): `socket.getaddrinfo(host, 443)` for 10 hosts.
+- Read-only query of `system.access.outbound_network`.
+
+**Learned**
+- Table written (3 rows) and MLflow run visible (param `purpose`, metric `rows_written=3`). The HTTP step failed: `URLError: Temporary failure in name resolution`.
+- Blocked (gaierror): `api-open.data.gov.sg`, `data.gov.sg`, `api.data.gov.sg`, `www.onemap.gov.sg`, `www.weather.gov.sg`, `www.ema.gov.sg`, `google.com`. Resolve: `pypi.org`, `github.com`, `raw.githubusercontent.com`.
+- `system.access.outbound_network` is readable: 4 rows, all `DROP`, all DNS for `api-open.data.gov.sg`, in two pairs about 57 s apart. The column is `access_type`, not `event_type`.
+- The first smoke run shows task attempts 0 and 1, both FAILED. The automatic retry explains the two identical MLflow runs.
+
+**Decisions and why**
+- Set `max_retries: 0` on the `network_check` task so one failure gives one attempt. Not yet set on `smoke`.
+- Pending: whether to collect data outside the workspace (e.g. a local or GitHub-hosted collector) because `.gov.sg` hosts are blocked from here.
+
+**Stuck**
+- Outbound DNS to every `.gov.sg` host is blocked from serverless on this trial workspace. Open. Plan Day 1 check 7 fails here, so its fallbacks apply.
+- The 10 hosts in `network_check` have no rows in the system table; cause not checked (lag or partial logging).
+
+**Challenges and questions**
+- Question for mentor: does the organisers' workspace allow `.gov.sg`, or do we plan an outside collector?
+- Does Free Edition's trusted-domain list include data.gov.sg?
+
+## 2026-10-20: Free Edition check and fetch-outside decision
+
+**Tried and approach**
+- Ran the same ten-host DNS check in the personal Free Edition workspace (reported by the team; not run in this Claude Code session).
+- Dropped: the old no-geocoding fallback from check 7.
+
+**Learned**
+- Free Edition gives the identical result to the trial: all `.gov.sg` hosts and `google.com` blocked; `pypi.org`, `github.com` and `raw.githubusercontent.com` resolve. Neither workspace can fetch the feeds.
+- Plan notes were updated (new section 14.6, check 7 fallback, Day 1, 2 and 7), as reported by the team.
+
+**Decisions and why**
+- Fetch outside Databricks and push in. Static data, the backfill and OneMap geocoding run on a local computer and are uploaded to a Unity Catalog Volume.
+- Live feeds come from a scheduled GitHub Actions collector that pushes raw JSON to a Volume every 15 minutes; Auto Loader reads it into Bronze inside the workspace.
+- Rejected: dropping geocoding and using the old no-geocoding fallback, because fetching outside keeps the full design.
+
+**Stuck**
+- Outbound access to data.gov.sg and OneMap is blocked in both workspaces. Worked around by the decision above; the blocker itself is unchanged.
+
+**Challenges and questions**
+- This replaces the 2026-10-19 question about the organisers' workspace and Free Edition.
+- Question for mentor: both our trial and Free Edition block data.gov.sg and OneMap, so we plan to fetch outside Databricks and push into a Volume. Is that acceptable for the real-time requirement, and is it known and common among other teams?
+- Open: whether the trial allows a service principal for the collector's credential.
