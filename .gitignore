@@ -13,3 +13,5 @@ __pycache__/
 .databrickscfg
 # Claude Code local settings
 .claude/settings.local.json
+# Editor-local settings (Cursor / Databricks extension)
+.vscode/
