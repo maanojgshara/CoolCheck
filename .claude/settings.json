@@ -1,0 +1,51 @@
+{
+  "enabledPlugins": {
+    "databricks@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(databricks auth profiles *)",
+      "Bash(databricks current-user me *)",
+      "Bash(databricks catalogs list *)",
+      "Bash(databricks schemas list *)",
+      "Bash(databricks tables list *)",
+      "Bash(databricks aitools list *)",
+      "Bash(databricks bundle validate *)",
+      "Bash(databricks bundle summary *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(python -m pytest *)",
+      "Bash(pytest *)"
+    ],
+    "ask": [
+      "Bash(databricks bundle deploy *)",
+      "Bash(databricks bundle run *)",
+      "Bash(databricks jobs *)",
+      "Bash(databricks pipelines *)",
+      "Bash(databricks apps *)",
+      "Bash(databricks api *)",
+      "Bash(databricks secrets *)",
+      "Bash(databricks auth login *)",
+      "Bash(git push *)"
+    ],
+    "deny": [
+      "Bash(databricks bundle destroy *)",
+      "Bash(databricks clusters create *)",
+      "Bash(databricks clusters start *)",
+      "Bash(databricks warehouses create *)",
+      "Bash(databricks warehouses start *)",
+      "Bash(databricks catalogs delete *)",
+      "Bash(databricks schemas delete *)",
+      "Bash(databricks tables delete *)",
+      "Bash(databricks account *)",
+      "Bash(databricks auth token *)",
+      "Bash(databricks auth env *)",
+      "Bash(databricks configure *)",
+      "Read(.env)",
+      "Read(~/.databrickscfg)"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+# Databricks
+.databricks/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets - never commit these
+.env
+*.pem
+*.key
+.databrickscfg
+# Claude Code local settings
+.claude/settings.local.json
