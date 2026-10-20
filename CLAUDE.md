@@ -3,8 +3,8 @@
 Next-day heat briefing for community care teams in Singapore: forecast tomorrow's heat stress (WBGT), combine it with where seniors live and how far they are from a cooling refuge, rank planning areas and blocks, and let an approval-gated agent draft outreach. Built on Databricks (trial workspace, US$400 credit).
 
 ## Plan and reference (read the section you need, never the whole file)
-- `../CoolCheck Project.md`: the plan. Decisions are in section 14, the day-by-day schedule in section 15, Day-1 checks and agreed fallbacks in section 12.6.
-- `../DAISI.md`: the organisers' brief and Databricks limits.
+- `../CoolCheck Guide.md`: the plan. Decisions are in section 14, the day-by-day schedule in section 15, Day-1 checks and agreed fallbacks in section 12.6.
+- `../DAISI Brief.md`: the organisers' brief and Databricks limits.
 - The plan overrides this file where they differ; tell me if they conflict.
 
 ## Environment
