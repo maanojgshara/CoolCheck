@@ -127,3 +127,18 @@ A shared record of what was tried, what was learned, decisions, blockers and que
 - This replaces the 2026-10-19 question about the organisers' workspace and Free Edition.
 - Question for mentor: both our trial and Free Edition block data.gov.sg and OneMap, so we plan to fetch outside Databricks and push into a Volume. Is that acceptable for the real-time requirement, and is it known and common among other teams?
 - Open: whether the trial allows a service principal for the collector's credential.
+
+## 2026-10-20: Checks 9 and 10, shared client, backfill and High-day counts
+
+- **Tried and approach:** Check 10 (NEA 24-hour forecast): 291 of 300 unauthenticated calls, then a 10:00-16:00 window beside 06:00-18:00 and a list of the 13 uncovered 2026 days. Check 9 part A (WBGT and rainfall history): 103 of 300 calls. Moved the client and helpers to `scripts/checks/_common.py` (check 10 replays from cache with a byte-identical report). Wrote a resumable backfill (`scripts/backfill/backfill.py`: .partial files, `progress.jsonl`, 1 call/s, 429 back-off) and `wbgt_high_days.py` for check 9 part B. Tests use a fake HTTP session (24 passing).
+- **Learned:** WBGT history starts 2025-01-16; stations grew from 8 to 30. Backfill: 642 days (621 done, 21 short), 2,990 calls, 427 HTTP 429 (14.3%), no stops. 61,443 timestamps, 1,036,005 readings. `heatStress` is Low/Moderate/High/NA; Moderate max 32.9, High min 33.0 (2,093 High readings, 2,894 NA excluded).
+- **Learned:** 535 High station-days, 247 High days over all stations; 166 and 128 for the original 8. Original-8 High station-days by window: 44 (Jan-Jun 2025), 106 (Jul 2025-Aug 2026), 16 (Sep-19 Oct 2026, below the 30 rule in section 14.4). S142 holds 165 of 535 (31%).
+- **Learned:** Bad-validity records number 12 (from the earlier session, not in the files). Unknown from the files: why 21 days are short, and why 13 2026 days lack a covering forecast (listed in check10.md, cause not stated in the commit).
+- **Decisions and why:** Counted High only from the API `heatStress` field, not a hard-coded cut-off (project rule). Excluded NA from station-days. Reported the original-8 set beside all stations so network growth does not inflate High days.
+- **Stuck:** Check 9's first attempt stopped after 4 calls because the parser did not recognise the WBGT response shape (records vs readings). Fixed, and disclosed in the report.
+- **Stuck:** Bad-validity records were first miscounted as 7 from a truncated table. The true count is 12.
+- **Stuck:** Test expectation `off_file_date` changed from 2 to 1. The first expectation was wrong, not the code: the 16:30Z record is 00:30 SGT on the next day, so it is not off its file's date.
+- **Challenges and questions:** Daily forecast cut-off: A (21:00 SGT, with a coverage rule and fallback) or B (about 00:15)?
+- **Challenges and questions:** Back-test split: rolling monthly Jul 2025 to Aug 2026, untouched final check Sep to 19 Oct 2026. That check is small: 16 High station-days for the original 8 stations.
+- **Challenges and questions:** Station approach: the network grew from 8 to 30 stations, and S142 holds 31% of High station-days.
+- **Challenges and questions:** The forecast and rainfall backfill marker still says 2025-01-15, so those stages must run before the collector's first run.
