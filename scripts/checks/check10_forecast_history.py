@@ -646,10 +646,11 @@ def slot_of(dt):
     return "23:xx" if dt.hour == 23 else "ad-hoc"
 
 
-def covers(d, vs, ve):
-    """Does validity [vs, ve] contain tomorrow (d+1) 06:00-18:00 SGT in full?"""
+def covers(d, vs, ve, window=(6, 18)):
+    """Does validity [vs, ve] contain tomorrow (d+1) from window[0]:00 to window[1]:00 SGT in full?"""
     tomorrow = d + timedelta(days=1)
-    return vs <= datetime.combine(tomorrow, dtime(6, 0), SGT) and ve >= datetime.combine(tomorrow, dtime(18, 0), SGT)
+    return (vs <= datetime.combine(tomorrow, dtime(window[0], 0), SGT)
+            and ve >= datetime.combine(tomorrow, dtime(window[1], 0), SGT))
 
 
 def collect_items(run):
@@ -739,14 +740,14 @@ def sec_slots(run):
     return L
 
 
-def pick_rule(items, days, cut):
-    """Per day: latest issue at or before `cut` (SGT) whose validPeriod covers tomorrow 06:00-18:00 in full."""
+def pick_rule(items, days, cut, window=(6, 18)):
+    """Per day: latest issue at or before `cut` (SGT) whose validPeriod covers tomorrow's window in full."""
     by_day = defaultdict(list)
     for x in items:
         by_day[x[0]].append(x)
     chosen = {}
     for d in days:
-        c = [x for x in by_day[d] if x[1].time() <= cut and x[3] and x[4] and covers(d, x[3], x[4])]
+        c = [x for x in by_day[d] if x[1].time() <= cut and x[3] and x[4] and covers(d, x[3], x[4], window)]
         if c:
             chosen[d] = max(c, key=lambda x: x[1])
     return chosen
@@ -840,6 +841,69 @@ def sec_reconcile(run):
     return L
 
 
+def fmt_vp(d, vs, ve):
+    return f"{(vs.date() - d).days:+d}d {vs:%H:%M} → {(ve.date() - d).days:+d}d {ve:%H:%M}"
+
+
+def sec_window(run):
+    L = ["## Window sensitivity at CUT = 20:45, and why 2026 days have no qualifying record", ""]
+    if run.use_next:
+        return L + ["Skipped: `date=` placement is not by SGT issue date.", ""]
+    days, items, _, _, _ = collect_items(run)
+    cut = dtime(20, 45)
+    wide = pick_rule(items, days, cut, (6, 18))
+    peak = pick_rule(items, days, cut, (10, 16))
+    L.append(f"Same rule (latest issue at or before 20:45 SGT whose validPeriod covers tomorrow's window in full), "
+             f"{len(days)} sampled OK days from Jan 2023, issue time = `{run.field}`.")
+    L.append("")
+    L += table(["year", "sampled OK days", "with a record: 06:00–18:00", "with a record: 10:00–16:00"],
+               [(y, sum(d.year == y for d in days), sum(d.year == y and d in wide for d in days), sum(d.year == y and d in peak for d in days))
+                for y in sorted({d.year for d in days})]
+               + [("**all**", len(days), len(wide), len(peak))])
+    L.append("")
+    none_peak = [d for d in days if d not in peak]
+    L.append(f"Days with none under 10:00–16:00 ({len(none_peak)}; 2026: {sum(d.year == 2026 for d in none_peak)}). "
+             "2026 days: " + (", ".join(str(d) for d in none_peak if d.year == 2026) or "none")
+             + ". Other years: " + (", ".join(str(d) for d in none_peak if d.year != 2026) or "none") + ".")
+    L.append("")
+
+    by_day = defaultdict(list)
+    for x in items:
+        by_day[x[0]].append(x)
+    miss = [d for d in days if d.year == 2026 and d not in wide]
+    L.append(f"### The {len(miss)} days in 2026 with no qualifying record at 20:45 under 06:00–18:00")
+    L.append("")
+    L.append("Every issue at or before 20:45 SGT that day. validPeriod is shown as day offset from the issue date and SGT time; "
+             "covering tomorrow 06:00–18:00 needs a start of +1d 06:00 or earlier (or +0d, +1d 00:00, …) and an end of +1d 18:00 or later.")
+    L.append("")
+    rows = []
+    for d in miss:
+        for x in sorted((x for x in by_day[d] if x[1].time() <= cut), key=lambda x: x[1]):
+            rows.append((d, f"{x[1]:%H:%M}", x[2], fmt_vp(d, x[3], x[4]) if x[3] and x[4] else "unparsable"))
+    L += table(["day", "issue SGT", "slot", "validPeriod start → end"], rows)
+    L.append("")
+    no17_miss = [d for d in miss if not any(x[1].hour == 17 for x in by_day[d])]
+    L.append(f"Of these {len(miss)} days, {len(no17_miss)} have no 17:xx SGT issue at all.")
+    L.append("")
+
+    L.append("### Sampled days with no 17:xx SGT issue, by month")
+    L.append("")
+    rows, tot_n, tot_no = [], 0, 0
+    for (y, m) in months_between((2026, 1), (run.today.year, run.today.month)):
+        ds = [d for d in days if (d.year, d.month) == (y, m)]
+        if not ds:
+            continue
+        no17 = [d for d in ds if not any(x[1].hour == 17 for x in by_day[d])]
+        rows.append((f"{y}-{m:02d}", len(ds), len(no17), ", ".join(str(d) for d in no17) or "–"))
+    L += table(["month (2026)", "sampled OK days", "days with no 17:xx issue", "which days"], rows)
+    L.append("")
+    prev = [d for d in days if d.year < 2026]
+    prev_no = [d for d in prev if not any(x[1].hour == 17 for x in by_day[d])]
+    L.append(f"For comparison, 2023–2025: {len(prev_no)} of {len(prev)} sampled OK days have no 17:xx issue.")
+    L.append("")
+    return L
+
+
 def sec_raw(run):
     return ["## One complete raw record", "",
             "First record of the no-date (latest) call; public data, unmodified.", "",
@@ -885,7 +949,7 @@ def build(run, full):
     sections = []
     if run.latest_records:
         sections.append(sec_q1)
-    sections += [sec_datecheck, sec_q2, sec_q3, sec_timestamps, sec_midnight, sec_slots, sec_rule, sec_reconcile]
+    sections += [sec_datecheck, sec_q2, sec_q3, sec_timestamps, sec_midnight, sec_slots, sec_rule, sec_reconcile, sec_window]
     for fn in sections:
         try:
             L += fn(run)
