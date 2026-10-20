@@ -144,3 +144,20 @@ A shared record of what was tried, what was learned, decisions, blockers and que
 - **Challenges and questions:** The forecast and rainfall backfill marker still says 2025-01-15, so those stages must run before the collector's first run.
 - **Decisions and why (backfill design):** One JSONL file per feed and day, each line an unmodified response body. A day is marked done in `progress.jsonl` only after its file is complete, and a crash after the file but before the log line is repaired on restart with no calls. The end date is yesterday SGT, and before 01:00 SGT it is the day before yesterday so late readings have arrived. An OS file lock prevents two runs. It stops on a persistent 429 (5 retries), more than 50 of the last 100 calls being 429, any 401, two 403s in a row, a persistent 5xx, or 3 connection failures in a row. A key, if set, is never used silently: a 401 or 403 with a key stops with "key rejected".
 - **Learned:** S130 West Coast Road stops reporting after 2026-06-24, so the original 8 stations are effectively 7 from July 2026, which partly explains the 16 High station-days in Sep to 19 Oct 2026. High days peak in Apr to Jun and are near zero in Jan to Feb, so the final check window is off-peak.
+
+## 2026-10-21: Backfills finished and modelling decisions
+
+- **Tried and approach:** Committed the build log and the High-day report separately (8e5ccd9, c479869). Ran `backfill.py` for forecast, then rainfall, with no key and `--end 2026-10-19`, as a detached hidden PowerShell script (rainfall only if forecast exits 0). Checked progress with single log reads, no polling.
+- **Learned:** WBGT: 642 files, 2,990 calls, 427 HTTP 429 (14.3%), 191 MB, 21 short days (from the earlier run).
+- **Learned:** Forecast: 641 files, 9.0 MB; 641 done, 1 `no_data` (2025-07-20, HTTP 404); 748 calls, 106 429s (14.2%), 19.6 min.
+- **Learned:** Rainfall: 642 files, 412 MB; 625 done, 17 short (e.g. 2025-07-20 had 149 readings, 2025-05-28 had 220, of 288 expected); 8,969 calls, 1,281 429s (14.3%), 235.8 min. No stops in any stage; key absent throughout.
+- **Learned:** `raw/_meta/backfill_end.json` now reads 2026-10-19 for wbgt, forecast and rainfall (written 2026-10-21 01:58 SGT). The earlier open item (forecast and rainfall marker at 2025-01-15) is resolved.
+- **Learned:** data.gov.sg documents its limit as 6 calls per 10 seconds without a key, which explains the 429s.
+- **Decisions and why:** Ran forecast and rainfall in sequence in one detached script, not in parallel, so the script's 1 call/s pace is not doubled against data.gov.sg's documented limit of 6 calls per 10 seconds without a key. Rejected: two simultaneous processes.
+- **Decisions and why:** The nightly run is about 00:15 SGT (option B), because the 17:30 forecast was missing on most sampled days from Mar to Jul 2026.
+- **Decisions and why:** Back-test is rolling monthly Jul 2025 to Aug 2026, with one untouched final check Sep to 19 Oct 2026. Tuning uses the rolling months only.
+- **Decisions and why:** One pooled model with no station ID, using the nearest reporting station per planning area and date. A trailing 30-day station feature is tested with and without.
+- **Decisions and why:** Scope drop order and risk score agreed: model probability of High as the heat term, with a 3x3 tier rule.
+- **Stuck:** First detached launch failed silently: no `stage_forecast.out` and no python process, cause a quoting problem in the inline PowerShell command (not otherwise diagnosed). Fixed by launching from `run_stages.ps1` in the scratchpad.
+- **Challenges and questions:** Unknown: why 17 rainfall days are short, and whether the forecast 404 on 2025-07-20 is a real gap (rainfall was also short that day). On 2025-07-20 WBGT was complete (96 readings) while the forecast had no data and rainfall had 149 of 288, which looks like an upstream gap on those two feeds (not confirmed). Not yet checked: contents of the new files, and the forecast issue-time coverage against the cut-off rule.
+- **Challenges and questions:** Next: upload the three feeds to a Unity Catalog Volume (plan section 14.6), which has not been started.
