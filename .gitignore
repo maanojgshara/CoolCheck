@@ -15,3 +15,6 @@ __pycache__/
 .claude/settings.local.json
 # Editor-local settings (Cursor / Databricks extension)
 .vscode/
+
+# Local check caches (raw API responses)
+.cache/
