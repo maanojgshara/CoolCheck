@@ -161,14 +161,64 @@ def test_candidates_at_one_place_all_without_a_postal_code_are_matched_no_postal
     assert (c["outcome"], c["candidates"], c["kept"]) == ("matched_no_postal", 2, CENTRE)
 
 
+# postal codes that do not end in 187, so the postal rule (below) does not apply
 @pytest.mark.parametrize("pair", [
-    [BLOCK, {**BLOCK, "POSTAL": "570999"}],  # two postal codes
-    [BLOCK, {**CENTRE, "X": "30400.0"}],  # one postal code, 370 m apart
+    [{**BLOCK, "POSTAL": "570111"}, {**BLOCK, "POSTAL": "570222"}],  # two postal codes
+    [{**BLOCK, "POSTAL": "570111"}, {**CENTRE, "X": "30400.0"}],  # one postal code, 370 m apart
     [CENTRE, {**CENTRE, "X": "30400.0"}],  # no postal code, 370 m apart: no single record to keep
 ])
 def test_candidates_at_different_places_are_ambiguous(pair):
     c = G.classify(rec(pair))
-    assert (c["outcome"], c["candidates"], c["kept"]) == ("ambiguous", 2, None)
+    assert (c["outcome"], c["candidates"], c["kept"], c["rejected"]) == ("ambiguous", 2, None, [])
+
+
+# ---- the postal rule: one postal code ends in the block number ----
+def elsewhere(postal, **kw):
+    """Another record for 187 BISHAN STREET 13, 470 m from BLOCK."""
+    return {**BLOCK, "POSTAL": postal, "X": "30500.0", **kw}
+
+
+def test_candidates_at_different_places_are_resolved_by_the_one_postal_code_that_ends_in_the_block_number():
+    wrong = elsewhere("570999", BUILDING="SOME OTHER PLACE")
+    c = G.classify(rec([wrong, BLOCK]))
+    assert (c["outcome"], c["candidates"], c["kept"], c["rejected"]) == ("matched_postal_rule", 2, BLOCK, [wrong])
+    assert c["outcome"] in G.CONFIRMED and c["spread_m"] > G.SAME_PLACE_M
+
+
+def test_no_postal_code_that_ends_in_the_block_number_leaves_it_ambiguous():
+    c = G.classify(rec([elsewhere("570999"), elsewhere("570111", X="30900.0")]))
+    assert (c["outcome"], c["kept"], c["rejected"]) == ("ambiguous", None, [])
+    assert c["outcome"] not in G.CONFIRMED
+
+
+def test_two_different_postal_codes_that_end_in_the_block_number_leave_it_ambiguous():
+    c = G.classify(rec([BLOCK, elsewhere("680187")]))
+    assert (c["outcome"], c["kept"], c["rejected"]) == ("ambiguous", None, [])
+
+
+def test_candidates_without_a_postal_code_are_ambiguous_whatever_the_block_number():
+    c = G.classify(rec([elsewhere("NIL"), elsewhere("NIL", X="30900.0")]))
+    assert c["outcome"] == "ambiguous"
+
+
+@pytest.mark.parametrize("blk, street, postals, kept", [
+    # block 5 has suffix 005: 560015 ends in 5 but not in 005, and 560500 begins with it
+    ("5", "ANG MO KIO AVE 3", ["560015", "560005", "560500"], "560005"),
+    # a letter after the number is dropped: 18C has suffix 018
+    ("18C", "HOLLAND DR", ["274099", "274018"], "274018"),
+    ("12", "TOH YI DR", ["590012", "590112"], "590012"),
+])
+def test_the_block_number_is_zero_padded_to_three_digits(blk, street, postals, kept):
+    cands = [result(blk, G.norm_road(street), postal, x=30000.0 + 500 * i) for i, postal in enumerate(postals)]
+    c = G.classify(rec(cands, blk=blk, street=street))
+    assert (c["outcome"], c["kept"]["POSTAL"]) == ("matched_postal_rule", kept)
+    assert sorted(r["POSTAL"] for r in c["rejected"]) == sorted(p for p in postals if p != kept)
+
+
+def test_the_postal_rule_does_not_touch_matches_that_are_already_made():
+    assert G.classify(rec([BLOCK]))["outcome"] == "matched"
+    assert G.classify(rec([CENTRE, BLOCK]))["outcome"] == "matched_same_place"
+    assert G.classify(rec([CENTRE]))["outcome"] == "matched_no_postal"
 
 
 def test_a_wrong_block_or_road_is_not_found():
@@ -432,7 +482,7 @@ def test_out_dir_inside_the_repo_or_coolcheck_data_raw_is_refused(tmp_path, out,
 
 
 def test_csv_and_report_count_each_outcome_and_list_buildings_without_postal_codes(tmp_path):
-    holland = [result("18C", "HOLLAND DRIVE", "274018"), result("18C", "HOLLAND DRIVE", "274099", x=30500.0)]
+    holland = [result("18C", "HOLLAND DRIVE", "274001"), result("18C", "HOLLAND DRIVE", "274099", x=30500.0)]
     toh_yi = [result("9", "TOH YI DRIVE", "NIL", building="TOH YI GARDENS")]
     api = FakeOneMap(TOKEN, {ORDER[0]: [CENTRE, BLOCK], ORDER[1]: [], ORDER[2]: holland, ORDER[3]: toh_yi})
     code, _, _ = run(tmp_path, api, "--limit", "5")
@@ -444,13 +494,48 @@ def test_csv_and_report_count_each_outcome_and_list_buildings_without_postal_cod
         ("187", "matched_same_place", "Y", "570187"), ("54", "not_found", "N", ""), ("18C", "ambiguous", "N", ""),
         ("9", "matched_no_postal", "N", "NIL"), ("1", "matched", "Y", "100000")]
     assert rows[3]["onemap_latitude"] == "1.35"  # the record is kept, only not confirmed
+    assert [r["note"] for r in rows] == ["", "", "", "address match through a tenant record", ""]
     text = report(tmp_path)
     for line in ("| matched | 0 | 1 | 1 |", "| matched_same_place | 1 | 0 | 1 |", "| matched_no_postal | 1 | 0 | 1 |",
                  "| ambiguous | 1 | 0 | 1 |", "| not_found | 1 | 0 | 1 |", "| not fetched yet | 0 | 1 | 1 |",
-                 "| total | 4 | 2 | 6 |", "Confirmed matches (matched and matched_same_place): 2 of 5 finished blocks"):
+                 "| matched_postal_rule | 0 | 0 | 0 |", "| total | 4 | 2 | 6 |",
+                 "Confirmed matches (matched, matched_same_place, matched_postal_rule): 2 of 5 finished blocks"):
         assert line in text
     assert "| 18C HOLLAND DR | 2 | 1 of 1 | 500 |" in text
-    assert "TOH YI GARDENS" in text.split("## matched_no_postal (1)")[1].split("## ")[0]
+    no_postal = text.split("## matched_no_postal (1)")[1].split("## ")[0]
+    assert "TOH YI GARDENS" in no_postal and "address match through a tenant record" in no_postal
+    assert "not confirmed (address match through a tenant record)" in log(tmp_path)
+
+
+def test_a_block_resolved_by_the_postal_rule_is_confirmed_listed_with_its_rejected_candidates_and_kept_by_report_only(
+        tmp_path):
+    right = result("187", "BISHAN STREET 13", "570187", lat="1.3501", lon="103.8501")
+    wrong = result("187", "BISHAN STREET 13", "570999", x=30500.0, building="WRONG PLACE", lat="1.3601", lon="103.8601")
+    toh_yi = [result("9", "TOH YI DRIVE", "NIL", building="TOH YI GARDENS")]
+    code, sess, _ = run(tmp_path, FakeOneMap(TOKEN, {ORDER[0]: [wrong, right], ORDER[3]: toh_yi}), "--limit", "4")
+    assert code == 0
+    assert ("matched_postal_rule (2 candidates, 500 m apart): 570187 at 1.3501, 103.8501; rejected postal codes 570999"
+            in log(tmp_path))
+
+    def csv_rows():
+        with (tmp_path / "out" / "geocoded_blocks.csv").open(encoding="utf-8", newline="") as f:
+            return {r["blk_no"]: r for r in csv.DictReader(f)}
+    first = csv_rows()["187"]
+    assert (first["outcome"], first["confirmed"], first["onemap_postal"], first["onemap_latitude"], first["candidates"]) \
+        == ("matched_postal_rule", "Y", "570187", "1.3501", "2")
+    assert (csv_rows()["9"]["confirmed"], csv_rows()["9"]["onemap_postal"]) == ("N", "NIL")
+    text = report(tmp_path)
+    assert "| matched_postal_rule | 1 | 0 | 1 |" in text
+    section = text.split("## matched_postal_rule (1)")[1].split("\n## ")[0]
+    assert "| 187 BISHAN ST 13 | 570187, 187 BISHAN STREET 13 SINGAPORE 570187 | 187, BISHAN STREET 13, 570999, WRONG PLACE |" \
+        in section
+    # report-only applies the same rule from progress.jsonl, with no call and no token
+    (tmp_path / "out" / "geocoded_blocks.csv").unlink()
+    (tmp_path / "out" / "report.md").unlink()
+    code, again, _ = run(tmp_path, None, "--report-only", env={})
+    assert code == 0 and again.calls == []
+    assert (csv_rows()["187"]["outcome"], csv_rows()["187"]["confirmed"]) == ("matched_postal_rule", "Y")
+    assert "| matched_postal_rule | 1 | 0 | 1 |" in report(tmp_path)
 
 
 def test_report_only_makes_no_call_and_needs_no_token(tmp_path):

@@ -15,9 +15,16 @@ only if its POSTAL has 6 digits. Outcomes:
     matched_same_place  several candidates at one place: at most one postal code among them and all within 50 m of
                         each other (check 5: 187 BISHAN ST 13 is listed as the block and as a family service centre
                         with postal NIL, 5 m away); the first candidate with the postal code is kept (confirmed)
-    matched_no_postal   one candidate, or several at one place, none with a postal code: the first is kept, but it
-                        is not a confirmed match
-    ambiguous           several candidates at different places; nothing is kept
+    matched_postal_rule several candidates at different places, but exactly one distinct postal code among them ends
+                        in the block number (its leading digits, zero-padded to three: 5 gives 005, 18C gives 018);
+                        that candidate is kept and the others are listed as rejected in the report (confirmed). HDB
+                        postal codes end in the block number: 10,746 of the 10,754 blocks matched without this rule
+                        do (the exceptions are 1 TOH YI DR and The Pinnacle@Duxton, 1A to 1G CANTONMENT RD)
+    matched_no_postal   one candidate, or several at one place, none with a postal code: the first is kept, flagged
+                        confirmed = N with the note "address match through a tenant record" (the address is a
+                        record of a tenant, not of the block); not a confirmed match
+    ambiguous           several candidates at different places, and no one postal code or more than one fits the
+                        rule above; nothing is kept
     not_found           no candidate on the pages read
 progress.jsonl keeps every result seen, so a change to the matching is applied with --report-only, without calls.
 
@@ -88,8 +95,10 @@ SUMMARY_EVERY = 250
 LIST_MAX = 200
 POSTAL_RE = re.compile(r"\d{6}")
 SG_BOX = (1.13, 1.48, 103.59, 104.10)  # latitude from, to; longitude from, to: loosely around Singapore
-OUTCOMES = ("matched", "matched_same_place", "matched_no_postal", "ambiguous", "not_found")
-CONFIRMED = ("matched", "matched_same_place")
+OUTCOMES = ("matched", "matched_same_place", "matched_postal_rule", "matched_no_postal", "ambiguous", "not_found")
+CONFIRMED = ("matched", "matched_same_place", "matched_postal_rule")
+NOTES = {"matched_no_postal": "address match through a tenant record",
+         "matched_postal_rule": "postal code ends in the block number; the other candidates were rejected"}
 # every abbreviation in the street column of the 10,817 blocks, with OneMap's spelling
 ABBR = {"AVE": "AVENUE", "BT": "BUKIT", "CL": "CLOSE", "CRES": "CRESCENT", "CTRL": "CENTRAL", "CWEALTH": "COMMONWEALTH",
         "DR": "DRIVE", "GDN": "GARDEN", "GDNS": "GARDENS", "HTS": "HEIGHTS", "JLN": "JALAN", "KG": "KAMPONG",
@@ -97,7 +106,7 @@ ABBR = {"AVE": "AVENUE", "BT": "BUKIT", "CL": "CLOSE", "CRES": "CRESCENT", "CTRL
         "ST": "STREET", "STH": "SOUTH", "TER": "TERRACE", "TG": "TANJONG", "UPP": "UPPER"}
 FIELDS = ("SEARCHVAL", "BLK_NO", "ROAD_NAME", "POSTAL", "LATITUDE", "LONGITUDE", "X", "Y")
 CSV_COLUMNS = (["blk_no", "street", "rental_block", "outcome", "confirmed", "found", "total_pages", "pages_read",
-                "candidates"] + [f"onemap_{f.lower()}" for f in FIELDS] + ["fetched_at"])
+                "candidates"] + [f"onemap_{f.lower()}" for f in FIELDS] + ["note", "fetched_at"])
 RENEW = (f"Get a new token (POST the account email and password to {GET_TOKEN}), set {TOKEN_ENV} again and rerun; "
          "finished blocks are kept")
 
@@ -173,15 +182,28 @@ def candidates(blk_no, street, results):
             and norm_road(str(r.get("ROAD_NAME", ""))) == road]
 
 
+def suffix_code(blk_no):
+    """The block number's leading digits, zero-padded to three (5 gives 005, 18C gives 018), or None if it has none."""
+    m = re.match(r"\d+", blk_no.strip())
+    return m.group().zfill(3) if m else None
+
+def postal_rule_pick(blk_no, cands):
+    """The candidate to keep when exactly one distinct postal code among them ends in the block number, else None."""
+    code = suffix_code(blk_no)
+    fit = [r for r in cands if code and has_postal(r) and r["POSTAL"][-3:] == code]
+    return fit[0] if len({r["POSTAL"] for r in fit}) == 1 else None
+
 def classify(rec):
     """The outcome of one finished block, from its stored results (the rules are in the module docstring)."""
     cands = candidates(rec["blk_no"], rec["street"], rec["results"])
-    out = {"outcome": "not_found", "candidates": len(cands), "kept": None, "spread_m": None,
+    out = {"outcome": "not_found", "candidates": len(cands), "kept": None, "rejected": [], "spread_m": None,
            "pages_left": (as_int(rec.get("total_pages")) or 1) > max(rec.get("pages_read") or [1])}
     if len(cands) > 1:
         out["spread_m"] = spread_m(cands)
         if len({r["POSTAL"] for r in cands if has_postal(r)}) > 1 or out["spread_m"] > SAME_PLACE_M:
-            out["outcome"] = "ambiguous"
+            out["kept"] = postal_rule_pick(rec["blk_no"], cands)
+            out["outcome"] = "matched_postal_rule" if out["kept"] else "ambiguous"
+            out["rejected"] = [r for r in cands if r is not out["kept"]] if out["kept"] else []
             return out
     if cands:
         with_postal = [r for r in cands if has_postal(r)]
@@ -436,7 +458,7 @@ def csv_text(rows):
         w.writerow([b["blk_no"], b["street"], "Y" if b["rental"] else "N", c["outcome"],
                     "Y" if c["outcome"] in CONFIRMED else "N", rec.get("found"), rec.get("total_pages"),
                     len(rec.get("pages_read") or [1]), c["candidates"], *(kept.get(f, "") for f in FIELDS),
-                    rec.get("fetched_at")])
+                    NOTES.get(c["outcome"], ""), rec.get("fetched_at")])
     return buf.getvalue()
 
 
@@ -458,14 +480,19 @@ def report_text(hdb_csv, blocks, rows, runs, unreadable, extra):
     lines += [f"| not fetched yet | {n_rental - done_rental:,} | {len(blocks) - n_rental - (len(rows) - done_rental):,} "
               f"| {len(blocks) - len(rows):,} |",
               f"| total | {n_rental:,} | {len(blocks) - n_rental:,} | {len(blocks):,} |", "",
-              f"Confirmed matches (matched and matched_same_place): {len(confirmed):,} of {len(rows):,} finished blocks, "
+              f"Confirmed matches ({", ".join(CONFIRMED)}): {len(confirmed):,} of {len(rows):,} finished blocks, "
               f"{sum(b['rental'] for b, _ in confirmed):,} of them rental blocks.", "",
               "- matched: one result has the block number and the road, and a 6-digit postal code.",
               f"- matched_same_place: several do, at one place (at most one postal code among them, all within "
               f"{SAME_PLACE_M:g} m); the first with the postal code is kept.",
-              "- matched_no_postal: the only such result, or every one at one place, has no 6-digit postal code; the "
-              "first is kept in the CSV with confirmed = N, and is not a confirmed match.",
-              "- ambiguous: several do, at different places; nothing is kept.",
+              "- matched_postal_rule: several do, at different places, but exactly one distinct postal code among them "
+              "ends in the block number (its leading digits, zero-padded to three); that candidate is kept, the others "
+              "are listed beside it as rejected.",
+              f"- matched_no_postal: the only such result, or every one at one place, has no 6-digit postal code; the "
+              f"first is kept in the CSV with confirmed = N and the note \"{NOTES['matched_no_postal']}\"; it is not a "
+              "confirmed match.",
+              "- ambiguous: several do, at different places, and no one postal code, or more than one, ends in the "
+              "block number; nothing is kept.",
               "- not_found: none does, on the pages read.", ""]
     multi = [(rec, c) for _, rec, c in rows if (as_int(rec.get("total_pages")) or 1) > 1]
     paged = [(rec, c) for _, rec, c in rows if len(rec.get("pages_read") or [1]) > 1]
@@ -492,11 +519,23 @@ def report_text(hdb_csv, blocks, rows, runs, unreadable, extra):
                      f"{sum(r.get('calls', 0) for r in runs):,} | {sum(r.get('page_calls', 0) for r in runs):,} | "
                      f"{sum(r.get('retries', 0) for r in runs):,} | | "
                      f"{round(sum(r.get('elapsed_s') or 0 for r in runs), 1)} | |")
-    for o in ("ambiguous", "not_found", "matched_no_postal", "matched_same_place"):
+    for o in ("ambiguous", "not_found", "matched_no_postal", "matched_postal_rule", "matched_same_place"):
         sel = [(b, rec, c) for b, rec, c in rows if c["outcome"] == o]
         lines += ["", f"## {o} ({len(sel):,})", ""]
         if not sel:
             lines.append("None.")
+            continue
+        if o in NOTES:
+            lines += [f"Note on each: {NOTES[o]}.", ""]
+        if o == "matched_postal_rule":
+            lines += ["| block | kept: POSTAL, BUILDING | rejected: BLK_NO, ROAD_NAME, POSTAL, BUILDING |",
+                      "|---|---|---|"]
+            for b, rec, c in sel[:LIST_MAX]:
+                rej = "; ".join(", ".join(str(x.get(k, "")) for k in ("BLK_NO", "ROAD_NAME", "POSTAL", "BUILDING"))
+                                for x in c["rejected"])
+                lines.append(f"| {md(b['query'])} | {md(c['kept'].get('POSTAL'))}, {md(name_of(c['kept']))} | {md(rej)} |")
+            if len(sel) > LIST_MAX:
+                lines += ["", f"{len(sel) - LIST_MAX:,} more are in geocoded_blocks.csv and progress.jsonl."]
             continue
         what = "first results seen" if o == "not_found" else "candidates"
         lines += [f"| block | found | pages read | spread m | kept record: building | {what}: BLK_NO, ROAD_NAME, "
@@ -542,9 +581,11 @@ def block_line(i, n, b, rec, c):
     kept = c["kept"]
     if kept and c["outcome"] in CONFIRMED:
         s += f": {kept.get('POSTAL')} at {kept.get('LATITUDE')}, {kept.get('LONGITUDE')}"
+        if c["rejected"]:
+            s += f"; rejected postal codes {', '.join(str(x.get('POSTAL')) for x in c['rejected'])}"
     elif kept:
         s += (f": kept {name_of(kept)!r}, postal {kept.get('POSTAL')}, at {kept.get('LATITUDE')}, "
-              f"{kept.get('LONGITUDE')}; not confirmed")
+              f"{kept.get('LONGITUDE')}; not confirmed ({NOTES['matched_no_postal']})")
     if rec["calls"] > 1:
         s += f" [{rec['calls']} calls]"
     return s
