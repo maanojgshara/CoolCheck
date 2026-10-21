@@ -44,3 +44,8 @@ The SingStat "geographic distribution" page (read through a fetch tool that summ
 - That the Eldercare, Community Clubs and Parks files are complete and current (the first two were last updated in June 2024; Eldercare records are stamped 2016).
 - Which Community Clubs file to use: the 2024 one (125 points) or the 2026-10-02 one (128 points). Not compared.
 - Whether the Parks file is the right NParks file: the catalogue also has "NParks Parks and Nature Reserves" (`d_77d7ec97be83d44f61b85454f844382f`) and "Parks@SG" (HPB); I took the one called "Parks".
+
+## EMA electricity workbooks (added 21 Oct 2026)
+
+`coolcheck-data/static/ema_singapore_energy_statistics/` holds the Singapore Energy Statistics 2025 Chapter 3 workbooks (`SES_tabular...` and `SES_tidy...`), saved by hand from the EMA site, with `provenance.json` (hashes, licence clause). They were not fetched by `download_static.py`, and `SOURCES.md` has a row for them.
+Only Table 3.5 (sheet `T3.5`, monthly electricity consumption by planning area and dwelling type, 2005 to 1H 2025) is used. Code reads the tidy file; the tabular file is kept as the original download only. Nothing was uploaded to Databricks.
