@@ -28,6 +28,7 @@ ITEMS = {
     "community_club_passion_wave_outlet": ("datagov", "d_9de02d3fb33d96da1855f4fbef549a0f", SODL),
     "parks": ("datagov", "d_0542d48f0991541706b58059381a6eca", SODL),
     "ura_mp2019_planning_area_boundary": ("datagov", "d_4765db0e87b9c86336792efe8a1f7a66", SODL),
+    "ura_mp2025_planning_area_boundary": ("datagov", "d_2cc750190544007400b2cfd5d7f53209", SODL),
     "hdb_property_information": ("datagov", "d_17f5382f26140b1fdae0ba2ef6239d2f", SODL),
     "census2020_pop_planning_area_age_sex": ("datagov", "d_d95ae740c0f8961a0b10435836660ce0", SODL),
     "singstat_pop_pa_age_sex_floor_area_jun2026": (
