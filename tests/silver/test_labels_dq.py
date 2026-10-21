@@ -79,6 +79,31 @@ def test_dq_events_counts_duplicates_conflicts_and_rule_failures(spark):
     assert len(conflicts) == 2 and {c.n_versions for c in conflicts} == {2} and all('"S2"' in c.key for c in conflicts)
 
 
+def test_lateness_ignores_readings_timed_before_the_first_live_file(spark):
+    def at(h, m=0):
+        return f"2026-10-22T{h:02d}:{m:02d}:00+08:00"
+    l1, l2 = datetime(2026, 10, 22, 10, 0, tzinfo=SGT), datetime(2026, 10, 22, 12, 0, tzinfo=SGT)
+    first = wbgt_page((at(4), [("S1", "29.0", "Low")]), (at(9, 50), [("S1", "30.0", "Low")]))   # 6 h of history
+    second = wbgt_page((at(9, 50), [("S1", "30.0", "Low")]), (at(10, 30), [("S1", "30.2", "Low")]),
+                       (at(11, 50), [("S1", "30.4", "Low")]))
+    all_copies = S.parse_wbgt(
+        bronze_rows(spark, [first], "wbgt_2026-10-22T100000_1.jsonl", kind="live", mtime=l1)
+        .unionByName(bronze_rows(spark, [second], "wbgt_2026-10-22T120000_2.jsonl", kind="live", mtime=l2))
+        .unionByName(bronze_rows(spark, [first], "wbgt_2026-10-22.jsonl", mtime=l2, file_date=date(2026, 10, 22))))
+    arrival = {r.reading_ts.astimezone(SGT).strftime("%H:%M"): (r.before_first_live, r.late_over_1h)
+               for r in S.first_arrival(all_copies).collect()}
+    # every reading in the first live file is timed before it lands, so none of them is judged
+    assert arrival == {"04:00": (True, False),    # 6 h old when the first live file landed: history, not late
+                       "09:50": (True, False),    # also in the first file (10 min old): not judged
+                       "10:30": (False, True),    # first carried 90 min after its time: late
+                       "11:50": (False, False)}   # first carried 10 min after its time
+    quarantine = S.quarantine_lines(bronze_rows(spark, ["oops"]), "wbgt")
+    ev = {(r.feed, r.check_name): (r.n, r.detail) for r in
+          dq.dq_events({"wbgt": all_copies}, quarantine, {"wbgt": S.first_arrival(all_copies)}).collect()}
+    n, detail = ev[("wbgt", "readings_first_arrived_over_1h_late")]
+    assert n == 1 and detail.startswith("of 4 readings seen in live files, 2 of them timed before the first live file")
+
+
 def test_station_gaps_over_one_hour(spark):
     base = datetime(2025, 3, 1, 10, tzinfo=SGT)
     rows = [("S1", base, "Low"), ("S1", base + timedelta(minutes=15), "Low"), ("S1", base + timedelta(minutes=30), "NA"),

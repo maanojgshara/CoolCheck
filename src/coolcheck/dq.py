@@ -84,10 +84,14 @@ def dq_events(all_by_feed: dict, quarantine: DataFrame, arrivals: dict) -> DataF
                         .select(F.lit(feed).alias("feed"), F.lit("stations_moved_over_about_100m").alias("check_name"), "n",
                                 F.concat(F.lit("location differs at 3 decimal places: "), F.col("ids")).alias("detail")))
     for feed, arr in arrivals.items():
+        live = F.col("first_live_arrival").isNotNull()
         rows.append(arr.agg(F.count(F.when(F.col("late_over_1h"), 1)).alias("n"),
-                            F.count(F.when(F.col("first_live_arrival").isNotNull(), 1)).alias("live"))
+                            F.count(F.when(live, 1)).alias("live"),
+                            F.count(F.when(live & F.col("before_first_live"), 1)).alias("early"))
                     .select(F.lit(feed).alias("feed"), F.lit("readings_first_arrived_over_1h_late").alias("check_name"), "n",
-                            F.format_string("of %d readings seen in live files (backfill readings are never late)", "live").alias("detail")))
+                            F.format_string("of %d readings seen in live files, %d of them timed before the first live "
+                                            "file and not judged (backfill readings are never late)", "live", "early")
+                            .alias("detail")))
     rows.append(quarantine.groupBy("feed", "reason").agg(F.count(F.lit(1)).alias("n"))
                 .select("feed", F.concat(F.lit("quarantine:"), "reason").alias("check_name"), "n",
                         F.lit("lines kept in silver.quarantine").alias("detail")))

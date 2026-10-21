@@ -236,11 +236,16 @@ def parse_forecast(bronze: DataFrame) -> DataFrame:
 def first_arrival(all_copies: DataFrame) -> DataFrame:
     """Per reading (station_id, reading_ts): when a live file first carried it, and whether that was over 1 h late.
 
-    Judged on the first copy, because the collector re-fetches the last hour and later copies arrive later by design.
+    Judged on the first copy, because the collector re-fetches the last 2 hours and later copies arrive later by design.
     Backfill file times say nothing about when a reading was available live, so backfill-only readings are never late.
+    Readings timed before the first live file landed (before_first_live) are never late either: that first file
+    carries the history on its pages (about 6 h of WBGT), which says nothing about the collector's timeliness.
     """
     live_mtime = F.when(F.col("source_kind") == "live", F.col("file_mtime"))
-    return (all_copies.where("NOT fail_has_key").groupBy("station_id", "reading_ts")
-            .agg(F.min(live_mtime).alias("first_live_arrival"))
-            .withColumn("late_over_1h", F.coalesce(
+    keyed = all_copies.where("NOT fail_has_key")
+    start = keyed.agg(F.min(live_mtime).alias("first_live_file"))
+    return (keyed.groupBy("station_id", "reading_ts").agg(F.min(live_mtime).alias("first_live_arrival"))
+            .crossJoin(start)
+            .withColumn("before_first_live", F.coalesce(F.col("reading_ts") < F.col("first_live_file"), F.lit(False)))
+            .withColumn("late_over_1h", ~F.col("before_first_live") & F.coalesce(
                 F.unix_seconds("first_live_arrival") - F.unix_seconds("reading_ts") > 3600, F.lit(False))))
