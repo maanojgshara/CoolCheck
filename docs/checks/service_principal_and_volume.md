@@ -18,13 +18,19 @@ The grants give no table access. Nothing else is granted to the principal.
 
 ## Why each item is needed
 
-The first three collector dispatches failed and the fourth succeeded (GitHub Actions runs, outcome as reported by the user; the run logs were not read in this session):
+GitHub Actions runs, in order (outcomes and causes as reported by the user; the run logs were not read in this session). Dry run `39588791785` succeeded first, so it did not use the credentials. The next three runs were the first three real dispatches, and each failed for a different reason:
 
-- **Scope `all-apis`:** the Databricks SDK requests the `all-apis` scope when it logs in with an OAuth secret, so the secret has that scope.
-- **Consumer access:** the Files API needs the principal to have a workspace entitlement.
-- **`READ_VOLUME` as well as `WRITE_VOLUME`:** the upload needs both. The design note assumed `WRITE_VOLUME` alone would do, and planned to revoke `READ_VOLUME` before the first real run; that was wrong and the revoke was not done. (The collector never lists or reads the Volume itself, so the read need comes from the Files API upload.)
+| Run | Result | Cause |
+|---|---|---|
+| `39588791785` | succeeded | dry run, nothing uploaded |
+| `39589083284` | failed | OAuth secret scope `all-apis` not assigned |
+| `39589832036` | failed | principal had no workspace entitlement |
+| `39590361248` | failed | principal lacked `READ_VOLUME` |
+| `39590724749` | succeeded | after the three fixes below |
 
-Runs `39589083284`, `39589832036` and `39590361248` failed for these reasons (the user did not say which run hit which); run `39590724749` succeeded.
+- **Scope `all-apis`** (run `39589083284`): the Databricks SDK requests the `all-apis` scope when it logs in with an OAuth secret, so the secret has that scope.
+- **Consumer access** (run `39589832036`): the Files API needs the principal to have a workspace entitlement.
+- **`READ_VOLUME` as well as `WRITE_VOLUME`** (run `39590361248`): the upload needs both. The design note assumed `WRITE_VOLUME` alone would do, and planned to revoke `READ_VOLUME` before the first real run; that was wrong and the revoke was not done. (The collector never lists or reads the Volume itself, so the read need comes from the Files API upload.)
 
 ## Limits of this setup
 
