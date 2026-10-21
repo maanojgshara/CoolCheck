@@ -1,0 +1,34 @@
+resources:
+  jobs:
+    # H10: creates the view gold.area_nearest_station_daily (needs silver.area_station_distance, loaded locally).
+    nearest_station:
+      name: coolcheck nearest station
+      max_concurrent_runs: 1
+      parameters:
+        - name: boundary
+          default: mp2025
+        - name: cutoff_minutes
+          default: "15"
+        - name: lookback_days
+          default: "7"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+      tasks:
+        - task_key: nearest_station
+          max_retries: 0
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/nearest_station.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --src
+              - ${workspace.file_path}/src
+              - --boundary
+              - "{{job.parameters.boundary}}"
+              - --cutoff-minutes
+              - "{{job.parameters.cutoff_minutes}}"
+              - --lookback-days
+              - "{{job.parameters.lookback_days}}"

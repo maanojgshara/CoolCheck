@@ -1,0 +1,22 @@
+resources:
+  pipelines:
+    # The one pipeline (deck: "1 pipeline"): Bronze (Auto Loader) -> Silver -> station_daily_label and the DQ tables.
+    # Runs nightly in triggered mode (D9); never continuous.
+    coolcheck_pipeline:
+      name: coolcheck_pipeline
+      catalog: ${var.catalog}
+      schema: silver
+      serverless: true
+      continuous: false
+      channel: CURRENT
+      root_path: ../src
+      libraries:
+        - glob:
+            include: ../src/pipeline/**
+      configuration:
+        spark.sql.session.timeZone: Asia/Singapore
+        pipelines.numUpdateRetryAttempts: "0"
+        pipelines.maxFlowRetryAttempts: "0"
+        coolcheck.catalog: ${var.catalog}
+        coolcheck.raw_root: /Volumes/${var.catalog}/bronze/raw_files
+        coolcheck.src_path: ${workspace.file_path}/src

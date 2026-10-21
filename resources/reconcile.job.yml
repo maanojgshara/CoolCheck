@@ -1,0 +1,26 @@
+resources:
+  jobs:
+    # Volume vs Bronze (stage=bronze) or also vs Silver <feed>_all (stage=all); writes silver.dq_reconcile.
+    reconcile:
+      name: coolcheck reconcile
+      max_concurrent_runs: 1
+      parameters:
+        - name: stage
+          default: bronze
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+      tasks:
+        - task_key: reconcile
+          max_retries: 0
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/reconcile.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --src
+              - ${workspace.file_path}/src
+              - --stage
+              - "{{job.parameters.stage}}"
