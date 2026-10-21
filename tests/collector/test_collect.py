@@ -140,6 +140,36 @@ def test_404_on_page_two_fails_that_feed_only(tmp_path):
     assert "rainfall 2026-10-21: HTTP 404 on page 2" in log
 
 
+def _today_missing(api, feeds, today):
+    """404 on today's date for `feeds`, as if NEA had published nothing today."""
+    return lambda u, p, n: (Resp(404, b'{"code":17,"data":null,"errorMsg":"Data not found"}')
+                            if feed_of(u) in feeds and p["date"] == today else api(u, p, n))
+
+
+def test_0030_sgt_404_on_today_is_no_data_for_every_feed(tmp_path):
+    now = at_utc(2026, 10, 21, 16, 30)  # 00:30 SGT on 22 Oct
+    code, _, _, _ = run(tmp_path, now, _today_missing(FakeAPI(now), {"wbgt", "rainfall", "forecast"}, "2026-10-22"),
+                        "--dry-run")
+    assert code == 0
+    log = (tmp_path / "out" / "collector.log").read_text()
+    assert log.count("no data ['2026-10-22']") == 3 and "failed" not in log
+
+
+@pytest.mark.parametrize("feed", ["wbgt", "rainfall"])
+def test_0300_sgt_404_on_today_fails_wbgt_or_rainfall(tmp_path, feed):
+    now = at_utc(2026, 10, 21, 19, 0)  # 03:00 SGT on 22 Oct; the fake forecast's first issue is 05:30, so it 404s too
+    api = FakeAPI(now)
+    code, _, _, _ = run(tmp_path, now, _today_missing(api, {feed}, "2026-10-22"), "--dry-run")
+    assert code == 1
+    log = (tmp_path / "out" / "collector.log").read_text()
+    assert f"failed: {feed} 2026-10-22: HTTP 404 on page 1" in log
+    assert log.count("failed:") == 1  # the forecast's 404 today is still no data, and the other feed is fine
+    forecast = next(ln for ln in log.splitlines() if " forecast: " in ln)
+    assert "no data ['2026-10-22']" in forecast and forecast.endswith(": ok")
+    other = "rainfall" if feed == "wbgt" else "wbgt"
+    assert api.pages(other, date(2026, 10, 22)) == [1]
+
+
 def test_time_budget_stops_the_run(tmp_path):
     now = at_utc(2026, 10, 21, 10, 27)
     api, clock = FakeAPI(now), Clock()

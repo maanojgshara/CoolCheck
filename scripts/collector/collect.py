@@ -13,7 +13,8 @@ explicitly (the runner's clock is UTC); the run id is GITHUB_RUN_ID, or "local" 
 
 Pages: each feed is read newest first from date=<today SGT> until the window start (default 2 h back) is covered,
 then from earlier dates while the window reaches them. A run whose SGT hour is 0 also reads every page of yesterday
-for all three feeds (the midnight sweep). A 404 on page 1 of a date means no data yet, not an error.
+for all three feeds (the midnight sweep). A 404 on page 1 of a date means no data yet, not an error, except for
+today's WBGT and rainfall from 01:00 SGT, when readings must exist: then the feed fails (the forecast is unchanged).
 
 Throttle and stops: 1 call/s; a 429 is retried at most twice, 11 s apart (longer than the 10 s window; the API sends
 no Retry-After); the run stops fetching when a call runs out of retries, once the run has had 3 HTTP 429s, after
@@ -125,14 +126,15 @@ def instants(feed, data):
     return out
 
 
-def walk(get, feed, day, reach, lines, info):
-    """Read one date newest first, appending each body as a JSONL line."""
+def walk(get, feed, day, reach, lines, info, missing_is_failure=False):
+    """Read one date newest first, appending each body as a JSONL line. missing_is_failure: a 404 on page 1 fails
+    the feed (today's WBGT or rainfall from 01:00 SGT, when readings must exist)."""
     url, fixed, _, _ = bf.FEEDS[feed]
     params = {**fixed, "date": day.isoformat()}
     for page in range(1, bf.MAX_PAGES + 1):
         status, content = get(url, params)
         if status == 404:
-            if page > 1:
+            if page > 1 or missing_is_failure:
                 raise FeedError(f"{feed} {day}: HTTP 404 on page {page}")
             info["no_data"].append(day.isoformat())
             return
@@ -266,7 +268,8 @@ def main(argv=None, session=None, sleep=time.sleep, clock=time.monotonic, now=No
         lines = []
         try:
             for day, reach in dates:
-                walk(guard.get, feed, day, reach, lines, info)
+                strict = feed != "forecast" and day == start.date() and start.hour >= 1
+                walk(guard.get, feed, day, reach, lines, info, missing_is_failure=strict)
         except FeedError as e:
             info["result"], failed = f"failed: {e}", True
         except StopRun as e:
