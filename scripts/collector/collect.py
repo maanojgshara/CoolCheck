@@ -175,8 +175,10 @@ def write_local(out_dir, rel, data):
 
 
 def files_api_uploader(env):
-    """One Files API PUT per file, overwrite=false. Only WRITE_VOLUME is needed: no listing, no metadata call
-    (the SDK's newer files.upload may probe or go multipart, so the plain generated method is used)."""
+    """One Files API PUT per file, overwrite=false. The principal needs READ_VOLUME and WRITE_VOLUME on the Volume
+    (the upload failed with WRITE_VOLUME alone), USE_SCHEMA, USE_CATALOG and the Consumer entitlement; the OAuth
+    secret needs the all-apis scope. The collector itself makes no listing or metadata call (the SDK's newer
+    files.upload may probe or go multipart, so the plain generated method is used)."""
     from databricks.sdk import WorkspaceClient
     from databricks.sdk.service.files import FilesAPI
     host, client_id, secret = (env[k] for k in DBX_ENV)
