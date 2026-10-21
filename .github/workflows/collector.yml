@@ -1,0 +1,61 @@
+# Live collector (Day 2, step 5; §14.6): every 15 minutes, fetch WBGT, rainfall and the 24-hour forecast from
+# data.gov.sg and upload raw JSONL to the raw-files Volume. Runs outside Databricks because the workspace blocks .gov.sg.
+#
+# Kill switch: scheduled runs happen only while the repository variable COLLECTOR_ENABLED is 'true'; a skipped job
+# gets no runner and costs no minutes. Manual runs (workflow_dispatch) always run and default to a dry run.
+# Actions are pinned to commit SHAs. No pull_request trigger, so no fork or PR code ever sees the secrets.
+name: collector
+
+on:
+  schedule:
+    - cron: "4,19,34,49 * * * *"  # every 15 min, off the top of the hour (GitHub's busiest time)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: fetch and write files on the runner only, upload nothing"
+        type: boolean
+        default: true
+      window_hours:
+        description: "Hours to re-fetch (2 is the scheduled window; up to 48 for a manual catch-up)"
+        type: number
+        default: 2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collector
+  cancel-in-progress: false  # never kill a run mid-upload; a queued run waits, extra queued runs are dropped
+
+jobs:
+  collect:
+    if: github.event_name == 'workflow_dispatch' || vars.COLLECTOR_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-collector.txt
+
+      - name: Install
+        run: python -m pip install --disable-pip-version-check -r requirements-collector.txt
+
+      - name: Collect
+        env:
+          DATA_GOV_SG_API_KEY: ${{ secrets.DATA_GOV_SG_API_KEY }}
+          DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+          DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+          COLLECTOR_VOLUME_ROOT: ${{ vars.COLLECTOR_VOLUME_ROOT }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          WINDOW_HOURS: ${{ inputs.window_hours || 2 }}
+        run: |
+          args=(--window-hours "$WINDOW_HOURS" --out-dir "$RUNNER_TEMP/collector")
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          python scripts/collector/collect.py "${args[@]}"

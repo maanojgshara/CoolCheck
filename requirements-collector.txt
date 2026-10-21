@@ -1,0 +1,15 @@
+# GitHub Actions collector (scripts/collector/collect.py). Same versions as the local .venv, including the
+# packages these two pull in, so the runner installs what the tests ran against.
+requests==2.34.2
+databricks-sdk==0.154.0
+certifi==2026.10.18
+cffi==2.1.1
+charset-normalizer==3.5.2
+cryptography==50.0.2
+google-auth==2.62.0
+idna==3.20
+protobuf==7.36.2
+pyasn1==0.6.4
+pyasn1-modules==0.4.2
+pycparser==3.11
+urllib3==2.8.0

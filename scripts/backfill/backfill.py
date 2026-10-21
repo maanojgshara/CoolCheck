@@ -78,11 +78,12 @@ class Log:
 
 
 class Fetcher:
-    """Throttled GET with the back-off and stop rules. Returns (status, raw bytes) for 200 and 404 only."""
+    """Throttled GET with the back-off and stop rules. Returns (status, raw bytes) for 200 and 404 only.
+    backoff: the waits in seconds; a 429 is retried len(backoff) times (the collector passes a shorter list)."""
 
-    def __init__(self, session, key_present, max_calls=None, sleep=time.sleep, clock=time.monotonic):
+    def __init__(self, session, key_present, max_calls=None, sleep=time.sleep, clock=time.monotonic, backoff=BACKOFF):
         self.session, self.key_present, self.max_calls = session, key_present, max_calls
-        self.sleep, self.clock = sleep, clock
+        self.sleep, self.clock, self.backoff = sleep, clock, backoff
         self.calls = self.retries = 0
         self.statuses = Counter()
         self.recent = deque(maxlen=WINDOW)
@@ -110,7 +111,7 @@ class Fetcher:
                 self.recent.append(False)
                 if conn >= 3:
                     raise StopRun(f"connection failed 3 times in a row ({type(e).__name__})")
-                self._wait(BACKOFF[conn - 1])
+                self._wait(self.backoff[conn - 1])
                 continue
             status = r.status_code
             self.statuses[status] += 1
@@ -118,10 +119,10 @@ class Fetcher:
             if status == 429:
                 if sum(self.recent) > WINDOW // 2:
                     raise StopRun(f"HTTP 429 on {sum(self.recent)} of the last {len(self.recent)} calls")
-                if rate >= len(BACKOFF):
-                    raise StopRun("HTTP 429 persisted through 5 retries")
+                if rate >= len(self.backoff):
+                    raise StopRun(f"HTTP 429 persisted through {len(self.backoff)} retries")
                 retry_after = r.headers.get("Retry-After", "")
-                delay = float(retry_after) if retry_after.replace(".", "", 1).isdigit() else BACKOFF[rate]
+                delay = float(retry_after) if retry_after.replace(".", "", 1).isdigit() else self.backoff[rate]
                 rate += 1
                 self._wait(min(delay, RETRY_AFTER_CAP))
                 continue
@@ -133,13 +134,13 @@ class Fetcher:
                 n403 += 1
                 if n403 >= 2:
                     raise StopRun("HTTP 403 twice in a row")
-                self._wait(BACKOFF[0])
+                self._wait(self.backoff[0])
                 continue
             if status >= 500:
                 server += 1
                 if server > 2:
                     raise StopRun(f"HTTP {status} persisted after 2 retries")
-                self._wait(BACKOFF[server - 1])
+                self._wait(self.backoff[server - 1])
                 continue
             if status in (200, 404):
                 return status, r.content
