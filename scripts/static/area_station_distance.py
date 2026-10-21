@@ -104,9 +104,16 @@ def main():
                   "station_inside_area BOOLEAN")
         df = spark.createDataFrame(rows, schema)
         df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("coolcheck.silver.area_station_distance")
-        spark.sql("COMMENT ON TABLE coolcheck.silver.area_station_distance IS 'H10 distance matrix from "
-                  "scripts/static/area_station_distance.py: planning-area reference point (polygon centroid; to be replaced "
-                  "by the mean of geocoded blocks) to each WBGT station, haversine km. boundary mp2025 (default) or mp2019.'")
+        files = []
+        for label, folder in bounds.items():
+            prov = json.loads((data / folder / "provenance.json").read_text(encoding="utf-8"))
+            files.append(f"{label}: {prov['name']} ({prov['dataset_id']}, file {prov['file']}, sha256 {prov['sha256']})")
+        comment = ("H10 distance matrix from scripts/static/area_station_distance.py. Boundaries: " + "; ".join(files)
+                   + ". The nearest-station view defaults to mp2025 (decision C1); mp2019 is for comparison only. "
+                   "Reference point: the polygon centroid, or a point on the surface where the centroid falls outside the "
+                   "area (ref_point column); to be replaced by geocoded block means (D5). Stations: every WBGT station in "
+                   "the raw backfill at its latest location. Distance: haversine km.")
+        spark.sql(f"COMMENT ON TABLE coolcheck.silver.area_station_distance IS '{comment.replace(chr(39), '')}'")
         print("loaded", spark.table("coolcheck.silver.area_station_distance").count(), "rows")
 
 
