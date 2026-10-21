@@ -4,6 +4,7 @@
 # Kill switch: scheduled runs happen only while the repository variable COLLECTOR_ENABLED is 'true'; a skipped job
 # gets no runner and costs no minutes. Manual runs (workflow_dispatch) always run and default to a dry run.
 # Actions are pinned to commit SHAs. No pull_request trigger, so no fork or PR code ever sees the secrets.
+# Schedule registration refreshed 21 Oct 2026.
 name: collector
 
 on:
