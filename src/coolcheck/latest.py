@@ -93,22 +93,37 @@ def latest_rows(parsed: DataFrame, feed: str, now: datetime) -> DataFrame:
     return _rows(newest, feed, VALUE_COL[feed], unit, heat, now)
 
 
+def _rain_window_end(usable: DataFrame, now: datetime) -> DataFrame:
+    """One row: window_end, the newest reading time that at least half of the stations reporting in the last hour (a
+    usable reading in (now - 60 min, now]) have reached, that is, have their newest reading at or after it. NULL when
+    no station reported in the last hour."""
+    newest = (usable.groupBy("station_id").agg(F.max("reading_ts").alias("newest"))
+              .where(F.col("newest") > _instant(now - timedelta(hours=1))))
+    n = newest.agg(F.count(F.lit(1)).alias("n"))
+    reached = (newest.select(F.col("newest").alias("t")).distinct().crossJoin(newest)
+               .groupBy("t").agg(F.count(F.when(F.col("newest") >= F.col("t"), 1)).alias("reached")))
+    return reached.crossJoin(n).agg(F.max(F.when(2 * F.col("reached") >= F.col("n"), F.col("t"))).alias("window_end"))
+
+
 def rainfall_last_hour_rows(parsed_rain: DataFrame, stations: DataFrame, now: datetime) -> DataFrame:
     """Per station: the sum of rainfall over readings with reading_ts in (window_end - 60 min, window_end], and how many
-    readings it used. window_end is the feed's newest usable reading at or before now, one end time for all stations:
-    the feed lags the run by 10 to 25 minutes, so a window ending at the run time would sum only part of the hour. A
-    station with no reading in the window (one that lags behind the feed, for example) gets value NULL and n_readings
-    0, so n_readings shows how much of the hour each sum covers. Copies of a reading in several files count once.
-    `stations` has station_id, station_name, lat, lon. parsed_rain is None when there are no live files; then
-    window_end is NULL too."""
+    readings it used. window_end is one end time for all stations: the newest reading time that at least half of the
+    stations reporting in the last hour have reached. The feed lags the run by 10 to 25 minutes and its newest slot is
+    often filled by only a few stations (5 of 89 at 21:05 on 22 Oct), so a window ending at the run time, or at any
+    station's newest reading, would cut most stations' hour short. A station behind window_end has fewer readings in
+    the window and n_readings shows it; a station with none gets value NULL and n_readings 0. Copies of a reading in
+    several files count once. `stations` has station_id, station_name, lat, lon. window_end, and so every sum, is NULL
+    when no station reported in the last hour, or when parsed_rain is None (no live files)."""
     if parsed_rain is None:
         agg = (stations.select("station_id").limit(0).withColumn("value", F.lit(None).cast("double"))
                .withColumn("n_readings", F.lit(None).cast("int")).withColumn("reading_ts", F.lit(None).cast("timestamp")))
         end = stations.sparkSession.createDataFrame([(None,)], "window_end TIMESTAMP")
     else:
         usable = dedupe_copies(_usable(parsed_rain, "rainfall", now))
-        end = usable.agg(F.max("reading_ts").alias("window_end"))
-        in_hour = usable.crossJoin(end).where(F.col("reading_ts") > F.col("window_end") - F.expr("INTERVAL 60 MINUTES"))
+        end = _rain_window_end(usable, now)
+        in_hour = usable.crossJoin(end).where(
+            (F.col("reading_ts") > F.col("window_end") - F.expr("INTERVAL 60 MINUTES"))
+            & (F.col("reading_ts") <= F.col("window_end")))
         agg = in_hour.groupBy("station_id").agg(
             F.sum("rainfall_mm").alias("value"), F.count("rainfall_mm").cast("int").alias("n_readings"),
             F.max("reading_ts").alias("reading_ts"))

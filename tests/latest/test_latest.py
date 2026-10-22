@@ -130,7 +130,8 @@ def test_rainfall_last_hour_window_edges_copies_and_empty_stations(spark):
     bronze = live(spark, [older], "rainfall_2026-10-22T160100_1.jsonl", mtime(16, 1)).unionByName(
         live(spark, [newer], "rainfall_2026-10-22T163100_2.jsonl", mtime(16, 31)))
     out = {r.station_id: r for r in last_hour(spark, bronze, ["S1", "S2", "S3"], at(16, 30))}
-    # the feed's newest usable reading is 16:30 (16:35 is after now), so the window is (15:30, 16:30]
+    # only S1 reported in the last hour (S2's newest, 15:30, is exactly an hour before the run; S3's reading has no
+    # value), so the window ends at S1's newest: (15:30, 16:30]
     assert {r.end for r in out.values()} == {"16:30"}
     assert (out["S1"].value, out["S1"].n_readings, out["S1"].t) == (3.5, 3, "16:30")
     assert (out["S2"].value, out["S2"].n_readings, out["S2"].t) == (None, 0, None)
@@ -155,8 +156,9 @@ def last_hour(spark, bronze, ids, now):
     return hhmm(df).withColumn("end", F.date_format("window_end", "HH:mm")).collect()
 
 
-def test_rainfall_last_hour_ends_at_the_feeds_newest_reading_and_shows_a_lagging_station(spark):
-    # the run is at 16:30 but the feed's newest reading is 16:15, so the window is (15:15, 16:15] for every station
+def test_rainfall_last_hour_shows_a_lagging_station_by_its_reading_count(spark):
+    # run 16:30. S1 (newest 16:15) and S2 (newest 15:55) report in the last hour; S3 stopped at 15:10. S1 is half of
+    # the two, so the window is (15:15, 16:15] for every station
     bronze = rain_file(spark, {
         "S1": every_5_min(at(15, 15), 13, 0.5),   # 15:15 (exactly the window start: out) to 16:15: 12 in the window
         "S2": every_5_min(at(15, 20), 8, 1.0),    # lags the feed: newest 15:55, so 8 readings, not 12
@@ -169,13 +171,63 @@ def test_rainfall_last_hour_ends_at_the_feeds_newest_reading_and_shows_a_lagging
 
 
 def test_rainfall_last_hour_counts_a_shower_40_to_60_minutes_before_the_run(spark):
-    # run 16:30, feed newest 16:10 (20 minutes behind). A shower from 15:30 to 15:50, 60 to 40 minutes before the run.
-    # A window ending at the run time, (15:30, 16:30], would hold 8 readings and miss the 15:30 one; this one holds 12.
+    # run 16:30; the only station's newest reading is 16:10 (20 minutes behind). A shower from 15:30 to 15:50, 60 to 40
+    # minutes before the run. A window ending at the run time, (15:30, 16:30], would hold 8 readings and miss the 15:30
+    # one; this one holds 12.
     readings = every_5_min(at(15, 15), 12)
     readings = [(ts, 2.0 if at(15, 30).isoformat() <= ts <= at(15, 50).isoformat() else v) for ts, v in readings]
     readings.append((at(15, 10).isoformat(), 5.0))   # exactly window end - 60 min: out
     out = last_hour(spark, rain_file(spark, {"S1": readings}), ["S1"], NOW)
     assert [(r.value, r.n_readings, r.t, r.end) for r in out] == [(10.0, 12, "16:10", "16:10")]
+
+
+def eighty_nine_stations(ahead):
+    """89 stations reporting every 5 minutes from 19:50 to 20:50 at 0.5 mm; the first `ahead` also have 20:55 (9 mm)."""
+    ids = [f"S{i}" for i in range(1, 90)]
+    by_station = {sid: every_5_min(at(19, 50), 13, 0.5) for sid in ids}
+    for sid in ids[:ahead]:
+        by_station[sid].append((at(20, 55).isoformat(), 9.0))
+    return ids, by_station
+
+
+def test_rainfall_last_hour_waits_for_a_newest_slot_only_5_of_89_stations_have(spark):
+    # run 21:05, as on 22 Oct: all 89 stations have reached 20:50 but only 5 have the 20:55 slot yet. Half of 89 is
+    # 44.5, so window_end is 20:50 and every station gets the full hour (19:50, 20:50], 12 readings (19:50 is the
+    # window start: out). The 5 early 20:55 readings count at the next run.
+    ids, by_station = eighty_nine_stations(5)
+    out = last_hour(spark, rain_file(spark, by_station), ids, at(21, 5))
+    assert len(out) == 89 and {r.end for r in out} == {"20:50"}
+    assert {(r.value, r.n_readings, r.t) for r in out} == {(6.0, 12, "20:50")}
+
+
+@pytest.mark.parametrize("ahead, end", [(44, "20:50"), (45, "20:55")])
+def test_rainfall_last_hour_needs_at_least_half_of_the_reporting_stations(spark, ahead, end):
+    # 45 of 89 is at least half (2 x 45 >= 89); 44 is not
+    ids, by_station = eighty_nine_stations(ahead)
+    out = {r.station_id: r for r in last_hour(spark, rain_file(spark, by_station), ids, at(21, 5))}
+    assert {r.end for r in out.values()} == {end}
+    if end == "20:55":   # (19:55, 20:55]: a station ahead has 12 readings, one behind has 11 and n_readings says so
+        assert (out["S1"].value, out["S1"].n_readings) == (14.5, 12)
+        assert (out["S89"].value, out["S89"].n_readings) == (5.5, 11)
+
+
+def test_rainfall_last_hour_counts_only_stations_reporting_in_the_last_hour(spark):
+    # run 21:05. A and B have 20:55 and C has 20:50; D and E stopped at 19:30, over an hour before the run, so they are
+    # not reporting. 2 of the 3 reporting stations reached 20:55, at least half, so the window is (19:55, 20:55].
+    # (Counting D and E, 2 of 5 would not be half and the window would end at 20:50.)
+    by_station = {"A": every_5_min(at(20, 0), 12, 1.0), "B": every_5_min(at(20, 0), 12, 1.0),
+                  "C": every_5_min(at(20, 0), 11, 1.0),
+                  "D": every_5_min(at(19, 0), 7, 1.0), "E": every_5_min(at(19, 0), 7, 1.0)}
+    out = {r.station_id: r for r in last_hour(spark, rain_file(spark, by_station), list(by_station), at(21, 5))}
+    assert {r.end for r in out.values()} == {"20:55"}
+    assert [(out[s].value, out[s].n_readings) for s in "ABCDE"] == [
+        (12.0, 12), (12.0, 12), (11.0, 11), (None, 0), (None, 0)]
+
+
+def test_rainfall_last_hour_is_empty_when_no_station_reported_in_the_last_hour(spark):
+    # the feed stalled: the newest reading is 19:50, more than an hour before the 21:05 run, so there is no window
+    out = last_hour(spark, rain_file(spark, {"S1": every_5_min(at(19, 0), 11, 1.0)}), ["S1"], at(21, 5))
+    assert [(r.value, r.n_readings, r.end) for r in out] == [(None, 0, None)]
 
 
 def test_rainfall_last_hour_without_any_live_files(spark):

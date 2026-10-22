@@ -61,7 +61,8 @@ for r in status.collect():
           f"{r.stations_known_24h}, age {r.age_minutes if r.age_minutes is None else round(r.age_minutes, 1)} min")
 end = (spark.table(latest_t).where(f"measure = '{L.LAST_HOUR}'")
        .agg(F.date_format(F.max("window_end"), "yyyy-MM-dd HH:mm").alias("end")).collect()[0].end)
-print(f"{L.LAST_HOUR}: window ends {end} SGT (the rainfall feed's newest reading)")
+print(f"{L.LAST_HOUR}: window ends {end} SGT (the newest time at least half of the stations reporting in the last "
+      f"hour have reached)" if end else f"{L.LAST_HOUR}: no window (no rainfall station reported in the last hour)")
 wbgt = status.where("measure = 'wbgt'").collect()[0]
 problem = L.freshness_problem(wbgt.age_minutes, args.max_age_minutes, wbgt.newest_sgt)
 if problem:
