@@ -31,3 +31,41 @@ def test_reporting_window_is_the_7_days_before_the_cutoff(spark):
     r = rows[T]
     assert (r.station_id, r.n_reporting, r.distance_km) == ("C", 2, 2.0)
     assert rows[T + timedelta(days=1)].station_id == "D"  # D's 00:15 reading on T counts for T+1
+
+
+def _island_fixture(spark, reporting=("O", "M1", "M2")):
+    """O is offshore (inside the island area ISL); M1 and M2 are mainland. MAIN is nearest to O, then M1, then M2."""
+    spark.createDataFrame([(s, T - timedelta(days=1), 1, _at(T - timedelta(days=1), 10), _at(T - timedelta(days=1), 600)) for s in reporting],
+                          "station_id STRING, sgt_date DATE, n_valid LONG, first_valid_ts TIMESTAMP, last_valid_ts TIMESTAMP"
+                          ).createOrReplaceTempView("fx_labels")
+    spark.createDataFrame(
+        [("mp2025", "MAIN", "MA", "R", "O", "name O", 0.5, False, "hdb_block_mean"),
+         ("mp2025", "MAIN", "MA", "R", "M1", "name M1", 2.0, False, "hdb_block_mean"),
+         ("mp2025", "MAIN", "MA", "R", "M2", "name M2", 3.0, False, "hdb_block_mean"),
+         ("mp2025", "SOUTHERN ISLANDS", "SI", "R", "O", "name O", 0.2, True, "centroid"),
+         ("mp2025", "SOUTHERN ISLANDS", "SI", "R", "M1", "name M1", 9.0, False, "centroid"),
+         ("mp2025", "SOUTHERN ISLANDS", "SI", "R", "M2", "name M2", 9.5, False, "centroid")],
+        "boundary STRING, planning_area STRING, planning_area_code STRING, region STRING, station_id STRING, "
+        "station_name STRING, distance_km DOUBLE, station_inside_area BOOLEAN, ref_point STRING").createOrReplaceTempView("fx_dist")
+
+
+def _station_by_area(spark, **kw):
+    rows = spark.sql(nearest_station_sql("fx_labels", "fx_dist", "mp2025", **kw)).where(f"target_date = DATE '{T}'").collect()
+    return {r.planning_area: r.station_id for r in rows}
+
+
+def test_island_rule_keeps_an_offshore_station_for_its_own_area_only(spark):
+    _island_fixture(spark)
+    got = _station_by_area(spark)
+    # MAIN's nearest station O is offshore, so MAIN falls back to the next mainland station; the island area keeps O
+    assert got == {"MAIN": "M1", "SOUTHERN ISLANDS": "O"}
+
+
+def test_island_rule_off_gives_the_plain_nearest_station(spark):
+    _island_fixture(spark)
+    assert _station_by_area(spark, island_rule=False) == {"MAIN": "O", "SOUTHERN ISLANDS": "O"}
+
+
+def test_island_area_without_its_own_reporting_station_falls_back_to_the_nearest_mainland_one(spark):
+    _island_fixture(spark, reporting=("M1", "M2"))  # the offshore station O is not reporting
+    assert _station_by_area(spark) == {"MAIN": "M1", "SOUTHERN ISLANDS": "M1"}
