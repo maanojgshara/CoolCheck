@@ -44,9 +44,15 @@ TEXT_COLS = ["text_start_hour", "text_start_day", "text_start_month", "text_end_
 
 
 def _cutoff(cutoff_minutes):
+    """The cut-off must fall after the first forecast issue time (17:00 on T-1): at or before it no forecast could
+    qualify and every forecast feature would be missing without warning. At exactly 17:00 only an issue stamped
+    17:00:00 could, so that is refused too."""
     c = int(cutoff_minutes)
-    if not -1440 < c < 1440:
-        raise ValueError(f"cutoff_minutes must lie strictly between -1440 and 1440, got {cutoff_minutes}")
+    if c >= 1440:
+        raise ValueError(f"cutoff_minutes must be below 1440 (the end of the target day), got {cutoff_minutes}")
+    if c <= FC_FIRST_ISSUE_MIN:
+        raise ValueError(f"cutoff_minutes {cutoff_minutes} is at or before the first forecast issue time (17:00 on T-1, "
+                         f"{FC_FIRST_ISSUE_MIN}): no forecast could qualify")
     return c
 
 

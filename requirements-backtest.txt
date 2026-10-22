@@ -1,0 +1,5 @@
+# Model and back-test packages for the local .venv (docs/design/backtest.md, decision 3). Installed on 22 Oct 2026 after
+# `pip install --dry-run` showed numpy, pandas, pyarrow and databricks-connect unchanged. The job's serverless
+# environment pins its own versions in resources/backtest.job.yml.
+lightgbm==4.6.0
+scikit-learn==1.9.1

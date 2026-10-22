@@ -55,7 +55,7 @@ The job writes nothing to Unity Catalog. Everything goes to one MLflow experimen
 
 ### 3.1 Rows and the cut-off
 
-- **Cut-off** `C(T)` = T 00:00 SGT + `cutoff_minutes`, built with `timeutil.sgt_instant`, so the session time zone does not matter. Default 15 (00:15). Any value above −1,440 and below 1,440 works (−180 would be 21:00 the day before); only the default is run (§14.4: a sensitivity run is not promised).
+- **Cut-off** `C(T)` = T 00:00 SGT + `cutoff_minutes`, built with `timeutil.sgt_instant`, so the session time zone does not matter. Default 15 (00:15). Any value after the first forecast issue time (−420, 17:00 on T−1) and below 1,440 works (−180 would be 21:00 the day before); at or before 17:00 the function raises a `ValueError`, because no forecast could qualify (your item, 22 Oct). Only the default is run (§14.4: a sensitivity run is not promised).
 - **Row set:** one row per station with at least one counted WBGT reading (`heat_stress` Low, Moderate or High) in `[C − 7 days, C)`. This is the H10 reporting rule, so every area-day's station has a row by construction. A station's first day (or first day back after more than 7 days without a counted reading) has no row and is not scored; the run lists those station-days.
 - **Event time** (§14.8 C): a WBGT or rainfall reading counts only if `reading_ts < C(T)` (and `sgt_date < run_date`); a forecast version only if `updated_ts <= C(T)` and its `issue_ts` lies from T−1 17:00 to `C(T)`. **Yesterday** is SGT date T−1 restricted to readings before `C(T)`; with the default cut-off that is the whole of T−1. Days before T−1 in the trailing windows are whole days. Each row carries the latest input time it used (`inputs_max_ts`, `rain_inputs_max_ts`, `fc_updated_ts`), and the job asserts each against the row's cut-off.
 
@@ -232,13 +232,13 @@ New files only; nothing existing is edited (`databricks.yml` already includes `r
 | File | Contents |
 |---|---|
 | `src/coolcheck/features.py` | the feature function and the forecast selection (PySpark); constants (panel, the three late starters, 216 of 288, minimum days) |
-| `src/coolcheck/backtest.py` | folds, fills, categories, baselines, LightGBM fits, guards (pandas) |
+| `src/coolcheck/backtest.py` | folds, fills, categories, baselines, LightGBM fits, guards, and the evaluation sets of §6 (pandas) |
 | `src/coolcheck/metrics.py` | PR curve, average precision, equal-load comparison, block bootstrap (numpy) |
 | `src/jobs/backtest.py` | the job: pin inputs, features, the view definition check, folds, evaluation, MLflow, report; `--profile` for Connect, as in `nearest_station.py` |
 | `resources/backtest.job.yml.draft` | the experiment and the serverless job: environment 4 with pinned lightgbm, scikit-learn and mlflow; `max_retries: 0`; one concurrent run; 1-hour timeout; no schedule. Kept as `.draft` (which the bundle does not include) until my own deploy, so another window's deploy cannot pick up a half-written job (your rule, 22 Oct) |
 | `scripts/static/load_area_exposure.py` | loads `coolcheck-data/analysis/area_exposure.csv` into `coolcheck.silver.area_exposure` (decision 1); run only after you OK the write |
 | `tests/features/` | `conftest.py`, `feature_fixtures.py`, `test_forecast_pick.py`, `test_station_features.py` |
-| `tests/backtest/` | `test_folds.py`, `test_metrics.py` |
+| `tests/backtest/` | `conftest.py`, `backtest_fixtures.py`, `test_folds.py`, `test_metrics.py`, `test_evaluate.py` (the evaluation sets and the job's report on synthetic folds) |
 | `requirements-backtest.txt` | local pins for lightgbm and scikit-learn (decision 3) |
 | `docs/checks/backtest.md` | the job's report, copied unchanged after the run |
 

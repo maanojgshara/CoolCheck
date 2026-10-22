@@ -129,6 +129,19 @@ def test_text_check_flags_a_mismatch(spark):
     assert not r.forecast_missing and not r.fc_text_agrees
 
 
+@pytest.mark.parametrize("cutoff", [-420, -421, -1439])
+def test_cutoff_at_or_before_the_first_issue_time_is_refused(spark, cutoff):
+    with pytest.raises(ValueError, match="first forecast issue time"):
+        _pick(spark, [JUL19_2302], [date(2025, 7, 20)], cutoff_minutes=cutoff)
+
+
+def test_cutoff_just_after_the_first_issue_time_is_accepted(spark):
+    rec = fc_record("2025-07-19T17:00:00+08:00", "2025-07-19T18:00:00+08:00", "2025-07-20T18:00:00+08:00",
+                    "6 PM 19 Jul to 6 PM 20 Jul")  # issued and updated at 17:00:00
+    r = _pick(spark, [rec], [date(2025, 7, 20)], cutoff_minutes=-419)[date(2025, 7, 20)]
+    assert r.issue_s == _s("2025-07-19T17:00:00+08:00")
+
+
 def test_no_candidate_gives_missing_and_nulls(spark):
     r = _pick(spark, [], [date(2025, 3, 10)])[date(2025, 3, 10)]
     assert r.forecast_missing and (r.fc_temp_high, r.fc_text, r.issue_s) == (None, None, None)
