@@ -1,8 +1,8 @@
 """Resumable upload of coolcheck-data/raw/ to the raw-files Volume (Day 2, step 2c).
 
 Skips files already on the Volume with the same size, so a rerun resumes. Writes a log; the last
-lines are a verification of the file counts and a check for .partial files. No token is read or
-printed: auth comes from the CLI profile through the SDK.
+lines are a verification of the file counts per folder against the local files and a check for .partial
+files. No token is read or printed: auth comes from the CLI profile through the SDK.
 Run detached: .venv/Scripts/python scripts/upload/upload_raw.py --launch
 """
 import argparse
@@ -17,7 +17,6 @@ from databricks.sdk import WorkspaceClient
 
 PROFILE = "coolcheck"
 REMOTE = "/Volumes/coolcheck/bronze/raw_files"
-EXPECTED = {"wbgt": 642, "forecast": 641, "rainfall": 642}
 WORKERS = 6
 
 
@@ -68,11 +67,17 @@ def run(src, logfile):
         log(fh, f"UPLOAD DONE {done[0]} uploaded, {failed[0]} failed")
         have = {}
         remote_sizes(w, REMOTE, have)
-        counts = {k: sum(1 for p in have if p.startswith(f"{REMOTE}/{k}/")) for k in EXPECTED}
+        # Expected counts come from the local files, per folder. Remote files in other folders (the collector's
+        # live/ files) are not counted.
+        expected = {}
+        for p in files:
+            folder = p.relative_to(src).parent.as_posix()
+            expected[folder] = expected.get(folder, 0) + 1
+        counts = {k: sum(1 for r in have if r.rsplit("/", 1)[0] == f"{REMOTE}/{k}") for k in expected}
         partial = [p for p in have if p.endswith(".partial")]
         size_bad = [p for p in files if have.get(f"{REMOTE}/{p.relative_to(src).as_posix()}") != p.stat().st_size]
-        ok = counts == EXPECTED and not partial and not size_bad and not failed[0]
-        log(fh, f"VERIFY counts={counts} expected={EXPECTED} partial={len(partial)} size_mismatch_or_missing={len(size_bad)}")
+        ok = counts == expected and not partial and not size_bad and not failed[0]
+        log(fh, f"VERIFY counts={counts} expected={expected} partial={len(partial)} size_mismatch_or_missing={len(size_bad)}")
         log(fh, "FINISHED OK" if ok else "FINISHED WITH PROBLEMS: rerun the same command to resume")
 
 
