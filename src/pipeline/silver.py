@@ -9,8 +9,7 @@ from coolcheck import silver as S  # noqa: E402
 
 CATALOG = spark.conf.get("coolcheck.catalog")  # noqa: F821
 
-PARSERS = {"wbgt": S.parse_wbgt, "rainfall": S.parse_rainfall, "forecast": S.parse_forecast}
-NAMES = {"wbgt": "wbgt_readings", "rainfall": "rainfall_readings", "forecast": "forecast_issues"}
+PARSERS, NAMES = S.PARSERS, S.NAMES
 
 
 def _silver(feed):

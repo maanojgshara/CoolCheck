@@ -9,6 +9,7 @@ import argparse
 import os
 import sys
 from datetime import datetime, timezone
+from functools import reduce
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--catalog", required=True)
@@ -28,8 +29,18 @@ from coolcheck import silver as S  # noqa: E402
 spark.conf.set("spark.sql.session.timeZone", "Asia/Singapore")
 cat = args.catalog
 raw_root = f"/Volumes/{cat}/bronze/raw_files"
-PARSE = {"wbgt": S.parse_wbgt, "rainfall": S.parse_rainfall, "forecast": S.parse_forecast}
-ALL = {"wbgt": "wbgt_readings_all", "rainfall": "rainfall_readings_all", "forecast": "forecast_issues_all"}
+PARSE = S.PARSERS
+ALL = {feed: f"{name}_all" for feed, name in S.NAMES.items()}
+assert set(PARSE) == set(FEEDS), "coolcheck.silver.PARSERS and coolcheck.bronze.FEEDS list different feeds"
+
+
+def table_or_empty(name, schema):
+    """A feed's Bronze or Silver table, or an empty frame when the pipeline has not created it yet (a new feed is added
+    to the code before its first pipeline update), so one missing table does not stop the report for the other feeds."""
+    if spark.catalog.tableExists(name):
+        return spark.table(name)
+    print(f"table {name} does not exist; counted as empty")
+    return spark.createDataFrame([], schema)
 
 listing = []
 for feed in FEEDS:
@@ -42,21 +53,27 @@ vol = spark.createDataFrame(listing, "feed STRING, source_file STRING, file_name
 
 parts = []
 for feed in FEEDS:
-    lines = bronze_columns(read_raw_batch(spark, f"{raw_root}/{feed}/"))
+    if os.path.isdir(f"{raw_root}/{feed}"):
+        lines = bronze_columns(read_raw_batch(spark, f"{raw_root}/{feed}/"))
+    else:  # no file of this feed has been uploaded yet
+        print(f"{raw_root}/{feed} does not exist; counted as empty")
+        lines = bronze_columns(spark.createDataFrame([], "value STRING, _metadata STRUCT<file_path: STRING, file_name: STRING, "
+                                                          "file_size: LONG, file_modification_time: TIMESTAMP>"))
     v = lines.groupBy("source_file").agg(F.count(F.lit(1)).alias("vol_lines"))
-    b = (spark.table(f"{cat}.bronze.{feed}_raw").groupBy("source_file")
+    b = (table_or_empty(f"{cat}.bronze.{feed}_raw", "raw STRING, source_file STRING").groupBy("source_file")
          .agg(F.count(F.lit(1)).alias("bronze_rows"), F.count_distinct("raw").alias("bronze_distinct_lines")))
     part = v.join(b, "source_file", "full_outer").withColumn("feed", F.lit(feed))
     if args.stage == "all":
         pv = PARSE[feed](lines).groupBy("source_file").agg(F.count(F.lit(1)).alias("vol_parsed_rows"))
-        ps = spark.table(f"{cat}.silver.{ALL[feed]}").groupBy("source_file").agg(F.count(F.lit(1)).alias("silver_all_rows"))
+        ps = (table_or_empty(f"{cat}.silver.{ALL[feed]}", "source_file STRING").groupBy("source_file")
+              .agg(F.count(F.lit(1)).alias("silver_all_rows")))
         part = part.join(pv, "source_file", "full_outer").join(ps, "source_file", "full_outer")
     else:
         part = part.withColumns({"vol_parsed_rows": F.lit(None).cast("long"), "silver_all_rows": F.lit(None).cast("long")})
     parts.append(part.select("feed", "source_file", "vol_lines", "bronze_rows", "bronze_distinct_lines",
                              "vol_parsed_rows", "silver_all_rows"))
 
-counts = parts[0].unionByName(parts[1]).unionByName(parts[2])
+counts = reduce(lambda a, b: a.unionByName(b), parts)
 out = (vol.join(counts, ["feed", "source_file"], "full_outer")
        .withColumn("stage", F.lit(args.stage)).withColumn("checked_at", F.current_timestamp()))
 out.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{cat}.silver.dq_reconcile")

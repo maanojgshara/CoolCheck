@@ -33,7 +33,12 @@ ITEMS = {
     "census2020_pop_planning_area_age_sex": ("datagov", "d_d95ae740c0f8961a0b10435836660ce0", SODL),
     "singstat_pop_pa_age_sex_floor_area_jun2026": (
         "singstat", "a2b9150d-9ed4-4c0b-ab20-a26035f95065.zip",
-        "Not confirmed: the SingStat Terms of Use page is rendered by JavaScript and could not be read by script"),
+        (
+            "SingStat Terms of Use (saved PDF Docs/SingStat - terms of use.pdf): cl. 10 allows copying, "
+            "distribution and derived products if the source is credited; cl. 11 puts datasets under the "
+            "Singapore Open Data Licence v1.0 and the ODL prevails on any inconsistency. Cl. 25: written "
+            "permission is required before hyperlinking to any SingStat page or content, so in public material "
+            "name this file by title and date without a link (my reading, not legal advice)")),
 }
 
 

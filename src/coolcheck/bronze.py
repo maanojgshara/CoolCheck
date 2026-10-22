@@ -2,7 +2,7 @@
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 
-FEEDS = ("wbgt", "rainfall", "forecast")
+FEEDS = ("wbgt", "rainfall", "forecast", "air_temperature")
 
 
 def read_raw_stream(spark, path: str) -> DataFrame:

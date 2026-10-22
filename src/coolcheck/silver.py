@@ -29,7 +29,10 @@ FORECAST_SCHEMA = """code INT, errorMsg STRING, data STRUCT<records: ARRAY<STRUC
     periods: ARRAY<STRUCT<timePeriod: STRUCT<start: STRING, end: STRING, text: STRING>,
         regions: MAP<STRING, STRUCT<code: STRING, text: STRING>>>>>>>"""
 
-SCHEMAS = {"wbgt": WBGT_SCHEMA, "rainfall": RAINFALL_SCHEMA, "forecast": FORECAST_SCHEMA}
+# Air temperature (1-minute, live panel only) has the rainfall response shape: stations plus readings[].data[] of
+# {stationId, value}. Its values are JSON numbers, which from_json reads into the STRING field as rainfall's are.
+SCHEMAS = {"wbgt": WBGT_SCHEMA, "rainfall": RAINFALL_SCHEMA, "forecast": FORECAST_SCHEMA,
+           "air_temperature": RAINFALL_SCHEMA}
 
 META = ["source_file", "file_name", "file_mtime", "file_size", "source_kind", "file_date", "ingested_at"]
 
@@ -51,6 +54,17 @@ RAINFALL_RULES = {
     "file_date_matches": "file_date IS NULL OR sgt_date = file_date",
 }
 
+AIR_TEMPERATURE_RULES = {
+    "has_key": "station_id IS NOT NULL AND reading_ts IS NOT NULL",
+    "sgt_offset": "reading_ts_raw LIKE '%+08:00'",
+    "temp_present": "temp_c IS NOT NULL",
+    # a gross-error screen: the 22 Oct 2026 sample ran 30.2 to 33.9; tune after a week of data
+    "temp_in_range": "temp_c IS NULL OR temp_c BETWEEN 20 AND 40",
+    "unit_celsius": "reading_unit = 'deg C'",
+    "station_listed": "station_lat IS NOT NULL",
+    "minute_aligned": "second(reading_ts) = 0",
+}
+
 FORECAST_RULES = {
     "has_key": "issue_ts IS NOT NULL AND updated_ts IS NOT NULL",
     "sgt_offset": "issue_ts_raw LIKE '%+08:00'",
@@ -69,9 +83,10 @@ FORECAST_RULES = {
     "temp_in_range": "(temp_low IS NULL OR temp_low BETWEEN 15 AND 40) AND (temp_high IS NULL OR temp_high BETWEEN 15 AND 40)",
 }
 
-RULES = {"wbgt": WBGT_RULES, "rainfall": RAINFALL_RULES, "forecast": FORECAST_RULES}
+RULES = {"wbgt": WBGT_RULES, "rainfall": RAINFALL_RULES, "forecast": FORECAST_RULES,
+         "air_temperature": AIR_TEMPERATURE_RULES}
 KEYS = {"wbgt": ["station_id", "reading_ts"], "rainfall": ["station_id", "reading_ts"],
-        "forecast": ["issue_ts", "updated_ts"]}
+        "forecast": ["issue_ts", "updated_ts"], "air_temperature": ["station_id", "reading_ts"]}
 
 # Auto CDC keeps the copy with the highest value: live over backfill, then the later file time, then the later file
 # path, then the content hash (copies with equal hashes are identical, so that last tie cannot change the result).
@@ -136,8 +151,10 @@ def parse_wbgt(bronze: DataFrame) -> DataFrame:
     return with_flags(_with_meta_order(out), WBGT_RULES)
 
 
-def parse_rainfall(bronze: DataFrame) -> DataFrame:
-    pages = _pages(bronze, "rainfall").select(
+def _parse_station_series(bronze: DataFrame, feed: str, raw_col: str, value_col: str, rules: dict) -> DataFrame:
+    """Pages of stations plus readings[].data[] of {stationId, value} -> one row per station and timestamp.
+    Rainfall and air temperature share this response shape."""
+    pages = _pages(bronze, feed).select(
         *META, F.col("j.data.readingType").alias("reading_type"), F.col("j.data.readingUnit").alias("reading_unit"),
         F.map_from_entries(F.transform("j.data.stations", lambda s: F.struct(s["id"], s))).alias("stations"),
         F.explode("j.data.readings").alias("r"))
@@ -151,15 +168,23 @@ def parse_rainfall(bronze: DataFrame) -> DataFrame:
         st["location"]["longitude"].alias("station_lon"),
         "reading_ts_raw",
         parse_ts("reading_ts_raw").alias("reading_ts"),
-        F.col("x.value").alias("rainfall_raw"),
-        F.expr("try_cast(x.value AS DOUBLE)").alias("rainfall_mm"),
+        F.col("x.value").alias(raw_col),
+        F.expr("try_cast(x.value AS DOUBLE)").alias(value_col),
         "reading_type", "reading_unit",
         *META,
     )
     out = out.withColumns({"sgt_date": sgt_date("reading_ts"), "sgt_minute": sgt_minute("reading_ts"),
-                           "content_hash": _content_hash("station_name", "station_lat", "station_lon", "rainfall_raw",
+                           "content_hash": _content_hash("station_name", "station_lat", "station_lon", raw_col,
                                                          "reading_type", "reading_unit")})
-    return with_flags(_with_meta_order(out), RAINFALL_RULES)
+    return with_flags(_with_meta_order(out), rules)
+
+
+def parse_rainfall(bronze: DataFrame) -> DataFrame:
+    return _parse_station_series(bronze, "rainfall", "rainfall_raw", "rainfall_mm", RAINFALL_RULES)
+
+
+def parse_air_temperature(bronze: DataFrame) -> DataFrame:
+    return _parse_station_series(bronze, "air_temperature", "temp_raw", "temp_c", AIR_TEMPERATURE_RULES)
 
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -257,3 +282,9 @@ def first_arrival(all_copies: DataFrame) -> DataFrame:
             .withColumn("before_first_live", F.coalesce(F.col("reading_ts") < F.col("first_live_file"), F.lit(False)))
             .withColumn("late_over_1h", ~F.col("before_first_live") & F.coalesce(
                 F.unix_seconds("first_live_arrival") - F.unix_seconds("reading_ts") > 3600, F.lit(False))))
+
+
+# One place for the feed -> parser and feed -> Silver table name maps (the pipeline and the reconcile job both use them).
+PARSERS = {"wbgt": parse_wbgt, "rainfall": parse_rainfall, "forecast": parse_forecast, "air_temperature": parse_air_temperature}
+NAMES = {"wbgt": "wbgt_readings", "rainfall": "rainfall_readings", "forecast": "forecast_issues",
+         "air_temperature": "air_temperature_readings"}

@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 SGT = timezone(timedelta(hours=8))
 UTC = timezone.utc
-STEP = {"wbgt": 15, "rainfall": 5}
+STEP = {"wbgt": 15, "rainfall": 5, "air_temperature": 1}
 ISSUES = (time(5, 30), time(11, 30), time(17, 30), time(23, 30))
 PER_PAGE = 25
 
@@ -38,7 +38,8 @@ class Clock:
 
 
 def feed_of(url):
-    return "wbgt" if url.endswith("/weather") else "rainfall" if url.endswith("/rainfall") else "forecast"
+    return ("wbgt" if url.endswith("/weather") else "rainfall" if url.endswith("/rainfall")
+            else "air_temperature" if url.endswith("/air-temperature") else "forecast")
 
 
 def _dump(obj):
@@ -73,6 +74,12 @@ class FakeAPI:
                     "readings": [{"timestamp": s.isoformat(), "data": [{"stationId": "S218", "value": self.value(feed, s)}]}
                                  for s in page_stamps],
                     "readingType": "TB1 Rainfall 5 Minute Total F", "readingUnit": "mm"}
+        elif feed == "air_temperature":
+            data = {"stations": [{"id": "S109", "deviceId": "S109", "name": "Ang Mo Kio Avenue 5",
+                                  "location": {"latitude": 1.3793, "longitude": 103.85}}],
+                    "readings": [{"timestamp": s.isoformat(), "data": [{"stationId": "S109", "value": self.value(feed, s)}]}
+                                 for s in page_stamps],
+                    "readingType": "DBT 1M F", "readingUnit": "deg C"}
         else:
             data = {"records": [{"date": s.date().isoformat(), "timestamp": s.isoformat(), "updatedTimestamp": s.isoformat(),
                                  "general": {"temperature": {"low": 25, "high": 33, "unit": "Degrees Celsius"}}}

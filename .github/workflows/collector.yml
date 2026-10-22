@@ -1,5 +1,5 @@
-# Live collector (Day 2, step 5; §14.6): every 15 minutes, fetch WBGT, rainfall and the 24-hour forecast from
-# data.gov.sg and upload raw JSONL to the raw-files Volume. Runs outside Databricks because the workspace blocks .gov.sg.
+# Live collector (Day 2, step 5; §14.6): every 15 minutes, fetch WBGT, rainfall, the 24-hour forecast and air
+# temperature (the live panel's feed, D9) from data.gov.sg and upload raw JSONL to the raw-files Volume. Runs outside Databricks because the workspace blocks .gov.sg.
 #
 # One switch: the repository variable COLLECTOR_ENABLED. A scheduled run (GitHub's best-effort schedule) and a manual
 # dispatch with dry_run false (what the external scheduler sends every 15 minutes) run only while it is 'true'; a

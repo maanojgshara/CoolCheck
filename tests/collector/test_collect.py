@@ -37,12 +37,13 @@ def test_layout_name_and_lines_unchanged(tmp_path):
     now = at_utc(2026, 10, 21, 10, 27, 18)  # 18:27:18 SGT
     code, api, sess, _ = run(tmp_path, now, None, "--dry-run")
     assert code == 0
-    assert files(tmp_path) == [f"{f}/live/2026-10-21/{f}_2026-10-21T182718_777.jsonl" for f in ("forecast", "rainfall", "wbgt")]
+    assert files(tmp_path) == [f"{f}/live/2026-10-21/{f}_2026-10-21T182718_777.jsonl"
+                               for f in ("air_temperature", "forecast", "rainfall", "wbgt")]
     assert all("/backfill/" not in f for f in files(tmp_path))
-    assert [(feed_of(u), p["date"]) for u, p in sess.calls] == [("wbgt", "2026-10-21"), ("forecast", "2026-10-21"),
-                                                                 ("rainfall", "2026-10-21")]
+    assert [(feed_of(u), p["date"]) for u, p in sess.calls][:3] == [("wbgt", "2026-10-21"), ("forecast", "2026-10-21"),
+                                                                     ("rainfall", "2026-10-21")]
     served = api(bf.FEEDS["rainfall"][0], {"date": "2026-10-21"}, 0).content
-    assert (tmp_path / "out" / files(tmp_path)[1]).read_bytes() == served + b"\n"  # the body, unchanged, one line
+    assert (tmp_path / "out" / files(tmp_path)[2]).read_bytes() == served + b"\n"  # the body, unchanged, one line
 
 
 def test_2355_sgt_reads_today_only(tmp_path):
@@ -50,7 +51,7 @@ def test_2355_sgt_reads_today_only(tmp_path):
     code, api, _, _ = run(tmp_path, now, None, "--dry-run")
     assert code == 0
     assert {d for _, d, _ in api.log} == {date(2026, 10, 21)}
-    assert files(tmp_path)[0] == "forecast/live/2026-10-21/forecast_2026-10-21T235500_777.jsonl"
+    assert files(tmp_path)[1] == "forecast/live/2026-10-21/forecast_2026-10-21T235500_777.jsonl"
 
 
 def test_0005_sgt_is_the_next_day_and_sweeps_every_page_of_yesterday(tmp_path):
@@ -58,7 +59,7 @@ def test_0005_sgt_is_the_next_day_and_sweeps_every_page_of_yesterday(tmp_path):
     code, api, _, _ = run(tmp_path, now, None, "--dry-run")
     assert code == 0
     today, yesterday = date(2026, 10, 22), date(2026, 10, 21)
-    assert files(tmp_path)[0] == "forecast/live/2026-10-22/forecast_2026-10-22T000500_777.jsonl"
+    assert files(tmp_path)[1] == "forecast/live/2026-10-22/forecast_2026-10-22T000500_777.jsonl"
     assert api.pages("wbgt", today) == [1] and api.pages("rainfall", today) == [1]
     assert api.pages("forecast", today) == [1]  # 404: no issue yet today, which is not an error
     assert api.pages("wbgt", yesterday) == [1, 2, 3, 4]  # 96 readings, all pages, though page 1 covers the window
@@ -102,7 +103,7 @@ def test_429_waits_a_fixed_11_s_then_succeeds(tmp_path):
     api = FakeAPI(now)
     seq = iter([Resp(429), Resp(429)])
     code, _, sess, clock = run(tmp_path, now, lambda u, p, n: next(seq, None) or api(u, p, n), "--dry-run")
-    assert code == 0 and len(sess.calls) == 5
+    assert code == 0 and len(sess.calls) == 10  # 3 feeds + 5 air-temperature pages + the 2 retried calls
     assert [s for s in clock.sleeps if s > 1.0] == [11, 11]
     assert all(s <= 1.0 for s in clock.sleeps if s not in (11,))  # the rest is the 1 s gap
 
@@ -135,7 +136,7 @@ def test_404_on_page_two_fails_that_feed_only(tmp_path):
                                else api(u, p, n))
     code, _, _, _ = run(tmp_path, now, handler, "--dry-run", "--window-hours", "6")
     assert code == 1
-    assert len(files(tmp_path)) == 3  # rainfall keeps its first page; the run is marked failed
+    assert len(files(tmp_path)) == 4  # rainfall keeps its first page; the run is marked failed
     log = (tmp_path / "out" / "collector.log").read_text()
     assert "rainfall 2026-10-21: HTTP 404 on page 2" in log
 
@@ -148,15 +149,15 @@ def _today_missing(api, feeds, today):
 
 def test_0030_sgt_404_on_today_is_no_data_for_every_feed(tmp_path):
     now = at_utc(2026, 10, 21, 16, 30)  # 00:30 SGT on 22 Oct
-    code, _, _, _ = run(tmp_path, now, _today_missing(FakeAPI(now), {"wbgt", "rainfall", "forecast"}, "2026-10-22"),
+    code, _, _, _ = run(tmp_path, now, _today_missing(FakeAPI(now), {"wbgt", "rainfall", "forecast", "air_temperature"}, "2026-10-22"),
                         "--dry-run")
     assert code == 0
     log = (tmp_path / "out" / "collector.log").read_text()
-    assert log.count("no data ['2026-10-22']") == 3 and "failed" not in log
+    assert log.count("no data ['2026-10-22']") == 4 and "failed" not in log
 
 
-@pytest.mark.parametrize("feed", ["wbgt", "rainfall"])
-def test_0300_sgt_404_on_today_fails_wbgt_or_rainfall(tmp_path, feed):
+@pytest.mark.parametrize("feed", ["wbgt", "rainfall", "air_temperature"])
+def test_0300_sgt_404_on_today_fails_wbgt_rainfall_or_air_temperature(tmp_path, feed):
     now = at_utc(2026, 10, 21, 19, 0)  # 03:00 SGT on 22 Oct; the fake forecast's first issue is 05:30, so it 404s too
     api = FakeAPI(now)
     code, _, _, _ = run(tmp_path, now, _today_missing(api, {feed}, "2026-10-22"), "--dry-run")
@@ -190,7 +191,7 @@ def test_real_run_uploads_each_file_to_the_volume_root(tmp_path):
                         uploader=lambda dest, data: sent.append((dest, len(data))))
     assert code == 0
     assert [d for d, _ in sent] == [f"{ROOT}/{f}/live/2026-10-21/{f}_2026-10-21T182700_777.jsonl"
-                                    for f in ("wbgt", "forecast", "rainfall")]
+                                    for f in ("wbgt", "forecast", "rainfall", "air_temperature")]
     assert all(n > 0 for _, n in sent)
 
 
@@ -209,7 +210,7 @@ def test_upload_failure_marks_the_run_failed_and_the_other_feeds_still_upload(tm
             raise RuntimeError("RESOURCE_ALREADY_EXISTS")
         sent.append(dest)
     code, _, _, _ = run(tmp_path, at_utc(2026, 10, 21, 10, 27), None, env=REAL_ENV, uploader=flaky)
-    assert code == 1 and len(sent) == 2
+    assert code == 1 and len(sent) == 3
 
 
 @pytest.mark.parametrize("argv, env, why", [

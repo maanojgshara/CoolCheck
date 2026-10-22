@@ -32,20 +32,23 @@ def dq_day():
 def dq_conflicts():
     return (dq.dq_conflicts(_read("wbgt_readings_all"), "wbgt")
             .unionByName(dq.dq_conflicts(_read("rainfall_readings_all"), "rainfall"))
-            .unionByName(dq.dq_conflicts(_read("forecast_issues_all"), "forecast")))
+            .unionByName(dq.dq_conflicts(_read("forecast_issues_all"), "forecast"))
+            .unionByName(dq.dq_conflicts(_read("air_temperature_readings_all"), "air_temperature")))
 
 
 @dp.materialized_view(name="dq_events", comment="Counts per feed and check: rule failures, duplicates, quarantine, late, moved stations.")
 def dq_events():
     return dq.dq_events({"wbgt": _read("wbgt_readings_all"), "rainfall": _read("rainfall_readings_all"),
-                         "forecast": _read("forecast_issues_all")},
+                         "forecast": _read("forecast_issues_all"),
+                         "air_temperature": _read("air_temperature_readings_all")},
                         _read("quarantine"), {"wbgt": _read("wbgt_first_arrival")})
 
 
 @dp.materialized_view(name="station_gaps", comment="Gaps over 60 minutes between a station's consecutive usable readings.")
 def station_gaps():
     return (dq.station_gaps(_read("wbgt_readings"), "wbgt", "heat_stress IN ('Low', 'Moderate', 'High')")
-            .unionByName(dq.station_gaps(_read("rainfall_readings"), "rainfall", "rainfall_mm IS NOT NULL")))
+            .unionByName(dq.station_gaps(_read("rainfall_readings"), "rainfall", "rainfall_mm IS NOT NULL"))
+            .unionByName(dq.station_gaps(_read("air_temperature_readings"), "air_temperature", "temp_c IS NOT NULL")))
 
 
 @dp.materialized_view(name="forecast_periods", comment="Forecast issues exploded to period and region.")

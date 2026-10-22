@@ -1,4 +1,4 @@
-"""Live collector: fetch the three Bronze feeds and put raw JSONL in the raw-files Volume (Day 2, step 5).
+"""Live collector: fetch the four Bronze feeds and put raw JSONL in the raw-files Volume (Day 2, step 5).
 
 Runs every 15 minutes in GitHub Actions (.github/workflows/collector.yml), because the workspace cannot reach .gov.sg
 hosts (§14.6). Reuses the backfill's fetch code: the throttled Fetcher (1 call/s), the session with the optional
@@ -13,7 +13,10 @@ explicitly (the runner's clock is UTC); the run id is GITHUB_RUN_ID, or "local" 
 
 Pages: each feed is read newest first from date=<today SGT> until the window start (default 2 h back) is covered,
 then from earlier dates while the window reaches them. A run whose SGT hour is 0 also reads every page of yesterday
-for all three feeds (the midnight sweep). A 404 on page 1 of a date means no data yet, not an error, except for
+for WBGT, rainfall and the forecast (the midnight sweep). Air temperature is the fourth feed and runs last, so a stop
+never costs a model feed. It has 1-minute readings, 25 a page: 5 pages for the 2-hour window and 58 for a day, so it
+skips the sweep (a day is over the 40-page limit) and its window is capped at 12 h (29 pages) when a manual catch-up asks
+for more. It is for the live panel only (D9); its files have gaps by design. A 404 on page 1 of a date means no data yet, not an error, except for
 today's WBGT and rainfall from 01:00 SGT, when readings must exist: then the feed fails (the forecast is unchanged).
 
 Throttle and stops: 1 call/s; a 429 is retried at most twice, 11 s apart (longer than the 10 s window; the API sends
@@ -46,6 +49,10 @@ from backfill import SGT, StopRun  # noqa: E402
 
 WINDOW_HOURS = 2
 MAX_WINDOW_HOURS = 48  # manual catch-up from workflow_dispatch, capped at two days
+AIR_TEMPERATURE_MAX_WINDOW_HOURS = 12  # 12 h is 29 pages of 25 minutes, under bf.MAX_PAGES (40)
+FEEDS = {**bf.FEEDS, "air_temperature": (bf.BASE + "air-temperature", {}, 1440, 58)}
+ORDER = [*bf.ORDER, "air_temperature"]
+NO_SWEEP = {"air_temperature"}
 BACKOFF = [11, 11]
 MAX_429 = 3
 BUDGET_S = 180
@@ -91,15 +98,15 @@ class Guard:
         return self.fetcher.get(url, params)
 
 
-def plan(now, window_hours):
+def plan(now, window_hours, sweep=True):
     """[(date, reach)] newest first: read the date's pages until one holds a reading at or before `reach`;
-    reach None means every page (yesterday, in a run whose SGT hour is 0)."""
+    reach None means every page (yesterday, in a run whose SGT hour is 0, unless sweep is False)."""
     start = now - timedelta(hours=window_hours)
     out, d = [], now.date()
     while d >= start.date():
         out.append([d, start])
         d -= timedelta(days=1)
-    if now.hour == 0:
+    if sweep and now.hour == 0:
         yesterday = now.date() - timedelta(days=1)
         hit = [x for x in out if x[0] == yesterday]
         if hit:
@@ -110,11 +117,12 @@ def plan(now, window_hours):
 
 
 def instants(feed, data):
-    """Aware datetimes on a page: WBGT records[].datetime, rainfall readings[].timestamp, forecast records[].timestamp."""
+    """Aware datetimes on a page: WBGT records[].datetime, rainfall and air temperature readings[].timestamp, forecast
+    records[].timestamp. bf.reading_stamps knows only 'rainfall' for readings[], so air temperature is read as rainfall."""
     if feed == "forecast":
         raw = [r.get("timestamp") for r in data.get("records") or [] if isinstance(r, dict)]
     else:
-        raw = bf.reading_stamps(feed, data)
+        raw = bf.reading_stamps("rainfall" if feed == "air_temperature" else feed, data)
     out = []
     for s in raw:
         try:
@@ -129,7 +137,7 @@ def instants(feed, data):
 def walk(get, feed, day, reach, lines, info, missing_is_failure=False):
     """Read one date newest first, appending each body as a JSONL line. missing_is_failure: a 404 on page 1 fails
     the feed (today's WBGT or rainfall from 01:00 SGT, when readings must exist)."""
-    url, fixed, _, _ = bf.FEEDS[feed]
+    url, fixed, _, _ = FEEDS[feed]
     params = {**fixed, "date": day.isoformat()}
     for page in range(1, bf.MAX_PAGES + 1):
         status, content = get(url, params)
@@ -245,6 +253,7 @@ def main(argv=None, session=None, sleep=time.sleep, clock=time.monotonic, now=No
     log = Log(out / "collector.log", secrets=[key, env.get("DATABRICKS_CLIENT_SECRET")])
     start = (now or datetime.now(SGT)).astimezone(SGT).replace(microsecond=0)
     dates = plan(start, args.window_hours)
+    air_dates = plan(start, min(args.window_hours, AIR_TEMPERATURE_MAX_WINDOW_HOURS), sweep=False)
     log(f"collector run {run_id}: start {start:%Y-%m-%d %H:%M:%S} SGT, window {args.window_hours:g} h, "
         f"{'dry run, out-dir ' + str(out) if args.dry_run else 'upload to ' + root}, key {'present' if key else 'absent'}")
     log("dates: " + ", ".join(f"{d} {'every page' if r is None else 'back to ' + f'{r:%H:%M}'}" for d, r in dates))
@@ -259,17 +268,18 @@ def main(argv=None, session=None, sleep=time.sleep, clock=time.monotonic, now=No
             log(f"STOPPED: cannot set up the Databricks client: {type(e).__name__}: {str(e)[:200]}")
             return 1
     stop, failed, rows = None, False, []
-    for feed in bf.ORDER:
+    for feed in ORDER:
+        feed_dates = air_dates if feed in NO_SWEEP else dates
         info = {"feed": feed, "pages": 0, "stamps": 0, "other_date": 0, "oldest": None, "newest": None,
                 "no_data": [], "file": None, "bytes": 0, "result": "ok",
-                "dates": "; ".join(f"{d:%m-%d}{' all' if r is None else ''}" for d, r in dates)}
+                "dates": "; ".join(f"{d:%m-%d}{' all' if r is None else ''}" for d, r in feed_dates)}
         rows.append(info)
         if stop:
             info["result"] = "not fetched (run stopped)"
             continue
         lines = []
         try:
-            for day, reach in dates:
+            for day, reach in feed_dates:
                 strict = feed != "forecast" and day == start.date() and start.hour >= 1
                 walk(guard.get, feed, day, reach, lines, info, missing_is_failure=strict)
         except FeedError as e:
