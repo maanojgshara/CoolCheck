@@ -8,7 +8,7 @@
 
 | What | Setting | Checked |
 |---|---|---|
-| Volume grants | `READ_VOLUME` and `WRITE_VOLUME` on `coolcheck.bronze.raw_files` (this Volume only) | `databricks grants get volume`, 21 Oct |
+| Volume grants | `READ_VOLUME` and `WRITE_VOLUME` on `coolcheck.bronze.raw_files` (this Volume only); `READ_VOLUME` re-granted at 19:15 SGT, one minute before the first real upload run | `databricks grants get volume`, 21 Oct; the 19:15 time as reported by the user |
 | Schema grant | `USE_SCHEMA` on `coolcheck.bronze` | `databricks grants get schema`, 21 Oct |
 | Catalog grant | `USE_CATALOG` on `coolcheck` | `databricks grants get catalog`, 21 Oct |
 | Workspace entitlement | Consumer access (`workspace-consume` in the API) | `service-principals list`, 21 Oct |
@@ -26,11 +26,11 @@ GitHub Actions runs, in order (outcomes and causes as reported by the user; the 
 | `39589083284` | failed | OAuth secret scope `all-apis` not assigned |
 | `39589832036` | failed | principal had no workspace entitlement |
 | `39590361248` | failed | principal lacked `READ_VOLUME` |
-| `39590724749` | succeeded | after the three fixes below |
+| `39590724749` | succeeded | first real upload run, 19:16:40 SGT, after the three fixes below |
 
 - **Scope `all-apis`** (run `39589083284`): the Databricks SDK requests the `all-apis` scope when it logs in with an OAuth secret, so the secret has that scope.
 - **Consumer access** (run `39589832036`): the Files API needs the principal to have a workspace entitlement.
-- **`READ_VOLUME` as well as `WRITE_VOLUME`** (run `39590361248`): the upload needs both. The design note assumed `WRITE_VOLUME` alone would do, and planned to revoke `READ_VOLUME` before the first real run; that was wrong and the revoke was not done. (The collector never lists or reads the Volume itself, so the read need comes from the Files API upload.)
+- **`READ_VOLUME` as well as `WRITE_VOLUME`** (run `39590361248`): the upload needs both. The design note assumed `WRITE_VOLUME` alone would do and planned to drop `READ_VOLUME` before the first real run; with `READ_VOLUME` missing the run failed. It was re-granted at 19:15 SGT on 21 Oct and the next run (`39590724749`, 19:16:40 SGT) uploaded. (The collector never lists or reads the Volume itself, so the read need comes from the Files API upload.)
 
 ## Limits of this setup
 
