@@ -115,6 +115,56 @@ def forecast_for_targets(fc: DataFrame, targets: DataFrame, cutoff_minutes=15) -
             .withColumn("forecast_missing", F.col("fc_updated_ts").isNull()))
 
 
+def forecast_gaps(fc: DataFrame, targets: DataFrame, cutoff_minutes=15) -> DataFrame:
+    """Diagnostic for target dates without a forecast (not a model input): every version known by the cut-off (issued
+    or updated at or before it, issued from 00:00 two days before) with the rules of forecast_for_targets it fails.
+    gap_reason turns one target date's rows into a sentence."""
+    c = _cutoff(cutoff_minutes)
+    t = targets.select("target_date").distinct().withColumns({
+        "_cut": sgt_instant("target_date", c),
+        "_first_issue": sgt_instant("target_date", FC_FIRST_ISSUE_MIN),
+        "_from": sgt_instant("target_date", FC_COVER_FROM_MIN),
+        "_to": sgt_instant("target_date", FC_COVER_TO_MIN),
+        "_window": sgt_instant(F.date_sub("target_date", 2), 0)})
+    f = (fc.select("issue_ts", "updated_ts", "valid_start_raw")
+         .withColumn("fc_start", _corrected_start())
+         .withColumn("fc_end", F.timestamp_seconds(F.unix_seconds("fc_start") + FC_VALID_HOURS * 3600)))
+    known = (F.least("issue_ts", "updated_ts") <= F.col("_cut")) & (F.col("issue_ts") >= F.col("_window"))
+    return t.join(f, known, "left").select(
+        "target_date", F.col("issue_ts").alias("fc_issue_ts"), F.col("updated_ts").alias("fc_updated_ts"),
+        F.coalesce((F.col("fc_start") <= F.col("_from")) & (F.col("fc_end") >= F.col("_to")), F.lit(False)).alias("covers"),
+        (F.col("issue_ts") < F.col("_first_issue")).alias("before_first_issue"),
+        (F.col("issue_ts") > F.col("_cut")).alias("issued_after_cutoff"),
+        (F.col("updated_ts") > F.col("_cut")).alias("updated_after_cutoff"),
+        (sgt_date("issue_ts") == F.date_sub("target_date", 1)).alias("issued_day_before"))
+
+
+def gap_reason(rows):
+    """One sentence for one target date from its forecast_gaps rows (pandas; timestamps as SGT wall-clock times)."""
+    import pandas as pd
+
+    rows = rows[rows.fc_issue_ts.notna()]
+    covering = rows[rows.covers.astype(bool)]
+    if covering.empty:
+        reason = "no issue known by the cut-off has a corrected validity covering 06:00 to 18:00"
+        if not rows.issued_day_before.astype(bool).any():
+            reason += " (no forecast was issued at all the day before)"
+        return reason
+    parts = []
+    for r in covering.sort_values("fc_issue_ts").itertuples():
+        issue, upd = pd.Timestamp(r.fc_issue_ts), pd.Timestamp(r.fc_updated_ts)
+        why = []
+        if r.before_first_issue:
+            why.append(f"the issue of {issue:%H:%M on %d %b} is before 17:00 the day before (age limit)")
+        if r.issued_after_cutoff:
+            why.append(f"the issue stamped {issue:%H:%M on %d %b} is after the cut-off, although its updated time "
+                       f"is {upd:%H:%M on %d %b}")
+        if r.updated_after_cutoff:
+            why.append(f"the issue of {issue:%H:%M on %d %b} was updated after the cut-off ({upd:%H:%M on %d %b})")
+        parts.append("; ".join(why))
+    return "covering issue(s) rejected: " + "; ".join(dict.fromkeys(p for p in parts if p))
+
+
 def _wbgt_days(wbgt, run_date, c):
     """Per station and completed SGT day D: aggregates over all counted readings (first_ts, last_ts, peak_full,
     loc_full) and over those before the cut-off of target D+1, i.e. D seen as yesterday (the _y columns). The two

@@ -398,3 +398,13 @@ Multiclass log loss 0.6621. Rows: label (0 Low, 1 Moderate, 2 High); columns: th
 | 0.900 | 0.010 | 3,589 | 379 | 0.900 | 0.106 |
 | 0.950 | 0.004 | 5,323 | 400 | 0.950 | 0.075 |
 
+## Addendum, 22 Oct 2026 (added after the run): why the four test-month forecasts were missing
+
+Added at your request; the job's report above is unchanged. The reasons come from `coolcheck.features.forecast_gaps` and `gap_reason` over `coolcheck.silver.forecast_issues VERSION AS OF 9` (the version this run pinned) at the 00:15 cut-off, the same rules as the selection (note §3.3). Runs after the next deploy print this column in the report themselves.
+
+| target date | filled with (source) | why no forecast qualified |
+|---|---|---|
+| 2025-07-21 | 34, Thundery Showers (all training dates) | No issue known by the cut-off has a corrected validity covering 06:00 to 18:00, and no forecast was issued at all on 20 Jul (NEA returned no data that day; `forecast_validity.md`). |
+| 2026-04-29 | 34, Thundery Showers (calendar month) | The 23:01 issue of 28 Apr covers the day, but its only version was updated at 05:55 on 29 Apr, after the cut-off. |
+| 2026-05-18 | 34, Thundery Showers (calendar month) | The only covering issue was made at 02:53 on 17 May, before 17:00 the day before (the age limit; the 27-hour case `eda.md` anticipated). No issue was made on 17 May from 17:00. |
+| 2026-07-07 | 34, Thundery Showers (calendar month) | Two covering issues, both rejected: the 05:04 issue of 6 Jul (age limit), and an issue stamped 00:31 on 7 Jul, after the cut-off, although its updated time is 23:41 on 6 Jul (earlier than its own issue time). The strict rule, both times at or before the cut-off, stays (your decision, 22 Oct). |

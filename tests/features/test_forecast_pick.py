@@ -7,7 +7,7 @@ import pytest
 from pyspark.sql import functions as F
 
 from feature_fixtures import fc_record, forecast_versions
-from coolcheck.features import forecast_for_targets
+from coolcheck.features import forecast_for_targets, forecast_gaps, gap_reason
 
 # forecast_2025-12-30.jsonl: a 24-hour issue, and the 23:00 issue whose stored end (2025-01-02) is before its start
 DEC30_1744 = fc_record("2025-12-30T17:44:00+08:00", "2025-12-30T18:00:00+08:00", "2025-12-31T18:00:00+08:00",
@@ -140,6 +140,28 @@ def test_cutoff_just_after_the_first_issue_time_is_accepted(spark):
                     "6 PM 19 Jul to 6 PM 20 Jul")  # issued and updated at 17:00:00
     r = _pick(spark, [rec], [date(2025, 7, 20)], cutoff_minutes=-419)[date(2025, 7, 20)]
     assert r.issue_s == _s("2025-07-19T17:00:00+08:00")
+
+
+def _reason(spark, records, target):
+    t = spark.createDataFrame([(target,)], "target_date DATE")
+    return gap_reason(forecast_gaps(forecast_versions(spark, *records), t).toPandas())
+
+
+def test_gap_reasons_for_the_four_kinds_of_missing_forecast(spark):
+    # no covering issue, and nothing issued on 20 Jul (NEA returned no data): the 2025-07-21 case
+    r = _reason(spark, [JUL19_2302], date(2025, 7, 21))
+    assert r.startswith("no issue known by the cut-off") and "no forecast was issued at all the day before" in r
+    # the only covering issue is too old: the age limit (the 2026-05-18 case had this shape)
+    assert "before 17:00 the day before (age limit)" in _reason(spark, [JAN16_0333], date(2025, 1, 17))
+    # stamped after the cut-off but updated before it: the 2026-07-07 record
+    jul07 = fc_record("2026-07-07T00:31:00+08:00", "2026-07-07T00:00:00+08:00", "2026-07-08T00:00:00+08:00",
+                      "0 AM 7 Jul to 0 AM 8 Jul", updated="2026-07-06T23:41:08+08:00", high=34)
+    r = _reason(spark, [jul07], date(2026, 7, 7))
+    assert "stamped 00:31 on 07 Jul is after the cut-off, although its updated time is 23:41 on 06 Jul" in r
+    # updated only after the cut-off
+    late = fc_record("2025-03-09T23:05:00+08:00", "2025-03-10T00:00:00+08:00", "2025-03-11T00:00:00+08:00",
+                     "0 AM 10 Mar to 0 AM 11 Mar", updated="2025-03-10T00:20:00+08:00")
+    assert "was updated after the cut-off (00:20 on 10 Mar)" in _reason(spark, [late], date(2025, 3, 10))
 
 
 def test_no_candidate_gives_missing_and_nulls(spark):

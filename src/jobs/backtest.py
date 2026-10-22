@@ -28,8 +28,8 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from coolcheck import backtest as B  # noqa: E402
-from coolcheck.features import (FEATURES, ORIGINAL_8, assert_completed_days, rain_min_readings,  # noqa: E402
-                                station_day_features)
+from coolcheck.features import (FEATURES, ORIGINAL_8, assert_completed_days, forecast_gaps, gap_reason,  # noqa: E402
+                                rain_min_readings, station_day_features)
 from coolcheck.nearest import nearest_station_sql  # noqa: E402
 
 SGT = timezone(timedelta(hours=8))
@@ -235,8 +235,13 @@ def render_report(ctx):
           "has none).", ""]
     tf = ctx["fills"]
     tf = tf[tf.split == "test"] if len(tf) else tf
-    L += ["### Forecasts filled in the test months (rule: §5.1 step 2)", ""]
-    L += (md(tf[["fold", "target_date", "fc_temp_high", "fc_text", "source"]]) if len(tf) else ["None."]) + [""]
+    L += ["### Forecasts filled in the test months (rule: §5.1 step 2), with why each was missing", ""]
+    if len(tf):
+        tf = tf.assign(reason=[ctx.get("gap_reasons", {}).get(pd.Timestamp(d), "—") for d in tf.target_date])
+        L += md(tf[["fold", "target_date", "fc_temp_high", "fc_text", "source", "reason"]])
+    else:
+        L += ["None."]
+    L += [""]
     L += [f"Selected forecasts whose text disagrees with the corrected validity: {ctx['text_disagree']}.", ""]
     L += ["## Hyper-parameters chosen per fold (from earlier folds only)", ""]
     hp = rec[["fold", "config", "num_leaves", "rounds", "choice_aps"]].copy()
@@ -481,6 +486,12 @@ def main():
     lab_in = labels[labels.target_date >= B.FIRST_TARGET]
     no_row = lab_in.merge(keys, how="left", indicator=True).query("_merge == 'left_only'")
     text_disagree = int((~feats.forecast_missing & ~feats.fc_text_agrees.eq(True)).sum())
+    missing_fc = sorted(set(feats.loc[feats.forecast_missing, "target_date"]))
+    gap_reasons = {}
+    if missing_fc:
+        gap_rows = forecast_gaps(fc, spark.createDataFrame([(d.date(),) for d in missing_fc], "target_date DATE"),
+                                 a.cutoff_minutes).toPandas()
+        gap_reasons = {pd.Timestamp(d): gap_reason(g) for d, g in gap_rows.groupby("target_date")}
 
     mark("features and labels")
 
@@ -547,6 +558,7 @@ def main():
            "text_disagree": text_disagree, "git_sha": a.git_sha, "code_sha256": code_sha256(), "run_date": run_date,
            "cutoff": a.cutoff_minutes, "bootstrap": a.bootstrap, "seed": a.seed, "finished": finished,
            "mode": "Databricks Connect, not logged" if a.profile else "bundle job", "packages": packages,
+           "gap_reasons": gap_reasons,
            "experiment_id": a.experiment_id, "backtest_id": uuid.uuid4().hex[:12]}
     mark("artifacts written")
     (out / "lineage.json").write_text(json.dumps({"inputs": lineage_rows, "view_check": view_check,
