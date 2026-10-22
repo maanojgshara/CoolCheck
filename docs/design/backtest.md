@@ -280,3 +280,7 @@ Order, with a diff and your OK before each commit:
 4. Minimum days: 4 of 7 for the trailing mean, 20 of 30 for the character.
 5. The hyper-parameter grid and selection rule (§5.2), the 180-day half-life, 2,000 resamples.
 6. Whether the station-character feature stays in the final model (Day 4): I suggest fixing the rule now (keep it if the pooled station-level PR-AUC is higher with it); both results are reported either way (decision 3, §16).
+
+## 13. The briefing's heat term (decided by you, 22 Oct, before the full run)
+
+The briefing's heat term is the method with the higher pooled area-day PR-AUC over the 14 folds, model or persistence (continuous score); the difference and its bootstrap interval are reported either way. If persistence wins, one pre-declared simple model (logistic regression on the same features, chosen per fold the same way) is added and the 14 folds are rerun once; the final check then scores the winner once beside all baselines, and every candidate tried is reported.
