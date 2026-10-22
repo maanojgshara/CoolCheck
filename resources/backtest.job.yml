@@ -1,10 +1,10 @@
-# Kept as .draft (not included by databricks.yml) until my own deploy, so another window's deploy cannot pick up a
-# half-written job. At deploy: rename to backtest.job.yml, then `databricks bundle validate -t dev`, then deploy.
-# The environment pins below are checked against serverless environment 4 at that point.
+# Environment: serverless environment 4 (Python 3.12.3; numpy 2.1.3, pandas 2.2.3, scipy 1.15.1, scikit-learn 1.6.1,
+# pyarrow 19.0.1, mlflow-skinny 2.22.0, per the Databricks release notes, checked 22 Oct 2026). Only lightgbm is added;
+# scikit-learn and mlflow-skinny come from the base, so nothing in it is upgraded.
 resources:
   experiments:
-    # One MLflow experiment for every back-test run (docs/design/backtest.md §7).
-    backtest:
+    # One MLflow experiment for every back-test run (docs/design/backtest.md §7). Keys are unique across resource types.
+    backtest_experiment:
       name: /Workspace/Users/${workspace.current_user.userName}/coolcheck-backtest
 
   jobs:
@@ -26,8 +26,6 @@ resources:
             environment_version: "4"
             dependencies:
               - lightgbm==4.6.0
-              - scikit-learn==1.9.1
-              - mlflow-skinny==3.17.2
       tasks:
         - task_key: backtest
           max_retries: 0
@@ -40,7 +38,7 @@ resources:
               - --src
               - ${workspace.file_path}/src
               - --experiment-id
-              - ${resources.experiments.backtest.id}
+              - ${resources.experiments.backtest_experiment.id}
               - --git-sha
               - ${bundle.git.commit}
               - --cutoff-minutes
