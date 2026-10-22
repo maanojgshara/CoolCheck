@@ -90,11 +90,13 @@ def test_the_job_report_renders(folds_run):
                                    "last": pd.Timestamp("2026-03-31")}]),
            "n_rows": len(rows), "no_feature_row": pd.DataFrame(), "n_area": len(area), "area_dropped": 0,
            "text_disagree": 0, "git_sha": "abc", "code_sha256": "f" * 64, "run_date": "2026-10-23", "cutoff": 15,
-           "bootstrap": 50, "seed": 1, "finished": datetime(2026, 10, 23, tzinfo=timezone.utc), "mode": "test"}
+           "bootstrap": 50, "seed": 1, "finished": datetime(2026, 10, 23, tzinfo=timezone.utc), "mode": "test",
+           "packages": {"python": "3.12.3", "lightgbm": "4.6.0"}}
     text = job.render_report(ctx)
     for heading in ("# Rolling back-test report", "## Headline: area-days over the 41 areas", "Label-noise reference",
                     "## Hyper-parameters chosen per fold", "## Inter-monsoon 1, 2025", "## Three classes",
                     "| persistence (binary) |", f"persistence alerts K = {res['sets']['area41']['K']:,}",
                     "## Bootstrap resamples skipped, per evaluation set and period", "| station_all_feb_aug_2026 | 2026-02-01 to",
-                    "Input to note §13"):
+                    "Input to note §13", "Packages this run used: python 3.12.3, lightgbm 4.6.0", "test_pr_auc"):
         assert heading in text
+    assert "test_pr_auc" in records.columns and records.test_pr_auc.notna().any()

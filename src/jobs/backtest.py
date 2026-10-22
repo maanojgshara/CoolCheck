@@ -97,6 +97,21 @@ def check_view(ws, view, labels, dist, cutoff):
     return out
 
 
+def package_versions():
+    """The versions this run actually used."""
+    import importlib
+    import platform
+
+    out = {"python": platform.python_version()}
+    for module, name in (("pandas", "pandas"), ("numpy", "numpy"), ("sklearn", "scikit-learn"),
+                         ("lightgbm", "lightgbm"), ("mlflow", "mlflow"), ("scipy", "scipy"), ("pyarrow", "pyarrow")):
+        try:
+            out[name] = getattr(importlib.import_module(module), "__version__", "unknown")
+        except ImportError:
+            out[name] = "not installed"
+    return out
+
+
 def code_sha256():
     h = hashlib.sha256()
     for f in CODE_FILES:
@@ -202,7 +217,8 @@ def render_report(ctx):
           f"code sha256 `{ctx['code_sha256'][:16]}…`, run date {ctx['run_date']} (SGT), cut-off {ctx['cutoff']} min "
           f"after 00:00 on the target date, folds {ctx['folds'][0]:%Y-%m} to {ctx['folds'][-1]:%Y-%m}, "
           f"{ctx['bootstrap']:,} block resamples, seed {ctx['seed']}. This report states numbers; it does not interpret "
-          "them. Nothing was read, fitted or scored after 2026-08-31.", ""]
+          "them. Nothing was read, fitted or scored after 2026-08-31.", "",
+          "Packages this run used: " + ", ".join(f"{k} {v}" for k, v in ctx["packages"].items()) + ".", ""]
     L += ["## Inputs (pinned)", ""] + md(pd.DataFrame(ctx["lineage_rows"])) + [""]
     v = ctx["view_check"]
     L += [f"View `{v['view']}`: definition equals `nearest_station_sql(..., island_rule=True)`: "
@@ -214,7 +230,9 @@ def render_report(ctx):
           f"row (a station's first day, or first day back): {len(ctx['no_feature_row']):,}. Test area-days over the 41 "
           f"areas: {ctx['n_area']:,}; dropped because their station-day is not usable: {ctx['area_dropped']:,}.", ""]
     L += md(rec[["fold", "train_rows", "train_high", "train_last_date", "test_rows", "test_high", "config", "num_leaves",
-                 "rounds", "nea_theta", "unseen_text_rows", "filled_test_dates"]]) + [""]
+                 "rounds", "test_pr_auc", "nea_theta", "unseen_text_rows", "filled_test_dates"]]) + [""]
+    L += ["`test_pr_auc` is the model's station-level PR-AUC within the fold's month (no interval; a month with no High "
+          "has none).", ""]
     tf = ctx["fills"]
     tf = tf[tf.split == "test"] if len(tf) else tf
     L += ["### Forecasts filled in the test months (rule: §5.1 step 2)", ""]
@@ -299,6 +317,7 @@ def log_mlflow(ctx, out):
               "char_min_days": "20 of 30", "same_month_min_days": B.SAME_MONTH_MIN_DAYS,
               "half_life_days": B.HALF_LIFE_DAYS, "lgb_fixed": json.dumps(B.LGB_FIXED),
               "view_definition_ok": ctx["view_check"]["equals_nearest_station_sql"]}
+    params.update({f"pkg.{k}": v for k, v in ctx["packages"].items()})
     params.update({f"input.{r['input']}": f"{r['type']}; {r['pinned']}; {r['filter']}"[:500] for r in ctx["lineage_rows"]})
     tags = {"backtest_id": bid, "git_sha": ctx["git_sha"]}
 
@@ -391,8 +410,16 @@ def main():
         spark = SparkSession.builder.getOrCreate()
         ws = WorkspaceClient()
     spark.conf.set("spark.sql.session.timeZone", "Asia/Singapore")
+    packages = package_versions()
+    print("packages:", json.dumps(packages), flush=True)
 
     started = datetime.now(SGT)
+    stages = {}
+
+    def mark(stage):  # seconds since start, per stage, for the run-time estimate
+        stages[stage] = round((datetime.now(SGT) - started).total_seconds(), 1)
+        print(f"[{stages[stage]:7.1f} s] {stage}", flush=True)
+
     run_date = started.date()
     folds = B.FOLDS[:a.folds]
     last_target = (folds[-1] + pd.offsets.MonthEnd(0)).date()
@@ -438,6 +465,8 @@ def main():
         {"input": t["view"], "type": "view", "filter": "definition only",
          "pinned": f"definition sha256 {view_check['definition_sha256']}"}]
 
+    mark("inputs pinned")
+
     # ---- features, labels, rows
     targets = spark.sql(f"SELECT explode(sequence(DATE'{B.FIRST_TARGET:%Y-%m-%d}', DATE'{last_target}')) AS target_date")
     feats = station_day_features(wbgt, rain, fc, targets, run_date, a.cutoff_minutes).toPandas()
@@ -453,6 +482,8 @@ def main():
     no_row = lab_in.merge(keys, how="left", indicator=True).query("_merge == 'left_only'")
     text_disagree = int((~feats.forecast_missing & ~feats.fc_text_agrees.eq(True)).sum())
 
+    mark("features and labels")
+
     # ---- area mapping: the view's SQL over the pinned copies
     amap = (spark.sql(nearest_station_sql("bt_labels_pinned", "bt_dist_pinned", BOUNDARY, a.cutoff_minutes, LOOKBACK, True))
             .where(f"target_date BETWEEN DATE'{B.FIRST_TARGET:%Y-%m-%d}' AND DATE'{last_target}'")
@@ -463,8 +494,11 @@ def main():
     if len(orphan):
         raise SystemExit(f"{len(orphan)} area-days whose station has no feature row, e.g. {orphan.head(3).to_dict('records')}")
 
+    mark("area mapping")
+
     # ---- folds and evaluation
     pooled, records, fills, boosters = B.run_folds(rows, labels, folds=folds, ablations=not a.no_ablations)
+    mark("folds fitted")
     best, best_aps = B.best_overall(pooled)
     test41 = amap41[amap41.target_date >= folds[0]]
     area = test41.merge(pooled, on=["station_id", "target_date"], how="inner")
@@ -477,6 +511,8 @@ def main():
     audit = window_audit({"labels (pinned)": (lab_pdf, "sgt_date"), "features": (feats, "target_date"),
                           "labels (usable)": (labels, "target_date"), "area mapping": (amap, "target_date"),
                           "pooled predictions": (pooled, "target_date"), "area-days": (area, "target_date")}, last_target)
+
+    mark("evaluation and bootstrap")
 
     # ---- artifacts and report
     out = Path(a.out_dir) if a.profile else Path(tempfile.mkdtemp(prefix="backtest_"))
@@ -510,16 +546,25 @@ def main():
            "no_feature_row": no_row, "n_area": len(area), "area_dropped": len(test41) - len(area),
            "text_disagree": text_disagree, "git_sha": a.git_sha, "code_sha256": code_sha256(), "run_date": run_date,
            "cutoff": a.cutoff_minutes, "bootstrap": a.bootstrap, "seed": a.seed, "finished": finished,
-           "mode": "Databricks Connect, not logged" if a.profile else "bundle job",
+           "mode": "Databricks Connect, not logged" if a.profile else "bundle job", "packages": packages,
            "experiment_id": a.experiment_id, "backtest_id": uuid.uuid4().hex[:12]}
+    mark("artifacts written")
     (out / "lineage.json").write_text(json.dumps({"inputs": lineage_rows, "view_check": view_check,
                                                   "git_sha": a.git_sha, "code_sha256": ctx["code_sha256"],
+                                                  "packages": packages, "stages_seconds": stages,
                                                   "run_date": str(run_date), "started": started.isoformat(),
                                                   "finished": finished.isoformat()}, default=str, indent=1))
-    (out / "report.md").write_text(render_report(ctx), encoding="utf-8")
+    report = render_report(ctx)
+    (out / "report.md").write_text(report, encoding="utf-8")
     print(f"report and artifacts in {out}")
     if not a.profile:
-        print("model run:", log_mlflow(ctx, out))
+        run_id = log_mlflow(ctx, out)
+        mark("logged to MLflow")
+        print(f"MLflow model run: {ws.config.host.rstrip('/')}/ml/experiments/{a.experiment_id}/runs/{run_id}")
+    print("stages (s):", json.dumps(stages))
+    print("=== REPORT START ===")
+    print(report)
+    print("=== REPORT END ===", flush=True)
 
 
 if __name__ == "__main__":

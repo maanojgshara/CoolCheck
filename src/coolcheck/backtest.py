@@ -258,6 +258,7 @@ def run_folds(rows, labels, folds=FOLDS, ablations=True):
         records.append({"fold": m, "train_rows": len(tr), "train_high": int((tr.y == HIGH).sum()),
                         "train_last_date": tr.target_date.max(), "test_rows": len(te),
                         "test_high": int((te.y == HIGH).sum()), "config": choice,
+                        "test_pr_auc": pr_auc(te.y == HIGH, pred.p_high),  # NaN in a month with no High
                         "num_leaves": leaves, "rounds": rounds,
                         "choice_aps": {HP_CANDIDATES[i]: round(v, 6) for i, v in aps.items()},
                         "nea_theta": theta, "nea_theta_f1": theta_f1, "text_categories": len(cats),
