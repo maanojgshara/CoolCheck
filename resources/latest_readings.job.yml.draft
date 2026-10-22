@@ -1,0 +1,37 @@
+# DRAFT: rename to latest_readings.job.yml to activate (the bundle includes resources/*.yml only).
+# D9 latest readings and the freshness alarm: refreshes gold.latest_readings and gold.stream_status from the
+# collector's live files, then fails when the newest WBGT reading is more than 90 minutes old; the failure e-mail is
+# the alarm. Hourly while developing (changes to every 15 minutes later).
+#
+# The failure e-mail goes to the deploying user (workspace.current_user.userName), so no address is in the repository
+# and no variable has to be set for a validate or deploy.
+
+resources:
+  jobs:
+    latest_readings:
+      name: coolcheck latest readings
+      max_concurrent_runs: 1
+      timeout_seconds: 900
+      schedule:
+        quartz_cron_expression: "0 5 * * * ?"
+        timezone_id: Asia/Singapore
+        pause_status: UNPAUSED
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+        no_alert_for_skipped_runs: true
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+      tasks:
+        - task_key: latest_readings
+          max_retries: 0
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/latest_readings.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --src
+              - ${workspace.file_path}/src
