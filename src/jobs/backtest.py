@@ -119,7 +119,7 @@ def check_feature_cutoffs(f):
     cut = pd.to_datetime(f.cutoff_ts)
     late = ((pd.to_datetime(f.inputs_max_ts) >= cut) | (pd.to_datetime(f.rain_inputs_max_ts) >= cut)
             | (pd.to_datetime(f.fc_updated_ts) > cut)
-            | (pd.to_datetime(f.fc_issue_ts) < pd.to_datetime(f.target_date) - pd.Timedelta(hours=7)))
+            | (pd.to_datetime(f.fc_issue_ts) < pd.to_datetime(f.target_date) - np.timedelta64(7, "h")))
     if late.any():
         raise SystemExit(f"{int(late.sum())} feature rows used an input outside the cut-off rules")
 
@@ -437,7 +437,7 @@ def main():
     keys = feats[["station_id", "target_date"]]
     lab_in = labels[labels.target_date >= B.FIRST_TARGET]
     no_row = lab_in.merge(keys, how="left", indicator=True).query("_merge == 'left_only'")
-    text_disagree = int((~feats.forecast_missing & ~feats.fc_text_agrees.fillna(False).astype(bool)).sum())
+    text_disagree = int((~feats.forecast_missing & ~feats.fc_text_agrees.eq(True)).sum())
 
     # ---- area mapping: the view's SQL over the pinned copies
     amap = (spark.sql(nearest_station_sql("bt_labels_pinned", "bt_dist_pinned", BOUNDARY, a.cutoff_minutes, LOOKBACK, True))

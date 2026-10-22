@@ -1,6 +1,6 @@
 """The evaluation sets (note §6) and the job's report on synthetic folds: local, no Spark and no workspace."""
 import importlib.util
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -58,11 +58,31 @@ def test_counts_tables(folds_run):
                                                            & (rows.target_date < "2025-06-01")])
 
 
-def test_the_job_report_renders(folds_run):
-    rows, folds, pooled, records, fills, best, best_aps, area, res = folds_run
+def _job():
     spec = importlib.util.spec_from_file_location("backtest_job", JOB)
     job = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(job)
+    return job
+
+
+@pytest.mark.filterwarnings("error")
+def test_the_job_cutoff_check_passes_good_rows_and_stops_a_late_input():
+    job = _job()
+    f = pd.DataFrame({"target_date": [date(2025, 7, 1), date(2025, 7, 2)],
+                      "cutoff_ts": pd.to_datetime(["2025-07-01 00:15", "2025-07-02 00:15"]),
+                      "inputs_max_ts": pd.to_datetime(["2025-06-30 16:00", None]),
+                      "rain_inputs_max_ts": pd.to_datetime(["2025-06-30 23:55", "2025-07-01 23:55"]),
+                      "fc_updated_ts": pd.to_datetime(["2025-06-30 23:10", None]),
+                      "fc_issue_ts": pd.to_datetime(["2025-06-30 23:00", None])})
+    job.check_feature_cutoffs(f)  # no warning, no stop
+    late = f.assign(fc_issue_ts=pd.to_datetime(["2025-06-30 16:59", None]))  # before 17:00 on T-1
+    with pytest.raises(SystemExit, match="outside the cut-off rules"):
+        job.check_feature_cutoffs(late)
+
+
+def test_the_job_report_renders(folds_run):
+    rows, folds, pooled, records, fills, best, best_aps, area, res = folds_run
+    job = _job()
     ctx = {"results": res, "records": records, "fills": fills, "folds": list(folds), "best": best, "best_aps": best_aps,
            "lineage_rows": [{"input": "x", "type": "t", "pinned": "p", "filter": "f"}],
            "view_check": {"view": "v", "definition_sha256": "0" * 64, "equals_nearest_station_sql": True},

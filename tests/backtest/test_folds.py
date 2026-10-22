@@ -35,6 +35,7 @@ def test_a_training_row_on_the_fold_start_is_caught():
 def test_a_date_after_2026_08_31_never_reaches_a_fold():
     rows = synthetic_rows()
     late = rows.groupby("station_id").tail(1).assign(target_date=pd.Timestamp("2026-09-01"))  # one per station
+    late["target_date"] = late.target_date.astype(rows.target_date.dtype)  # the same unit, so concat needs no NaT fill
     bad = pd.concat([rows, late], ignore_index=True)
     with pytest.raises(AssertionError, match="after 2026-08-31"):
         run_folds(bad, labels_of(rows), folds=FOLDS[:1])        # a row in the final-check window
