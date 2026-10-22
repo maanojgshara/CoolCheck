@@ -4,6 +4,7 @@ import pytest
 from pyspark.sql import functions as F
 
 from silver_fixtures import bronze_rows, page, wbgt_page
+from coolcheck import dq
 from coolcheck import silver as S
 from coolcheck.bronze import bronze_columns
 from coolcheck.timeutil import sgt_instant
@@ -74,7 +75,7 @@ def test_rainfall_parse_and_flags(spark):
     assert rows["S1x"].fail_station_listed and rows["S1x"].fail_rain_non_negative
 
 
-def _fc(issue, start, end, text, date_="2025-01-17"):
+def _fc(issue, start, end, text, date_="2025-01-17", regions=None):
     return {"date": date_, "timestamp": issue, "updatedTimestamp": issue,
             "general": {"temperature": {"low": 24, "high": 33, "unit": "Degrees Celsius"},
                         "relativeHumidity": {"low": 60, "high": 95, "unit": "Percentage"},
@@ -82,7 +83,7 @@ def _fc(issue, start, end, text, date_="2025-01-17"):
                         "validPeriod": {"start": start, "end": end, "text": text},
                         "wind": {"speed": {"low": 10, "high": 20}, "direction": "NNE"}},
             "periods": [{"timePeriod": {"start": start, "end": end, "text": "x"},
-                         "regions": {"west": {"code": "SH", "text": "Showers"}, "east": {"code": "SH", "text": "Showers"}}}]}
+                         "regions": regions or {"west": {"code": "SH", "text": "Showers"}, "east": {"code": "SH", "text": "Showers"}}}]}
 
 
 def test_forecast_validity_rules(spark):
@@ -122,3 +123,38 @@ def test_dedupe_order_live_then_mtime_then_path(spark):
     same_mtime = (bronze_rows(spark, [line_b], "wbgt_2025-03-01a.jsonl", mtime=t1)
                   .unionByName(bronze_rows(spark, [line_a], "wbgt_2025-03-01b.jsonl", mtime=t1)))
     assert S.parse_wbgt(same_mtime).orderBy(S.sequence_col().desc()).first().wbgt_raw == "26.1"  # later path ("b")
+
+
+def _regions(order, east_text="Showers"):
+    cells = {"west": {"code": "SH", "text": "Showers"}, "east": {"code": "SH", "text": east_text},
+             "central": {"code": "TL", "text": "Thundery Showers"}}
+    return {k: cells[k] for k in order}
+
+
+def _forecast_copies(spark, *region_sets):
+    """One forecast issue (the same key) in several files, each copy with its own regions dict."""
+    rows = None
+    for i, regions in enumerate(region_sets):
+        rec = _fc("2025-01-17T23:11:00+08:00", "2025-01-18T00:00:00+08:00", "2025-01-19T00:00:00+08:00",
+                  "0 AM 18 Jan to 0 AM 19 Jan", regions=regions)
+        df = bronze_rows(spark, [page("forecast", {"records": [rec]})], f"forecast_2025-01-17_{i}.jsonl",
+                         file_date=date(2025, 1, 17))
+        rows = df if rows is None else rows.unionByName(df)
+    return S.parse_forecast(rows)
+
+
+def test_forecast_hash_ignores_the_key_order_of_regions(spark):
+    parsed = _forecast_copies(spark, _regions(["west", "east", "central"]), _regions(["central", "east", "west"]),
+                              _regions(["east", "central", "west"]))
+    assert parsed.count() == 3
+    assert parsed.select("content_hash").distinct().count() == 1
+    assert dq.dq_conflicts(parsed, "forecast").count() == 0
+
+
+def test_forecast_hash_changes_when_a_region_text_changes(spark):
+    parsed = _forecast_copies(spark, _regions(["west", "east", "central"]),
+                              _regions(["west", "east", "central"], east_text="Light Rain"),
+                              _regions(["central", "east", "west"], east_text="Light Rain"))
+    assert parsed.select("content_hash").distinct().count() == 2   # the third copy only reorders the second
+    conflicts = dq.dq_conflicts(parsed, "forecast").collect()
+    assert len(conflicts) == 3 and {c.n_versions for c in conflicts} == {2}

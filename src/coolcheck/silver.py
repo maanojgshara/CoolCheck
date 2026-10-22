@@ -186,6 +186,13 @@ def _text_hour(h, ampm):
     return F.when(_text_part(ampm) == "PM", hh + 12).otherwise(hh)
 
 
+def _periods_for_hash(col):
+    """periods with each period's regions as (key, value) entries sorted by key. The API sends the regions in no fixed
+    order and a map's JSON keeps the order it arrived in, so hashing the map itself called reordered copies different."""
+    return F.transform(col, lambda p: F.struct(p["timePeriod"].alias("timePeriod"),
+                                               F.array_sort(F.map_entries(p["regions"])).alias("regions")))
+
+
 def parse_forecast(bronze: DataFrame) -> DataFrame:
     recs = _pages(bronze, "forecast").select(*META, F.explode("j.data.records").alias("r"))
     g = "r.general"
@@ -228,7 +235,8 @@ def parse_forecast(bronze: DataFrame) -> DataFrame:
         "text_end_month": _month_number(_text_part(8)),
         "content_hash": F.sha2(F.to_json(F.struct(
             "record_date", "valid_start_raw", "valid_end_raw", "valid_text", "temp_low", "temp_high", "rh_low",
-            "rh_high", "forecast_code", "forecast_text", "wind_low", "wind_high", "wind_direction", "periods")), 256),
+            "rh_high", "forecast_code", "forecast_text", "wind_low", "wind_high", "wind_direction",
+            _periods_for_hash("periods").alias("periods"))), 256),
     })
     return with_flags(_with_meta_order(out), FORECAST_RULES)
 
