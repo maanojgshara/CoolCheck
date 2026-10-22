@@ -232,11 +232,23 @@ def render_report(ctx):
               "station_o8": "Station-days: the original 8 (7 after 24 Jun 2026)",
               "area41_feb_aug_2026": "Feb to Aug 2026, area-days (same month last year)",
               "station_all_feb_aug_2026": "Feb to Aug 2026, station-days (same month last year)"}
+    L += ["## Bootstrap resamples skipped, per evaluation set and period", "",
+          "A resample (7-day blocks drawn with replacement) with no High row in a set has no recall or PR-AUC, so it is "
+          "skipped; the intervals use the rest.", ""]
+    L += md(pd.DataFrame([{"set": n, "period": f"{r['first_date']:%Y-%m-%d} to {r['last_date']:%Y-%m-%d}",
+                           "rows": r["rows"], "High": r["positives"], "resamples": r["resamples"],
+                           "skipped": r["skipped"], "used": r["resamples"] - r["skipped"]}
+                          for n, r in res["sets"].items()])) + [""]
     for name, r in res["sets"].items():
         L += [f"## {titles.get(name, name)}", "",
               f"Rows {r['rows']:,}; High {r['positives']:,} ({r['positives'] / max(r['rows'], 1):.1%}, the no-skill "
-              f"PR-AUC); persistence alerts K = {r['K']:,}; resamples skipped (no High): {r['skipped']}.", ""]
+              f"PR-AUC); persistence alerts K = {r['K']:,}; resamples skipped (no High): {r['skipped']} of "
+              f"{r['resamples']:,}.", ""]
         L += method_table(r) + [""]
+        if name == "area41" and ("model", "persistence_continuous") in r["diffs"]:
+            d = r["diffs"][("model", "persistence_continuous")]
+            L += [f"Input to note §13 (the briefing's heat term): pooled area-day PR-AUC, model − persistence (continuous "
+                  f"score) = {_ci(d, 'pr_auc')}.", ""]
         nt = r["nea_rule_at_theta"]
         L += [f"NEA rule at its own per-fold threshold: {nt['tp']:,.0f} of {nt['positives']:,} High (recall "
               f"{nt['recall']:.3f}), {nt['alerts']:,.0f} alerts (precision {nt['precision']:.3f}).", ""]
@@ -310,6 +322,8 @@ def log_mlflow(ctx, out):
 
     model_metrics = collect("model")
     for s, r in res["sets"].items():
+        model_metrics[f"{s}/bootstrap_resamples"] = float(r["resamples"])
+        model_metrics[f"{s}/bootstrap_skipped"] = float(r["skipped"])
         for (a, b), d in r["diffs"].items():
             model_metrics.update(_metrics(d, f"{s}/diff_vs_{'persistence_binary' if b == 'reference' else b}"))
     choices = {f"config.{f:%Y-%m}": str(B.HP_CANDIDATES[c]) for f, c in zip(ctx["records"].fold, ctx["records"].config)}

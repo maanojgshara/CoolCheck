@@ -307,6 +307,8 @@ def _set_eval(frame, methods, n_boot, seed, diffs):
                    [d for d in diffs if d[0] in scores and (d[1] in scores or d[1] == "reference")])
     # recall at load also for the NEA rule at its own threshold (its binary operating point)
     res["nea_rule_at_theta"] = at_load(y, frame.nea_alert.to_numpy(dtype=float))
+    res["first_date"], res["last_date"] = frame.target_date.min(), frame.target_date.max()
+    res["resamples"] = len(draws)
     res["model_weights"] = load_weights(frame.p_high.to_numpy(dtype=float), res["K"])[0]
     return res
 

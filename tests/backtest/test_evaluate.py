@@ -94,5 +94,7 @@ def test_the_job_report_renders(folds_run):
     text = job.render_report(ctx)
     for heading in ("# Rolling back-test report", "## Headline: area-days over the 41 areas", "Label-noise reference",
                     "## Hyper-parameters chosen per fold", "## Inter-monsoon 1, 2025", "## Three classes",
-                    "| persistence (binary) |", f"persistence alerts K = {res['sets']['area41']['K']:,}"):
+                    "| persistence (binary) |", f"persistence alerts K = {res['sets']['area41']['K']:,}",
+                    "## Bootstrap resamples skipped, per evaluation set and period", "| station_all_feb_aug_2026 | 2026-02-01 to",
+                    "Input to note §13"):
         assert heading in text
