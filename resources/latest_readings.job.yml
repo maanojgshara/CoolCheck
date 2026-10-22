@@ -1,4 +1,3 @@
-# DRAFT: rename to latest_readings.job.yml to activate (the bundle includes resources/*.yml only).
 # D9 latest readings and the freshness alarm: refreshes gold.latest_readings and gold.stream_status from the
 # collector's live files, then fails when the newest WBGT reading is more than 90 minutes old; the failure e-mail is
 # the alarm. Hourly while developing (changes to every 15 minutes later).
