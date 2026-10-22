@@ -17,12 +17,16 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
+from coolcheck.backtest import season_period  # noqa: E402
 from coolcheck.metrics import at_load, load_weights, pr_curve  # noqa: E402
 
 SGT = timezone(timedelta(hours=8))
 RUN = "c509ab9ad0d8464f8a1df07354b1bf98"
 RECALLS = (0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+SEASON_RECALLS = (0.4, 0.5, 0.6)
 PEAK = (pd.Timestamp("2026-04-01"), pd.Timestamp("2026-07-01"))  # Apr to Jun 2026
+SEASONS = ("Inter-monsoon 1 2026", "SW monsoon 2026", "the rest (Jul 2025 to Feb 2026)")
+LABELS = {2: "High", 1: "Moderate", 0: "Low"}
 HIGH = 2
 
 
@@ -52,6 +56,68 @@ def operating_points(frame, score, days, peak_days):
                      "alerts per day (Apr to Jun 2026)": int((alert & peak).sum()) / peak_days,
                      "TP": int(r.tp), "recall": r.recall, "precision": r.precision})
     return pd.DataFrame(rows)
+
+
+def first_threshold(score, y, level):
+    """The highest threshold at which the rows scoring at or above it catch at least `level` of the High rows."""
+    curve = pr_curve(y, score)
+    return float(curve[curve.recall >= level - 1e-12].iloc[0].threshold)
+
+
+def union_threshold(frame, level):
+    """The union rule alerts when P(High) >= t or the station was High yesterday (persistence's binary alert). The
+    highest t at which the union catches at least `level` of the High rows (inf if yesterday's High alone does)."""
+    y = (frame.y == HIGH).to_numpy()
+    base = frame.persist_alert.to_numpy(dtype=bool)
+    need = level * y.sum() - (y & base).sum()
+    if need <= 1e-9:
+        return float("inf")
+    s, yr = frame.p_high.to_numpy(dtype=float)[~base], y[~base]
+    order = np.argsort(-s, kind="mergesort")
+    s_o, tp = s[order], np.cumsum(yr[order])
+    last = np.r_[np.flatnonzero(np.diff(s_o) != 0), len(s_o) - 1]  # tie groups: alerts are rows at or above t
+    return float(s_o[last[np.flatnonzero(tp[last] >= need - 1e-9)[0]]])
+
+
+def season_lines(area):
+    """Per season, alerts, TP and recall at overall recall 0.4, 0.5 and 0.6 for the model, persistence (continuous)
+    and the union rule; and the labels of the model's and the union's alerts."""
+    y = (area.y == HIGH).to_numpy()
+    season = area.target_date.map(season_period).where(lambda s: s.isin(SEASONS[:2]), SEASONS[2]).to_numpy()
+    # a missing yesterday ranks lowest in the curve and never alerts (NaN >= t is False)
+    p, w = area.p_high.to_numpy(dtype=float), area.persist_score.to_numpy(dtype=float)
+    base = area.persist_alert.to_numpy(dtype=bool)
+    L = ["## Hot spells: alerts per season at overall recall 0.4, 0.5 and 0.6 (area-days)", "",
+         "For each overall recall level on the area-days: (a) the model at the highest P(High) threshold reaching it; "
+         "(b) persistence (continuous, yesterday's peak WBGT) at the highest threshold reaching the same overall recall; "
+         "(c) the union rule \"P(High) at or above t, or the station was High yesterday\", with t the highest value at "
+         "which the union reaches the same overall recall. Seasons as in the report: inter-monsoon 1 2026 is Mar to May "
+         "2026, SW monsoon 2026 is Jun to Aug 2026 (the test months end there), the rest is Jul 2025 to Feb 2026. "
+         "Recall within a season is over that season's High area-days.", "",
+         "**(c) is a candidate added after the run, at your request on 22 Oct 2026. It is not in the pre-declared design "
+         "(note §13 chose the model), and its t is chosen on the same pooled out-of-fold predictions it is scored on.**",
+         ""]
+    for level in SEASON_RECALLS:
+        t_model, t_pers, t_union = first_threshold(p, y, level), first_threshold(w, y, level), union_threshold(area, level)
+        rules = {"(a) model": (p >= t_model, f"P(High) ≥ {t_model:.3f}"),
+                 "(b) persistence (continuous)": (w >= t_pers, f"yesterday's peak ≥ {t_pers:.1f} °C"),
+                 "(c) union, added after the run": (base | (p >= t_union),
+                                                    f"P(High) ≥ {t_union:.3f}, or High yesterday")}
+        rows, labels = [], []
+        for name, (alert, rule) in rules.items():
+            for s in (*SEASONS, "all"):
+                m = np.ones(len(y), dtype=bool) if s == "all" else season == s
+                a_, tp, hi = int((alert & m).sum()), int((alert & m & y).sum()), int((m & y).sum())
+                rows.append({"rule": name if s == SEASONS[0] else "", "season": s, "alerts": a_, "TP": tp, "High": hi,
+                             "recall": tp / hi if hi else np.nan, "precision": tp / a_ if a_ else np.nan})
+            if not name.startswith("(b)"):
+                lab = area.y[alert].map(LABELS).value_counts()
+                labels.append({"rule": name, "threshold": rule, **{v: int(lab.get(v, 0)) for v in LABELS.values()},
+                               "alerts": int(alert.sum())})
+        L += [f"### Overall recall at least {level}", "",
+              "Thresholds: " + "; ".join(f"{n} {r}" for n, (_, r) in rules.items()) + ".", ""]
+        L += md(pd.DataFrame(rows)) + ["", "Labels of the alerts (area-days):", ""] + md(pd.DataFrame(labels)) + [""]
+    return L
 
 
 def main():
@@ -117,7 +183,8 @@ def main():
         tot = pd.DataFrame([{"month": "all", "rows": g.rows.sum(), "observed_high": g.observed_high.sum(),
                              "sum_p_high": g.sum_p_high.sum(), "observed − expected": g["observed − expected"].sum()}])
         L += [f"### {name}", ""] + md(pd.concat([g, tot], ignore_index=True)) + [""]
-    Path(a.out).write_text("\n".join(L) + "\n", encoding="utf-8")
+    L += season_lines(area)
+    Path(a.out).write_text("\n".join(L) + "\n", encoding="utf-8", newline="\n")
     sys.stdout.reconfigure(encoding="utf-8")  # the Windows console default (cp1252) has no minus sign
     print("\n".join(L))
 

@@ -1,6 +1,6 @@
 # Back-test review tables
 
-Generated 2026-10-22 20:44 SGT by `scripts/analysis/backtest_review.py` at git `06d09e6` from the artifacts of MLflow run `c509ab9ad0d8464f8a1df07354b1bf98` (the run of `docs/checks/backtest.md`), saved in `backtest_run_c509ab9a` under `coolcheck-data/analysis/`. Numbers only; no cut-off is chosen here. Nothing after 2026-08-31 is read (the predictions end on 2026-08-31).
+Generated 2026-10-22 21:16 SGT by `scripts/analysis/backtest_review.py` at git `8baa113` from the artifacts of MLflow run `c509ab9ad0d8464f8a1df07354b1bf98` (the run of `docs/checks/backtest.md`), saved in `backtest_run_c509ab9a` under `coolcheck-data/analysis/`. Numbers only; no cut-off is chosen here. Nothing after 2026-08-31 is read (the predictions end on 2026-08-31).
 
 ## H4 operating points, area-days over the 41 areas
 
@@ -89,4 +89,88 @@ Persistence alerts K times (its binary rule); the model alerts on its K highest 
 | 2026-07 | 804 | 33 | 38.545 | -5.545 |
 | 2026-08 | 822 | 42 | 48.421 | -6.421 |
 | all | 8,001 | 421 | 352.495 | 68.505 |
+
+## Hot spells: alerts per season at overall recall 0.4, 0.5 and 0.6 (area-days)
+
+For each overall recall level on the area-days: (a) the model at the highest P(High) threshold reaching it; (b) persistence (continuous, yesterday's peak WBGT) at the highest threshold reaching the same overall recall; (c) the union rule "P(High) at or above t, or the station was High yesterday", with t the highest value at which the union reaches the same overall recall. Seasons as in the report: inter-monsoon 1 2026 is Mar to May 2026, SW monsoon 2026 is Jun to Aug 2026 (the test months end there), the rest is Jul 2025 to Feb 2026. Recall within a season is over that season's High area-days.
+
+**(c) is a candidate added after the run, at your request on 22 Oct 2026. It is not in the pre-declared design (note §13 chose the model), and its t is chosen on the same pooled out-of-fold predictions it is scored on.**
+
+### Overall recall at least 0.4
+
+Thresholds: (a) model P(High) ≥ 0.154; (b) persistence (continuous) yesterday's peak ≥ 32.7 °C; (c) union, added after the run P(High) ≥ 0.348, or High yesterday.
+
+| rule | season | alerts | TP | High | recall | precision |
+|---|---|---|---|---|---|---|
+| (a) model | Inter-monsoon 1 2026 | 355 | 120 | 364 | 0.330 | 0.338 |
+|  | SW monsoon 2026 | 358 | 137 | 202 | 0.678 | 0.383 |
+|  | the rest (Jul 2025 to Feb 2026) | 140 | 27 | 144 | 0.188 | 0.193 |
+|  | all | 853 | 284 | 710 | 0.400 | 0.333 |
+| (b) persistence (continuous) | Inter-monsoon 1 2026 | 530 | 157 | 364 | 0.431 | 0.296 |
+|  | SW monsoon 2026 | 322 | 92 | 202 | 0.455 | 0.286 |
+|  | the rest (Jul 2025 to Feb 2026) | 268 | 47 | 144 | 0.326 | 0.175 |
+|  | all | 1,120 | 296 | 710 | 0.417 | 0.264 |
+| (c) union, added after the run | Inter-monsoon 1 2026 | 376 | 138 | 364 | 0.379 | 0.367 |
+|  | SW monsoon 2026 | 285 | 115 | 202 | 0.569 | 0.404 |
+|  | the rest (Jul 2025 to Feb 2026) | 174 | 31 | 144 | 0.215 | 0.178 |
+|  | all | 835 | 284 | 710 | 0.400 | 0.340 |
+
+Labels of the alerts (area-days):
+
+| rule | threshold | High | Moderate | Low | alerts |
+|---|---|---|---|---|---|
+| (a) model | P(High) ≥ 0.154 | 284 | 428 | 141 | 853 |
+| (c) union, added after the run | P(High) ≥ 0.348, or High yesterday | 284 | 420 | 131 | 835 |
+
+### Overall recall at least 0.5
+
+Thresholds: (a) model P(High) ≥ 0.110; (b) persistence (continuous) yesterday's peak ≥ 32.5 °C; (c) union, added after the run P(High) ≥ 0.154, or High yesterday.
+
+| rule | season | alerts | TP | High | recall | precision |
+|---|---|---|---|---|---|---|
+| (a) model | Inter-monsoon 1 2026 | 558 | 172 | 364 | 0.473 | 0.308 |
+|  | SW monsoon 2026 | 414 | 141 | 202 | 0.698 | 0.341 |
+|  | the rest (Jul 2025 to Feb 2026) | 208 | 42 | 144 | 0.292 | 0.202 |
+|  | all | 1,180 | 355 | 710 | 0.500 | 0.301 |
+| (b) persistence (continuous) | Inter-monsoon 1 2026 | 704 | 177 | 364 | 0.486 | 0.251 |
+|  | SW monsoon 2026 | 448 | 108 | 202 | 0.535 | 0.241 |
+|  | the rest (Jul 2025 to Feb 2026) | 389 | 70 | 144 | 0.486 | 0.180 |
+|  | all | 1,541 | 355 | 710 | 0.500 | 0.230 |
+| (c) union, added after the run | Inter-monsoon 1 2026 | 544 | 169 | 364 | 0.464 | 0.311 |
+|  | SW monsoon 2026 | 399 | 144 | 202 | 0.713 | 0.361 |
+|  | the rest (Jul 2025 to Feb 2026) | 252 | 43 | 144 | 0.299 | 0.171 |
+|  | all | 1,195 | 356 | 710 | 0.501 | 0.298 |
+
+Labels of the alerts (area-days):
+
+| rule | threshold | High | Moderate | Low | alerts |
+|---|---|---|---|---|---|
+| (a) model | P(High) ≥ 0.110 | 355 | 626 | 199 | 1,180 |
+| (c) union, added after the run | P(High) ≥ 0.154, or High yesterday | 356 | 649 | 190 | 1,195 |
+
+### Overall recall at least 0.6
+
+Thresholds: (a) model P(High) ≥ 0.068; (b) persistence (continuous) yesterday's peak ≥ 32.2 °C; (c) union, added after the run P(High) ≥ 0.086, or High yesterday.
+
+| rule | season | alerts | TP | High | recall | precision |
+|---|---|---|---|---|---|---|
+| (a) model | Inter-monsoon 1 2026 | 988 | 211 | 364 | 0.580 | 0.214 |
+|  | SW monsoon 2026 | 569 | 156 | 202 | 0.772 | 0.274 |
+|  | the rest (Jul 2025 to Feb 2026) | 368 | 60 | 144 | 0.417 | 0.163 |
+|  | all | 1,925 | 427 | 710 | 0.601 | 0.222 |
+| (b) persistence (continuous) | Inter-monsoon 1 2026 | 974 | 214 | 364 | 0.588 | 0.220 |
+|  | SW monsoon 2026 | 739 | 137 | 202 | 0.678 | 0.185 |
+|  | the rest (Jul 2025 to Feb 2026) | 719 | 91 | 144 | 0.632 | 0.127 |
+|  | all | 2,432 | 442 | 710 | 0.623 | 0.182 |
+| (c) union, added after the run | Inter-monsoon 1 2026 | 907 | 216 | 364 | 0.593 | 0.238 |
+|  | SW monsoon 2026 | 509 | 148 | 202 | 0.733 | 0.291 |
+|  | the rest (Jul 2025 to Feb 2026) | 374 | 62 | 144 | 0.431 | 0.166 |
+|  | all | 1,790 | 426 | 710 | 0.600 | 0.238 |
+
+Labels of the alerts (area-days):
+
+| rule | threshold | High | Moderate | Low | alerts |
+|---|---|---|---|---|---|
+| (a) model | P(High) ≥ 0.068 | 427 | 1,126 | 372 | 1,925 |
+| (c) union, added after the run | P(High) ≥ 0.086, or High yesterday | 426 | 1,033 | 331 | 1,790 |
 
