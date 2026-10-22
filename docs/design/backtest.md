@@ -286,3 +286,38 @@ Order, with a diff and your OK before each commit:
 The briefing's heat term is the method with the higher pooled area-day PR-AUC over the 14 folds, model or persistence (continuous score); the difference and its bootstrap interval are reported either way. If persistence wins, one pre-declared simple model (logistic regression on the same features, chosen per fold the same way) is added and the 14 folds are rerun once; the final check then scores the winner once beside all baselines, and every candidate tried is reported.
 
 **Outcome (full run of 22 Oct 2026, MLflow run c509ab9ad0d8464f8a1df07354b1bf98; `docs/checks/backtest.md`):** the model wins: pooled area-day PR-AUC 0.295 against 0.235 for persistence (continuous score), difference 0.061 (95% interval 0.009 to 0.115). No logistic-regression rerun.
+
+## 14. H4 decision: the High-alert cut-off (decided by you, 22 Oct 2026)
+
+**Decision.** The plain model at pooled area-day recall 0.50: an area-day alerts when the model's P(High) is at or above **0.10975585695894975** (shown as 0.110). It is the highest threshold at which the pooled out-of-fold area-day predictions of the full run (MLflow run c509ab9ad0d8464f8a1df07354b1bf98) catch at least half of the High area-days. Four area-days (one station-day shared by four areas) score exactly this value; the next lower score is 0.1094809790716477. The union rule (c) is not adopted.
+
+**Back-test numbers at the cut-off** (area-days over the 41 areas, Jul 2025 to Aug 2026; `docs/checks/backtest_review.md`):
+- 1,180 alerts; 355 of 710 High area-days caught (recall 0.500); precision 0.301. Persistence (continuous score) needs 1,541 alerts for the same recall (precision 0.230).
+- Alerts per day: 2.76 over the 427 test days; 7.74 a day in Apr to Jun 2026.
+- Per season: inter-monsoon 1 2026, 558 alerts, 172 of 364 High (recall 0.473); SW monsoon 2026, 414 alerts, 141 of 202 (0.698); Jul 2025 to Feb 2026, 208 alerts, 42 of 144 (0.292).
+
+**Why recall 0.50.** Alerts per extra High area-day caught: 4.6 from recall 0.4 to 0.5 (327 more alerts for 71 more High), 10.3 from 0.5 to 0.6 (745 more for 72 more).
+
+**The union rule (c)**, a candidate added after the run, gave no gain at this recall (356 caught with 1,195 alerts, against 355 with 1,180 for the model). It stays reported in `docs/checks/backtest_review.md` only.
+
+**Limits.**
+1. The cut-off was read from the same pooled predictions it is scored on, so the final check (1 Sep to 19 Oct 2026) is its only out-of-sample test.
+2. The model under-predicts hot months (Apr 2026: P(High) summed to 81.7 against 184 observed High area-days), so P(High) is used only as an alert cut-off and is never shown to users as a percentage.
+
+## 15. The final check: what this note fixes and what is open (checked 22 Oct 2026)
+
+Nothing here is built or run; the final check runs on your word.
+
+**Fixed by this note:**
+- **Window and use:** 1 Sep to 19 Oct 2026, scored once, after the cut-off is fixed (D6 rule 1); High against not High only (D6 rule 3); counts beside every rate (D6 rule 2). Labels from completed days only (§1), so the run must start on or after 20 Oct.
+- **Model settings:** the 11 features of §3, the station character kept (choice 6: pooled station-level PR-AUC 0.340 with it against 0.296 without, difference 0.044, 0.009 to 0.078); the fixed LightGBM parameters of §5.2 with seed 42; the configuration chosen on all 14 folds (§5.2): 7 leaves and 150 rounds, pooled station-level PR-AUC 0.345, the best of the four.
+- **Fitted on training rows only, by the rules of §5.1 and §5.3:** the forecast fill (Sep and Oct from the training dates of those calendar months), the text categories, and the NEA rule's threshold. Same month last year uses Sep and Oct 2025. Persistence needs no fitting.
+- **Cut-off:** 0.10975585695894975 (§14).
+- **Sets:** area-days over the 41 areas; station-days for all stations, without S142, S137 and S135, and the original 8 (7 stations after S130 stopped) (D6 rule 6).
+
+**Open (each needs your decision; none is filled):**
+1. **Training window.** The note does not say. Proposal: one model fitted on target dates 2025-01-17 to 2026-08-31 (all back-test rows: 9,308 station-days, 465 High), predicting every date from 1 Sep to 19 Oct with no refit. The alternative, refitting for October on rows up to 30 Sep as the folds did, would fit on final-check labels.
+2. **What is reported.** §6 covers the rolling folds only. Proposal, as you listed, beside every baseline (persistence binary and continuous, the NEA rule, same month last year) and per set: PR-AUC; recall and precision at the cut-off and at persistence's alert load, with counts; alerts per day at the cut-off. Written to `docs/checks/final_check.md` and one MLflow run tagged `role = final_check` in the same experiment.
+3. **Intervals.** The 49 days make 7 weekly blocks, too few for a stable block bootstrap. Proposal: counts with Wilson 95% intervals for recall and precision (as in D6 rule 2's example), stated as too narrow because area-days sharing a station, and consecutive days, are not independent.
+4. **Lifting the date guard for scoring only.** The code has no final-check path: `HOLDOUT_START` is a constant and every frame is asserted before it. Proposal: a separate entry point that (a) fits as above with every guard on, all fitted inputs asserted on or before 2026-08-31; (b) only then builds the features and labels of 1 Sep to 19 Oct, asserts they lie inside that window, and passes them to no fit; (c) refuses to run if the experiment already holds a `final_check` run, so it is scored once.
+5. **Does the cut-off transfer to the final model?** Not automatically. 0.10975585695894975 is an absolute probability read from the pooled predictions of 14 fold models whose scales differ: their training High rates ran from 2.8% to 5.1%, the per-month sum of P(High) ran from 81.7 against 184 observed (Apr 2026) to 82.0 against 63 (Aug 2026), and at the cut-off recall was 0.473 in inter-monsoon 1 2026 and 0.698 in SW monsoon 2026. The final model would be trained on 9,308 rows with 465 High (5.0%), close to the last fold's 8,486 rows with 423 High (5.0%), so its scale should be nearest the late folds'. Re-deriving the cut-off for the new model would need final-check labels or in-sample predictions, both ruled out. Proposal: keep the absolute cut-off as decided, report the final check's alerts per day and recall at it beside the back-test's 2.76 a day and 0.50, and judge model against baselines on the comparisons that do not depend on the scale (PR-AUC, recall at persistence's load).
