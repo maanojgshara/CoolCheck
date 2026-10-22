@@ -284,3 +284,5 @@ Order, with a diff and your OK before each commit:
 ## 13. The briefing's heat term (decided by you, 22 Oct, before the full run)
 
 The briefing's heat term is the method with the higher pooled area-day PR-AUC over the 14 folds, model or persistence (continuous score); the difference and its bootstrap interval are reported either way. If persistence wins, one pre-declared simple model (logistic regression on the same features, chosen per fold the same way) is added and the 14 folds are rerun once; the final check then scores the winner once beside all baselines, and every candidate tried is reported.
+
+**Outcome (full run of 22 Oct 2026, MLflow run c509ab9ad0d8464f8a1df07354b1bf98; `docs/checks/backtest.md`):** the model wins: pooled area-day PR-AUC 0.295 against 0.235 for persistence (continuous score), difference 0.061 (95% interval 0.009 to 0.115). No logistic-regression rerun.
