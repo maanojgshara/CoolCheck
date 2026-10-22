@@ -25,7 +25,7 @@ USABLE_RULES = {
     "air_temperature": ("has_key", "sgt_offset", "temp_present", "temp_in_range", "unit_celsius"),
 }
 LATEST_DDL = ("measure STRING, station_id STRING, station_name STRING, lat DOUBLE, lon DOUBLE, reading_ts TIMESTAMP, "
-              "value DOUBLE, unit STRING, heat_stress STRING, n_readings INT, loaded_at TIMESTAMP")
+              "value DOUBLE, unit STRING, heat_stress STRING, n_readings INT, loaded_at TIMESTAMP, window_end TIMESTAMP")
 STATUS_DDL = ("measure STRING, last_reading_ts TIMESTAMP, stations_reporting_1h INT, stations_known_24h INT, "
               "age_minutes DOUBLE, loaded_at TIMESTAMP")
 LATEST_COLS = [c.split()[0] for c in LATEST_DDL.split(", ")]
@@ -78,7 +78,8 @@ def _rows(df: DataFrame, measure: str, value: str, unit, heat, now: datetime) ->
         F.lit(measure).alias("measure"), "station_id", "station_name",
         F.col("station_lat").alias("lat"), F.col("station_lon").alias("lon"), "reading_ts",
         F.col(value).alias("value"), unit.alias("unit"), heat.alias("heat_stress"),
-        F.lit(None).cast("int").alias("n_readings"), _instant(now).alias("loaded_at"))
+        F.lit(None).cast("int").alias("n_readings"), _instant(now).alias("loaded_at"),
+        F.lit(None).cast("timestamp").alias("window_end"))
 
 
 def latest_rows(parsed: DataFrame, feed: str, now: datetime) -> DataFrame:
@@ -93,23 +94,30 @@ def latest_rows(parsed: DataFrame, feed: str, now: datetime) -> DataFrame:
 
 
 def rainfall_last_hour_rows(parsed_rain: DataFrame, stations: DataFrame, now: datetime) -> DataFrame:
-    """Per station: the sum of rainfall over readings with reading_ts in (now - 60 min, now], and how many readings it
-    used. A station with no reading in the hour gets value NULL and n_readings 0. Copies of a reading in several files
-    count once. `stations` has station_id, station_name, lat, lon. parsed_rain is None when there are no live files."""
-    start = _instant(now - timedelta(hours=1))
+    """Per station: the sum of rainfall over readings with reading_ts in (window_end - 60 min, window_end], and how many
+    readings it used. window_end is the feed's newest usable reading at or before now, one end time for all stations:
+    the feed lags the run by 10 to 25 minutes, so a window ending at the run time would sum only part of the hour. A
+    station with no reading in the window (one that lags behind the feed, for example) gets value NULL and n_readings
+    0, so n_readings shows how much of the hour each sum covers. Copies of a reading in several files count once.
+    `stations` has station_id, station_name, lat, lon. parsed_rain is None when there are no live files; then
+    window_end is NULL too."""
     if parsed_rain is None:
         agg = (stations.select("station_id").limit(0).withColumn("value", F.lit(None).cast("double"))
                .withColumn("n_readings", F.lit(None).cast("int")).withColumn("reading_ts", F.lit(None).cast("timestamp")))
+        end = stations.sparkSession.createDataFrame([(None,)], "window_end TIMESTAMP")
     else:
-        in_hour = dedupe_copies(_usable(parsed_rain, "rainfall", now)).where(F.col("reading_ts") > start)
+        usable = dedupe_copies(_usable(parsed_rain, "rainfall", now))
+        end = usable.agg(F.max("reading_ts").alias("window_end"))
+        in_hour = usable.crossJoin(end).where(F.col("reading_ts") > F.col("window_end") - F.expr("INTERVAL 60 MINUTES"))
         agg = in_hour.groupBy("station_id").agg(
             F.sum("rainfall_mm").alias("value"), F.count("rainfall_mm").cast("int").alias("n_readings"),
             F.max("reading_ts").alias("reading_ts"))
     st = stations.select("station_id", "station_name", "lat", "lon").dropDuplicates(["station_id"])
-    return (st.join(agg, "station_id", "left")
+    return (st.join(agg, "station_id", "left").crossJoin(end)
             .select(F.lit(LAST_HOUR).alias("measure"), "station_id", "station_name", "lat", "lon", "reading_ts", "value",
                     F.lit("mm").alias("unit"), F.lit(None).cast("string").alias("heat_stress"),
-                    F.coalesce("n_readings", F.lit(0)).cast("int").alias("n_readings"), _instant(now).alias("loaded_at")))
+                    F.coalesce("n_readings", F.lit(0)).cast("int").alias("n_readings"), _instant(now).alias("loaded_at"),
+                    "window_end"))
 
 
 def merge_latest(existing: DataFrame, new: DataFrame) -> DataFrame:

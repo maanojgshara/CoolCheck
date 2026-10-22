@@ -20,6 +20,7 @@ args = ap.parse_args()
 sys.path.insert(0, args.src)
 
 from pyspark.sql import SparkSession  # noqa: E402
+from pyspark.sql import functions as F  # noqa: E402
 
 spark = SparkSession.builder.getOrCreate()
 from coolcheck import latest as L  # noqa: E402
@@ -33,6 +34,11 @@ if now.tzinfo is None:
 latest_t, status_t = f"{cat}.gold.latest_readings", f"{cat}.gold.stream_status"
 spark.sql(f"CREATE TABLE IF NOT EXISTS {latest_t} ({L.LATEST_DDL})")
 spark.sql(f"CREATE TABLE IF NOT EXISTS {status_t} ({L.STATUS_DDL})")
+# tables created before a column was added to LATEST_DDL get it here, at the end, so the positional insert below fits
+have = set(spark.table(latest_t).columns)
+for col in L.LATEST_DDL.split(", "):
+    if col.split()[0] not in have:
+        spark.sql(f"ALTER TABLE {latest_t} ADD COLUMNS ({col})")
 
 # everything stays in Spark (no collect and rebuild, which could shift timestamps between the Python and session
 # time zones); Delta reads a snapshot, so the overwrite below can replace the table this plan reads
@@ -48,12 +54,16 @@ merged = L.merge_latest(merged, L.rainfall_last_hour_rows(parsed["rainfall"], st
 merged.write.insertInto(latest_t, overwrite=True)
 L.stream_status(spark.table(latest_t), now).write.insertInto(status_t, overwrite=True)
 
-status = spark.table(status_t)
+# times are formatted in Spark (session time zone Asia/Singapore), so the log shows SGT, not the driver's UTC clock
+status = spark.table(status_t).withColumn("newest_sgt", F.date_format("last_reading_ts", "yyyy-MM-dd HH:mm"))
 for r in status.collect():
-    print(f"{r.measure}: newest {r.last_reading_ts}, reporting in the last hour {r.stations_reporting_1h} of "
+    print(f"{r.measure}: newest {r.newest_sgt} SGT, reporting in the last hour {r.stations_reporting_1h} of "
           f"{r.stations_known_24h}, age {r.age_minutes if r.age_minutes is None else round(r.age_minutes, 1)} min")
+end = (spark.table(latest_t).where(f"measure = '{L.LAST_HOUR}'")
+       .agg(F.date_format(F.max("window_end"), "yyyy-MM-dd HH:mm").alias("end")).collect()[0].end)
+print(f"{L.LAST_HOUR}: window ends {end} SGT (the rainfall feed's newest reading)")
 wbgt = status.where("measure = 'wbgt'").collect()[0]
-problem = L.freshness_problem(wbgt.age_minutes, args.max_age_minutes, wbgt.last_reading_ts)
+problem = L.freshness_problem(wbgt.age_minutes, args.max_age_minutes, wbgt.newest_sgt)
 if problem:
     raise RuntimeError(f"FRESHNESS ALARM: {problem}")
 print("fresh")

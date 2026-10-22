@@ -125,21 +125,63 @@ def test_rainfall_last_hour_window_edges_copies_and_empty_stations(spark):
         (iso(16, 20), [("S3", None)]),                   # no value: not counted
         (iso(16, 0), [("S1", 2.0)]),                     # the same reading again in a later file: counted once
         (iso(15, 35), [("S1", 1.0)]),                    # in
-        (iso(15, 30), [("S1", 7.0), ("S2", 4.0)]),       # exactly now - 60 min: out
+        (iso(15, 30), [("S1", 7.0), ("S2", 4.0)]),       # exactly window end - 60 min: out
         (iso(15, 0), [("S2", 3.0)])], ["S1", "S2", "S3"], "mm")
     bronze = live(spark, [older], "rainfall_2026-10-22T160100_1.jsonl", mtime(16, 1)).unionByName(
         live(spark, [newer], "rainfall_2026-10-22T163100_2.jsonl", mtime(16, 31)))
-    out = {r.station_id: r for r in hhmm(L.rainfall_last_hour_rows(
-        S.PARSERS["rainfall"](bronze), stations(spark, ["S1", "S2", "S3"]), at(16, 30))).collect()}
+    out = {r.station_id: r for r in last_hour(spark, bronze, ["S1", "S2", "S3"], at(16, 30))}
+    # the feed's newest usable reading is 16:30 (16:35 is after now), so the window is (15:30, 16:30]
+    assert {r.end for r in out.values()} == {"16:30"}
     assert (out["S1"].value, out["S1"].n_readings, out["S1"].t) == (3.5, 3, "16:30")
     assert (out["S2"].value, out["S2"].n_readings, out["S2"].t) == (None, 0, None)
     assert (out["S3"].value, out["S3"].n_readings) == (None, 0)
     assert {r.measure for r in out.values()} == {L.LAST_HOUR} and {r.unit for r in out.values()} == {"mm"}
 
 
+def every_5_min(start, n, value=0.0):
+    """n readings 5 minutes apart from start (an SGT datetime): [(iso timestamp, value), ...]"""
+    return [((start + timedelta(minutes=5 * i)).isoformat(), value) for i in range(n)]
+
+
+def rain_file(spark, by_station, name="rainfall_2026-10-22T162000_1.jsonl"):
+    """by_station: {station_id: [(iso timestamp, value), ...]} -> one live file with one page."""
+    times = sorted({ts for rs in by_station.values() for ts, _ in rs}, reverse=True)
+    readings = [(ts, [(sid, v) for sid, rs in by_station.items() for t, v in rs if t == ts]) for ts in times]
+    return live(spark, [station_page("rainfall", readings, list(by_station), "mm")], name, mtime(16, 20))
+
+
+def last_hour(spark, bronze, ids, now):
+    df = L.rainfall_last_hour_rows(S.PARSERS["rainfall"](bronze), stations(spark, ids), now)
+    return hhmm(df).withColumn("end", F.date_format("window_end", "HH:mm")).collect()
+
+
+def test_rainfall_last_hour_ends_at_the_feeds_newest_reading_and_shows_a_lagging_station(spark):
+    # the run is at 16:30 but the feed's newest reading is 16:15, so the window is (15:15, 16:15] for every station
+    bronze = rain_file(spark, {
+        "S1": every_5_min(at(15, 15), 13, 0.5),   # 15:15 (exactly the window start: out) to 16:15: 12 in the window
+        "S2": every_5_min(at(15, 20), 8, 1.0),    # lags the feed: newest 15:55, so 8 readings, not 12
+        "S3": every_5_min(at(14, 40), 7, 2.0)})   # stopped at 15:10: none in the window
+    out = {r.station_id: r for r in last_hour(spark, bronze, ["S1", "S2", "S3"], NOW)}
+    assert {r.end for r in out.values()} == {"16:15"}
+    assert (out["S1"].value, out["S1"].n_readings, out["S1"].t) == (6.0, 12, "16:15")
+    assert (out["S2"].value, out["S2"].n_readings, out["S2"].t) == (8.0, 8, "15:55")
+    assert (out["S3"].value, out["S3"].n_readings, out["S3"].t) == (None, 0, None)
+
+
+def test_rainfall_last_hour_counts_a_shower_40_to_60_minutes_before_the_run(spark):
+    # run 16:30, feed newest 16:10 (20 minutes behind). A shower from 15:30 to 15:50, 60 to 40 minutes before the run.
+    # A window ending at the run time, (15:30, 16:30], would hold 8 readings and miss the 15:30 one; this one holds 12.
+    readings = every_5_min(at(15, 15), 12)
+    readings = [(ts, 2.0 if at(15, 30).isoformat() <= ts <= at(15, 50).isoformat() else v) for ts, v in readings]
+    readings.append((at(15, 10).isoformat(), 5.0))   # exactly window end - 60 min: out
+    out = last_hour(spark, rain_file(spark, {"S1": readings}), ["S1"], NOW)
+    assert [(r.value, r.n_readings, r.t, r.end) for r in out] == [(10.0, 12, "16:10", "16:10")]
+
+
 def test_rainfall_last_hour_without_any_live_files(spark):
     out = L.rainfall_last_hour_rows(None, stations(spark, ["S1", "S2"]), NOW).collect()
-    assert sorted((r.station_id, r.value, r.n_readings) for r in out) == [("S1", None, 0), ("S2", None, 0)]
+    assert sorted((r.station_id, r.value, r.n_readings, r.window_end) for r in out) == [
+        ("S1", None, 0, None), ("S2", None, 0, None)]
 
 
 # ---- merge and status ----
@@ -149,7 +191,7 @@ def latest_df(spark, rows):
 
 
 def row(measure, sid, ts, value, loaded, n=None):
-    return (measure, sid, f"name {sid}", 1.3, 103.8, ts, value, "u", None, n, loaded)
+    return (measure, sid, f"name {sid}", 1.3, 103.8, ts, value, "u", None, n, loaded, None)
 
 
 def test_merge_keeps_the_newest_reading_and_always_replaces_last_hour(spark):
