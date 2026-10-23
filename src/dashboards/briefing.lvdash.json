@@ -1,0 +1,991 @@
+{
+  "datasets": [
+    {
+      "name": "ds_thirds_map",
+      "displayName": "Vulnerability third map",
+      "queryLines": [
+        "SELECT m.planning_area AS area_name, m.geometry, v.third,\n",
+        "  CASE v.third WHEN 'lower' THEN 1 WHEN 'middle' THEN 2 WHEN 'upper' THEN 3 END AS third_code\n",
+        "FROM planning_area_map m JOIN area_vulnerability v ON v.planning_area = m.planning_area\n"
+      ]
+    },
+    {
+      "name": "ds_area_facts",
+      "displayName": "Area facts",
+      "queryLines": [
+        "SELECT planning_area, initcap(third) AS third, reason, aged_75_plus, rental_1_2_room, hdb_dwelling_units_confirmed,\n",
+        "  concat(format_number(100 * refuge_beyond_400m, 0), '%') AS refuge_beyond,\n",
+        "  concat(format_number(100 * park_beyond_400m, 0), '%') AS park_beyond,\n",
+        "  coalesce(neutral_components, '') AS held_neutral\n",
+        "FROM area_vulnerability\n"
+      ]
+    },
+    {
+      "name": "ds_blocks",
+      "displayName": "Blocks in priority order",
+      "queryLines": [
+        "SELECT planning_area, priority, concat(blk_no, ' ', street) AS block, rental_1_2_room, total_dwelling_units,\n",
+        "  refuge_main_name, CAST(round(refuge_main_m) AS INT) AS refuge_m,\n",
+        "  CASE WHEN refuge_within_400m THEN 'yes' ELSE 'no' END AS refuge_400m,\n",
+        "  park_main_name, CAST(round(park_main_m) AS INT) AS park_m,\n",
+        "  CASE WHEN park_within_400m THEN 'yes' ELSE 'no' END AS park_400m,\n",
+        "  CASE WHEN confirmed THEN '' ELSE 'coordinate from a tenant record' END AS note\n",
+        "FROM block_vulnerability\n",
+        "ORDER BY planning_area, priority\n"
+      ]
+    },
+    {
+      "name": "ds_points",
+      "displayName": "Blocks and refuges",
+      "queryLines": [
+        "SELECT planning_area, lat, lon,\n",
+        "  CASE WHEN refuge_within_400m THEN 'Block within 400 m of a refuge' ELSE 'Block beyond 400 m of a refuge' END AS point_type,\n",
+        "  concat(blk_no, ' ', street) AS label, greatest(rental_1_2_room, 1) AS marker_size,\n",
+        "  concat('priority ', CAST(priority AS STRING), '; 1-2 room rental flats ', CAST(rental_1_2_room AS STRING)) AS detail\n",
+        "FROM block_vulnerability\n",
+        "UNION ALL\n",
+        "SELECT planning_area, lat, lon, 'Refuge' AS point_type, name AS label, 30 AS marker_size, refuge_type AS detail\n",
+        "FROM refuge_layer\n"
+      ]
+    },
+    {
+      "name": "ds_parks",
+      "displayName": "Parks",
+      "queryLines": [
+        "SELECT planning_area, park_name, geometry, 1 AS park\n",
+        "FROM park_layer\n"
+      ]
+    },
+    {
+      "name": "ds_weights",
+      "displayName": "Weights",
+      "queryLines": [
+        "SELECT component, sub_index, weight, direction, small_area_rule, reason_phrase, review_status\n",
+        "FROM score_weights\n",
+        "ORDER BY sort_order\n"
+      ]
+    },
+    {
+      "name": "ds_actions",
+      "displayName": "Actions per tier",
+      "queryLines": [
+        "SELECT tier, actions, review_status\n",
+        "FROM tier_actions\n",
+        "ORDER BY CASE tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 ELSE 4 END\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "blocks",
+      "displayName": "Blocks",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "blocks-title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Blocks: where to start in an area\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "blocks-subtitle",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Blocks rank vulnerability only, never heat: heat is forecast per planning area. Pick an area; the list puts the blocks with the most 1-2 room rental flats first, then those farthest from a refuge. CoolCheck holds no personal data: match the blocks against your own client list.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "area-filter",
+            "queries": [
+              {
+                "name": "ds_area_facts_area",
+                "query": {
+                  "datasetName": "ds_area_facts",
+                  "fields": [
+                    {
+                      "name": "planning_area",
+                      "expression": "`planning_area`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "ds_blocks_area",
+                "query": {
+                  "datasetName": "ds_blocks",
+                  "fields": [
+                    {
+                      "name": "planning_area",
+                      "expression": "`planning_area`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "ds_points_area",
+                "query": {
+                  "datasetName": "ds_points",
+                  "fields": [
+                    {
+                      "name": "planning_area",
+                      "expression": "`planning_area`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "ds_parks_area",
+                "query": {
+                  "datasetName": "ds_parks",
+                  "fields": [
+                    {
+                      "name": "planning_area",
+                      "expression": "`planning_area`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "planning_area",
+                    "displayName": "Planning area",
+                    "queryName": "ds_area_facts_area"
+                  },
+                  {
+                    "fieldName": "planning_area",
+                    "displayName": "Planning area",
+                    "queryName": "ds_blocks_area"
+                  },
+                  {
+                    "fieldName": "planning_area",
+                    "displayName": "Planning area",
+                    "queryName": "ds_points_area"
+                  },
+                  {
+                    "fieldName": "planning_area",
+                    "displayName": "Planning area",
+                    "queryName": "ds_parks_area"
+                  }
+                ]
+              },
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "BEDOK"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Planning area"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "area-facts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_area_facts",
+                  "fields": [
+                    {
+                      "name": "planning_area",
+                      "expression": "`planning_area`"
+                    },
+                    {
+                      "name": "third",
+                      "expression": "`third`"
+                    },
+                    {
+                      "name": "reason",
+                      "expression": "`reason`"
+                    },
+                    {
+                      "name": "aged_75_plus",
+                      "expression": "`aged_75_plus`"
+                    },
+                    {
+                      "name": "rental_1_2_room",
+                      "expression": "`rental_1_2_room`"
+                    },
+                    {
+                      "name": "hdb_dwelling_units_confirmed",
+                      "expression": "`hdb_dwelling_units_confirmed`"
+                    },
+                    {
+                      "name": "refuge_beyond",
+                      "expression": "`refuge_beyond`"
+                    },
+                    {
+                      "name": "park_beyond",
+                      "expression": "`park_beyond`"
+                    },
+                    {
+                      "name": "held_neutral",
+                      "expression": "`held_neutral`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "planning_area",
+                    "displayName": "Planning area"
+                  },
+                  {
+                    "fieldName": "third",
+                    "displayName": "Vulnerability third"
+                  },
+                  {
+                    "fieldName": "reason",
+                    "displayName": "Why"
+                  },
+                  {
+                    "fieldName": "aged_75_plus",
+                    "displayName": "Residents 75+"
+                  },
+                  {
+                    "fieldName": "rental_1_2_room",
+                    "displayName": "1-2 room rental flats"
+                  },
+                  {
+                    "fieldName": "hdb_dwelling_units_confirmed",
+                    "displayName": "HDB flats"
+                  },
+                  {
+                    "fieldName": "refuge_beyond",
+                    "displayName": "Flats beyond 400 m of a refuge"
+                  },
+                  {
+                    "fieldName": "park_beyond",
+                    "displayName": "Flats beyond 400 m of a park"
+                  },
+                  {
+                    "fieldName": "held_neutral",
+                    "displayName": "Held at the middle (0.5)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "The area"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 8,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "thirds-map",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_thirds_map",
+                  "fields": [
+                    {
+                      "name": "area_name",
+                      "expression": "`area_name`"
+                    },
+                    {
+                      "name": "geojson",
+                      "expression": "ST_ASGEOJSON(FIRST(`geometry`))"
+                    },
+                    {
+                      "name": "max(third_code)",
+                      "expression": "MAX(`third_code`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "choropleth-map",
+              "encodings": {
+                "region": {
+                  "regionType": "geometry",
+                  "fieldName": "geojson"
+                },
+                "color": {
+                  "fieldName": "max(third_code)",
+                  "displayName": "Vulnerability third (1 lower, 3 upper)",
+                  "scale": {
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "custom-sequential",
+                      "colors": {
+                        "start": "#a9a3d6",
+                        "end": "#45207f"
+                      }
+                    }
+                  }
+                },
+                "extra": [
+                  {
+                    "fieldName": "area_name",
+                    "displayName": "Name"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Vulnerability third by planning area (rated areas; the others have no HDB blocks)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 6,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "points-map",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_points",
+                  "fields": [
+                    {
+                      "name": "lat",
+                      "expression": "`lat`"
+                    },
+                    {
+                      "name": "lon",
+                      "expression": "`lon`"
+                    },
+                    {
+                      "name": "point_type",
+                      "expression": "`point_type`"
+                    },
+                    {
+                      "name": "marker_size",
+                      "expression": "`marker_size`"
+                    },
+                    {
+                      "name": "label",
+                      "expression": "`label`"
+                    },
+                    {
+                      "name": "detail",
+                      "expression": "`detail`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "symbol-map",
+              "encodings": {
+                "coordinates": {
+                  "latitude": {
+                    "fieldName": "lat"
+                  },
+                  "longitude": {
+                    "fieldName": "lon"
+                  }
+                },
+                "color": {
+                  "fieldName": "point_type",
+                  "displayName": "Point",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Block within 400 m of a refuge",
+                        "color": "#2a78d6"
+                      },
+                      {
+                        "value": "Block beyond 400 m of a refuge",
+                        "color": "#eb6834"
+                      },
+                      {
+                        "value": "Refuge",
+                        "color": "#1baf7a"
+                      }
+                    ]
+                  }
+                },
+                "size": {
+                  "fieldName": "marker_size",
+                  "displayName": "1-2 room rental flats (refuges fixed)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "extra": [
+                  {
+                    "fieldName": "label",
+                    "displayName": "Block or refuge"
+                  },
+                  {
+                    "fieldName": "detail",
+                    "displayName": "Detail"
+                  }
+                ]
+              },
+              "mark": {
+                "opacity": 0.85
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Blocks (size: 1-2 room rental flats) and refuges in the area"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 6,
+            "width": 6,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "blocks-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_blocks",
+                  "fields": [
+                    {
+                      "name": "priority",
+                      "expression": "`priority`"
+                    },
+                    {
+                      "name": "block",
+                      "expression": "`block`"
+                    },
+                    {
+                      "name": "rental_1_2_room",
+                      "expression": "`rental_1_2_room`"
+                    },
+                    {
+                      "name": "total_dwelling_units",
+                      "expression": "`total_dwelling_units`"
+                    },
+                    {
+                      "name": "refuge_main_name",
+                      "expression": "`refuge_main_name`"
+                    },
+                    {
+                      "name": "refuge_m",
+                      "expression": "`refuge_m`"
+                    },
+                    {
+                      "name": "refuge_400m",
+                      "expression": "`refuge_400m`"
+                    },
+                    {
+                      "name": "park_main_name",
+                      "expression": "`park_main_name`"
+                    },
+                    {
+                      "name": "park_m",
+                      "expression": "`park_m`"
+                    },
+                    {
+                      "name": "park_400m",
+                      "expression": "`park_400m`"
+                    },
+                    {
+                      "name": "note",
+                      "expression": "`note`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "priority",
+                    "displayName": "Priority"
+                  },
+                  {
+                    "fieldName": "block",
+                    "displayName": "Block"
+                  },
+                  {
+                    "fieldName": "rental_1_2_room",
+                    "displayName": "1-2 room rental flats"
+                  },
+                  {
+                    "fieldName": "total_dwelling_units",
+                    "displayName": "Flats"
+                  },
+                  {
+                    "fieldName": "refuge_main_name",
+                    "displayName": "Nearest refuge"
+                  },
+                  {
+                    "fieldName": "refuge_m",
+                    "displayName": "Refuge (m)"
+                  },
+                  {
+                    "fieldName": "refuge_400m",
+                    "displayName": "Refuge within 400 m"
+                  },
+                  {
+                    "fieldName": "park_main_name",
+                    "displayName": "Nearest park"
+                  },
+                  {
+                    "fieldName": "park_m",
+                    "displayName": "Park (m)"
+                  },
+                  {
+                    "fieldName": "park_400m",
+                    "displayName": "Park within 400 m"
+                  },
+                  {
+                    "fieldName": "note",
+                    "displayName": "Note"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Blocks in priority order (straight-line distances)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 12,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "parks-map",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_parks",
+                  "fields": [
+                    {
+                      "name": "park_name",
+                      "expression": "`park_name`"
+                    },
+                    {
+                      "name": "geojson",
+                      "expression": "ST_ASGEOJSON(FIRST(`geometry`))"
+                    },
+                    {
+                      "name": "max(park)",
+                      "expression": "MAX(`park`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "choropleth-map",
+              "encodings": {
+                "region": {
+                  "regionType": "geometry",
+                  "fieldName": "geojson"
+                },
+                "color": {
+                  "fieldName": "max(park)",
+                  "displayName": "Park",
+                  "scale": {
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "custom-sequential",
+                      "colors": {
+                        "start": "#5aa469",
+                        "end": "#5aa469"
+                      }
+                    }
+                  }
+                },
+                "extra": [
+                  {
+                    "fieldName": "park_name",
+                    "displayName": "Name"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Parks in the area (NParks, without the nature reserves)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "what-if",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### What if a refuge were added here?\n",
+                "Reserved for the what-if refuge result (window B's `what_if_add_refuge`, Saturday). Not built yet.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 24,
+            "width": 6,
+            "height": 7
+          }
+        }
+      ]
+    },
+    {
+      "name": "about",
+      "displayName": "About",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "about-title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## About this briefing\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "about-method",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**What a tier means.** Each planning area's tier crosses the forecast heat level for the day (NEA's heat-stress categories: Low, Moderate, High) with how vulnerable the area is, its third among the 32 rated areas:\n",
+                "\n",
+                "| Forecast heat (NEA) / vulnerability | Lower third | Middle third | Upper third |\n",
+                "|---|---|---|---|\n",
+                "| Low | Low | Low | Low |\n",
+                "| Moderate | Low | Medium | Medium |\n",
+                "| High | Medium | High | High |\n",
+                "\n",
+                "Heat is forecast per planning area, from its nearest WBGT station; blocks rank vulnerability only, never heat. The forecast's probability only orders areas inside a tier and is never shown.\n",
+                "\n",
+                "**How vulnerability is measured.** Seven measures, each turned into a percentile among the rated areas (higher means more vulnerable) and weighted as in the table below: residents aged 75+ and their share of residents; 1-2 room rental flats; a small hot-month rise in 1-2 room electricity use (may indicate less air-con use); HDB flats beyond 400 m of a refuge; refuges per 1,000 residents aged 65+; HDB flats beyond 400 m of a park. A share or a rate over fewer than 1,000 people or flats is held at the middle (0.5); counts keep their value. The top 11 areas are the upper third, the next 11 the middle, the last 10 the lower. Areas without HDB blocks are not rated and show the heat level only.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 10
+          }
+        },
+        {
+          "widget": {
+            "name": "weights-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_weights",
+                  "fields": [
+                    {
+                      "name": "component",
+                      "expression": "`component`"
+                    },
+                    {
+                      "name": "sub_index",
+                      "expression": "`sub_index`"
+                    },
+                    {
+                      "name": "weight",
+                      "expression": "`weight`"
+                    },
+                    {
+                      "name": "direction",
+                      "expression": "`direction`"
+                    },
+                    {
+                      "name": "small_area_rule",
+                      "expression": "`small_area_rule`"
+                    },
+                    {
+                      "name": "reason_phrase",
+                      "expression": "`reason_phrase`"
+                    },
+                    {
+                      "name": "review_status",
+                      "expression": "`review_status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "component",
+                    "displayName": "Measure"
+                  },
+                  {
+                    "fieldName": "sub_index",
+                    "displayName": "Part"
+                  },
+                  {
+                    "fieldName": "weight",
+                    "displayName": "Weight"
+                  },
+                  {
+                    "fieldName": "direction",
+                    "displayName": "More vulnerable when"
+                  },
+                  {
+                    "fieldName": "small_area_rule",
+                    "displayName": "Held at 0.5 when small"
+                  },
+                  {
+                    "fieldName": "reason_phrase",
+                    "displayName": "In plain words"
+                  },
+                  {
+                    "fieldName": "review_status",
+                    "displayName": "Status"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Weights of the vulnerability index"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "actions-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_actions",
+                  "fields": [
+                    {
+                      "name": "tier",
+                      "expression": "`tier`"
+                    },
+                    {
+                      "name": "actions",
+                      "expression": "`actions`"
+                    },
+                    {
+                      "name": "review_status",
+                      "expression": "`review_status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "tier",
+                    "displayName": "Tier"
+                  },
+                  {
+                    "fieldName": "actions",
+                    "displayName": "Actions"
+                  },
+                  {
+                    "fieldName": "review_status",
+                    "displayName": "Status"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Actions per tier"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "about-limits",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Limits.** The weights are a judgement, not fitted (there is no open outcome data to fit them to), and like the actions they are not yet reviewed by a practitioner. The Active Ageing Centre list is partial (93 of about 223), so distances overstate the gap where centres are missing. Distances are straight lines, not walking routes. Not official advice. CoolCheck holds no personal data.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 21,
+            "width": 12,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "about-sources",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**Sources.**\n",
+                "\n",
+                "- Contains information from Heat stress (WBGT) real-time readings accessed on 20 October 2026 from National Environment Agency via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n",
+                "- Contains information from 24-hour Weather Forecast accessed on 20 October 2026 from National Environment Agency via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n",
+                "- Contains information from Singapore Residents by Planning Area/Subzone, Age Group, Sex and Floor Area of Residence, June 2026 accessed on 21 October 2026 from Singapore Department of Statistics which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n",
+                "- Contains information from HDB Property Information accessed on 21 October 2026 from Housing & Development Board via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n",
+                "- Contains information from Dementia Friendly Go-To-Points (GTPs) accessed on 21 October 2026 from Ministry of Health via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n",
+                "- Contains information from Community Club / PAssion WaVe Outlet accessed on 21 October 2026 from People's Association via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n",
+                "- Contains information from NParks Parks and Nature Reserves accessed on 21 October 2026 from National Parks Board via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n",
+                "- Contains information from Master Plan 2025 Planning Area Boundary (No Sea) accessed on 21 October 2026 from Urban Redevelopment Authority via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n",
+                "- Contains information from Singapore Energy Statistics 2025, Chapter 3: Energy Consumption accessed on 21 October 2026 from Energy Market Authority which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n",
+                "- Contains information from OneMap Search API accessed on 21 October 2026 from Singapore Land Authority (OneMap) which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 12,
+            "height": 9
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {
+        "light": "#FCFCFC",
+        "dark": "#1F272D"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#11171C"
+      },
+      "widgetBorderColor": {
+        "light": "#FFFFFF",
+        "dark": "#11171C"
+      },
+      "fontColor": {
+        "light": "#11171C",
+        "dark": "#E8ECF0"
+      },
+      "selectionColor": {
+        "light": "#2272B4",
+        "dark": "#8ACAFF"
+      },
+      "visualizationColors": [
+        "#9b2226",
+        "#ee9b00",
+        "#3a8f8a",
+        "#dcdcdc",
+        "#a9a3d6",
+        "#7262b8",
+        "#45207f",
+        "#5aa469"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+# The briefing dashboard (Guide §14.1, decision 9; plan approved 23 Oct 2026). This version has the Blocks and About pages;
+# the Briefing page (gold.area_heat_risk) and the observed-heat page come later. It runs on the existing Serverless Starter
+# Warehouse through var.warehouse_id, which live_heat_stress.dashboard.yml declares (looked up by name, never created). The
+# queries name the gold views bare; dataset_catalog and dataset_schema point them at <catalog>.gold, so the same file
+# deploys to Free Edition. Kept as .draft until the user's own deploy.
+
+resources:
+  dashboards:
+    briefing:
+      display_name: CoolCheck briefing
+      file_path: ../src/dashboards/briefing.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: gold
