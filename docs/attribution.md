@@ -85,21 +85,25 @@ If the write-up quotes a comparison that uses one of these, for example Census 2
 
 ## NEA feed titles (data.gov.sg metadata, read-only, no key)
 
-The register's notices 1, 2 and 4 use descriptive names, and the register asks for the official titles to be copied from each dataset page before shipping. Lookups made on 23 Oct 2026 with `GET https://api-production.data.gov.sg/v2/public/api/datasets/<id>/metadata`, no `x-api-key` header, one call per dataset, about 2 s apart. The full IDs of rows 2 and 4 come from the project notes (`DAISI - Info.txt`, `To Do.md`); row 3's is in the register. The raw responses were kept outside the repository.
+The register's notices 1, 2 and 4 use descriptive names, and the register asks for the official titles to be copied from each dataset page before shipping. Lookups made on 23 Oct 2026 with `GET https://api-production.data.gov.sg/v2/public/api/datasets/<id>/metadata`, no `x-api-key` header, one call per dataset, about 2 s apart. The full IDs of rows 2 and 4 come from the project notes (`DAISI - Info.txt`, `To Do.md`); row 3's is in the register; row 1's is the ID that data.gov.sg's release notes of February 2025 give under the heading "Wet Bulb Global Temperature", found there by the planning chat (the release notes were not read here). The raw responses were kept outside the repository.
 
 | # | dataset ID | called (SGT) | HTTP | title on data.gov.sg | managed by | last updated |
 |---|---|---|---|---|---|---|
 | 2 | `d_6580738cdd7db79374ed3152159fbd69` | 17:05:15 | 200 | Rainfall across Singapore | National Environment Agency | 2025-12-16 |
 | 3 | `d_ce2eb1e307bda31993c533285834ef2b` | 17:05:17 | 200 | 24-hour Weather Forecast | National Environment Agency | 2025-12-16 |
 | 4 | `d_66b77726bbae1b33f218db60ff5861f0` | 17:05:19 | 200 | Air Temperature across Singapore | National Environment Agency | 2025-12-16 |
-| 1 | not recorded | not looked up | - | not found | - | - |
+| 1 | `d_5406ce77e1d364f43317cb3e9f3d6725` | 18:30:54 | 404 | none returned: "The dataset id is invalid." | none returned | - |
 
-For WBGT (row 1), one more read-only call was made at 17:05:33 to `GET https://api-production.data.gov.sg/v2/public/api/collections/1459/metadata`, the collection that rows 2 and 4 belong to (HTTP 200, "Realtime Weather Readings across Singapore", National Environment Agency). It lists five datasets: rows 4 and 2, and `d_2d3b0c4da128a9a59efca806441e1429`, `d_534cf203023b51f51f879145ccc56ff9` and `d_7677738484067741bf3b56ab5d69c7e9`, which were not looked up. No catalogue crawl was made (about 470 calls).
+For WBGT (row 1), two read-only calls were made, and neither returned a title:
+- 17:05:33: `GET https://api-production.data.gov.sg/v2/public/api/collections/1459/metadata`, the collection that rows 2 and 4 belong to (HTTP 200, "Realtime Weather Readings across Singapore", National Environment Agency). It lists five datasets: rows 4 and 2, and `d_2d3b0c4da128a9a59efca806441e1429`, `d_534cf203023b51f51f879145ccc56ff9` and `d_7677738484067741bf3b56ab5d69c7e9`, which were not looked up.
+- 18:30:54: `GET https://api-production.data.gov.sg/v2/public/api/datasets/d_5406ce77e1d364f43317cb3e9f3d6725/metadata`, the release-notes ID, no key, one call. HTTP 404, body `{"code":2,"name":"DATASET_DOES_NOT_EXIST","errorMsg":"The dataset id is invalid."}`.
+
+No further call was made, and no catalogue crawl (about 470 calls).
 
 ## Flags
 
 1. **data.gov.sg API terms not saved.** The real-time API rows (1 to 4) rely on the data.gov.sg API terms (https://data.gov.sg/privacy-and-terms), which are not in `../Docs/` (checked 23 Oct; only the Open Data Licence and the SingStat terms are in its root).
 2. **EMA's page footer and Excel download link never captured.** The saved Chapter 3 page ends before the footer's terms or copyright wording, and the download box (screenshot 7) shows no URL (§A13 items 1 and 4). Record both from the browser when the page is next opened.
-3. **WBGT's official title and dataset ID are not found** (table above). Notice 1 keeps its descriptive name until the title is copied from the dataset page, or found with a catalogue crawl or by looking up the three unchecked datasets of collection 1459.
+3. **WBGT's official title and managing agency are not confirmed** (table above). The ID in data.gov.sg's release notes of February 2025, `d_5406ce77e1d364f43317cb3e9f3d6725`, returned HTTP 404 "The dataset id is invalid." on 23 Oct at 18:30:54 SGT, and no other ID for the WBGT dataset is recorded. Notice 1 keeps its descriptive name until the title is copied from the dataset page in a browser, or found with a catalogue crawl or by looking up the three unchecked datasets of collection 1459.
 4. **Register notices 2 and 4 use descriptive names**, now known to differ from the data.gov.sg titles "Rainfall across Singapore" and "Air Temperature across Singapore"; notice 3's name already matches. This file copies the register as it stands; updating the register is for its owner. The register also says a live feed's notice should use the date of the data shown, its "last updated" time, rather than the first pull.
 5. **The live page's notice is not the register's text.** `src/dashboards/live_heat_stress.lvdash.json` carries one combined notice: "Contains information from NEA's WBGT, Rainfall and Air Temperature real-time datasets, accessed continuously from data.gov.sg, which is made available under the terms of the [Singapore Open Data Licence version 1.0](https://data.gov.sg/open-data-licence)." It names the three datasets by description and gives no date. It fits the register's note on combined notices, but should use the official titles once flag 3 is settled.
