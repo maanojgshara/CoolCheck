@@ -1,0 +1,54 @@
+# The nightly heat forecast (Guide §A11 decisions 1 and 8(e); src/jobs/heat_forecast.py): at 00:45 SGT, a
+# refresh-only pipeline update, then the target date (the run date in SGT) scored with the champion model and written
+# to gold.heat_forecast, one row per area of the 41 with MERGE on (target_date, planning_area). The job parameter
+# target_date (empty by default) allows a backfill; it is passed as one argument (--target-date=<date>), so an empty
+# value stays a value. Deployed PAUSED; the schedule is unpaused on the user's word.
+#   databricks bundle run heat_forecast -t dev -p coolcheck --params target_date=2026-10-23
+# The failure e-mail goes to the deploying user (workspace.current_user.userName), so no address is in the repository.
+# Written as heat_forecast.job.yml.draft; renamed to heat_forecast.job.yml for its first deploy.
+resources:
+  jobs:
+    heat_forecast:
+      name: coolcheck heat forecast
+      max_concurrent_runs: 1
+      timeout_seconds: 3600
+      schedule:
+        quartz_cron_expression: "0 45 0 * * ?"
+        timezone_id: Asia/Singapore
+        pause_status: PAUSED
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+        no_alert_for_skipped_runs: true
+      parameters:
+        - name: target_date
+          default: ""
+      environments:
+        - environment_key: ml
+          spec:
+            environment_version: "4"
+            dependencies:
+              - lightgbm==4.6.0
+      tasks:
+        - task_key: refresh
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.coolcheck_pipeline.id}
+            full_refresh: false
+        - task_key: score
+          depends_on:
+            - task_key: refresh
+          max_retries: 0
+          environment_key: ml
+          spark_python_task:
+            python_file: ../src/jobs/heat_forecast.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --src
+              - ${workspace.file_path}/src
+              - --model-name
+              - ${var.catalog}.ml.heat_model
+              - --git-sha
+              - ${bundle.git.commit}
+              - "--target-date={{job.parameters.target_date}}"
+              - "--run-id={{job.run_id}}"

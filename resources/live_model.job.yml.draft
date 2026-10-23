@@ -1,0 +1,35 @@
+# The live model's refit (Guide §A11 decision 8(e); src/jobs/live_model.py): the final check's configuration refit once
+# on all completed target dates from 2025-01-17 to 2026-10-22, logged to the back-test experiment (role = live_model)
+# and registered in Unity Catalog as <catalog>.ml.heat_model with the alias champion. Run by hand, once; no schedule.
+# It refuses when the model already has a version.
+#   databricks bundle run live_model -t dev -p coolcheck
+# Written as live_model.job.yml.draft; renamed to live_model.job.yml for its first deploy.
+resources:
+  jobs:
+    live_model:
+      name: coolcheck live model refit
+      max_concurrent_runs: 1
+      timeout_seconds: 3600
+      environments:
+        - environment_key: ml
+          spec:
+            environment_version: "4"
+            dependencies:
+              - lightgbm==4.6.0
+      tasks:
+        - task_key: refit
+          max_retries: 0
+          environment_key: ml
+          spark_python_task:
+            python_file: ../src/jobs/live_model.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --src
+              - ${workspace.file_path}/src
+              - --experiment-id
+              - ${resources.experiments.backtest_experiment.id}
+              - --git-sha
+              - ${bundle.git.commit}
+              - --model-name
+              - ${var.catalog}.ml.heat_model
