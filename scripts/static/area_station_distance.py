@@ -2,6 +2,7 @@
 
 Run from the repo root:
     .venv\\Scripts\\python scripts/static/area_station_distance.py [--data <coolcheck-data>] [--load]
+        [--catalog coolcheck] [--profile coolcheck]
 
 Boundaries: Master Plan 2025 (default, decision C1) and Master Plan 2019 (comparison only); each is a parameter.
 Reference point per area (ref_point column): mp2025 uses 'hdb_block_mean', the dwelling-unit-weighted mean of the
@@ -13,13 +14,14 @@ Island rule: a station inside SOUTHERN ISLANDS, WESTERN ISLANDS or NORTH-EASTERN
 prints them and stops with exit code 1 if the set is not S142, S137 and S151 (--expect-offshore).
 Stations: every WBGT station in the raw backfill files, at its most recent location. Distances are haversine km;
 at Singapore's latitude lon/lat degrees are nearly square (cos 1.3° = 0.9997), so the centroid in degrees is fine.
-Writes <data>/analysis/area_station_distance_v2.csv (the v1 file area_station_distance.csv is not touched; --out to change); --load also writes coolcheck.silver.area_station_distance
-through Databricks Connect (overwrite).
+Writes <data>/analysis/area_station_distance_v2.csv (the v1 file area_station_distance.csv is not touched; --out to change); --load also writes <catalog>.silver.area_station_distance
+through Databricks Connect with --profile (overwrite; both default to coolcheck, the trial; Free Edition: --catalog workspace --profile freeedition).
 """
 import argparse
 import csv
 import json
 import math
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -84,7 +86,7 @@ def block_means(path):
     return {k: (v[0] / v[3], v[1] / v[3], v[2], v[3]) for k, v in acc.items()}
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=str(REPO.parent / "coolcheck-data"))
     ap.add_argument("--out", help="default <data>/analysis/area_station_distance_v2.csv")
@@ -92,7 +94,11 @@ def main():
     ap.add_argument("--expect-offshore", default=",".join(EXPECTED_OFFSHORE))
     ap.add_argument("--boundary", action="append", help="label=folder under <data>; default mp2025 and mp2019")
     ap.add_argument("--load", action="store_true")
-    a = ap.parse_args()
+    ap.add_argument("--catalog", default="coolcheck", help="catalog --load writes to")
+    ap.add_argument("--profile", default="coolcheck", help="Databricks CLI profile --load connects with")
+    a = ap.parse_args(argv)
+    if not re.fullmatch(r"\w+", a.catalog):
+        raise SystemExit(f"bad catalog name: {a.catalog!r}")
     data = Path(a.data)
     bounds = dict(b.split("=", 1) for b in a.boundary) if a.boundary else BOUNDARIES
     st = stations(data / "raw")
@@ -147,13 +153,14 @@ def main():
               + (": " + ", ".join(f"{n} ({nearest.get(('mp2019', n), ('-',))[0]} -> {nearest.get(('mp2025', n), ('-',))[0]})" for n in diff) if diff else ""))
     if a.load:
         from databricks.connect import DatabricksSession
-        spark = DatabricksSession.builder.serverless().profile("coolcheck").getOrCreate()
+        spark = DatabricksSession.builder.serverless().profile(a.profile).getOrCreate()
+        table = f"{a.catalog}.silver.area_station_distance"
         schema = ("boundary STRING, planning_area STRING, planning_area_code STRING, region STRING, ref_point STRING, "
                   "ref_lat DOUBLE, ref_lon DOUBLE, station_id STRING, station_name STRING, station_lat DOUBLE, "
                   "station_lon DOUBLE, station_first_day STRING, station_last_day STRING, distance_km DOUBLE, "
                   "station_inside_area BOOLEAN")
         df = spark.createDataFrame(rows, schema)
-        df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("coolcheck.silver.area_station_distance")
+        df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(table)
         files = []
         for label, folder in bounds.items():
             prov = json.loads((data / folder / "provenance.json").read_text(encoding="utf-8"))
@@ -164,8 +171,8 @@ def main():
                    "in the area (hdb_block_mean); an area with no block, and mp2019, the polygon centroid or a point on the "
                    "surface where the centroid falls outside the area. Stations: every WBGT station in "
                    "the raw backfill at its latest location. Distance: haversine km.")
-        spark.sql(f"COMMENT ON TABLE coolcheck.silver.area_station_distance IS '{comment.replace(chr(39), '')}'")
-        print("loaded", spark.table("coolcheck.silver.area_station_distance").count(), "rows")
+        spark.sql(f"COMMENT ON TABLE {table} IS '{comment.replace(chr(39), '')}'")
+        print("loaded", spark.table(table).count(), "rows into", table)
 
 
 if __name__ == "__main__":

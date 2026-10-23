@@ -1,21 +1,24 @@
 """Load coolcheck-data/analysis/area_exposure.csv (written by scripts/static/area_exposure.py) into
-coolcheck.silver.area_exposure through Databricks Connect, overwriting it. Decision 1 of docs/design/backtest.md: the
+<catalog>.silver.area_exposure through Databricks Connect, overwriting it. Decision 1 of docs/design/backtest.md: the
 back-test reads the 41 planning areas with residents aged 65+ from this table, by Delta version.
 
 Run from the repo root; it writes a table, so only after the user's OK:
     .venv\\Scripts\\python scripts/static/load_area_exposure.py [--data <coolcheck-data>] [--check-only]
+        [--catalog coolcheck] [--profile coolcheck]
 
 Before writing it checks, and stops if one fails: the eight columns in order, 55 distinct planning areas, and the
 Guide's totals (4,199,180 residents, 806,080 aged 65+, 310,310 aged 75+, 41 areas with any resident aged 65+).
 --check-only runs the checks and writes nothing. After the write it prints the row count and the Delta version.
+--catalog and --profile default to coolcheck (the trial); Free Edition: --catalog workspace --profile freeedition.
 """
 import argparse
 import csv
 import hashlib
+import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-TABLE = "coolcheck.silver.area_exposure"
+TABLE = "silver.area_exposure"  # under the catalog given by --catalog
 COLUMNS = ["planning_area", "planning_area_code", "region", "residents", "aged_65_plus", "aged_75_plus",
            "share_65_plus", "share_75_plus"]
 SCHEMA = ("planning_area STRING, planning_area_code STRING, region STRING, residents BIGINT, aged_65_plus BIGINT, "
@@ -47,12 +50,16 @@ def check(rows):
         raise SystemExit("STOP: the file differs from the expected figures; nothing written")
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=str(REPO.parent / "coolcheck-data"))
+    ap.add_argument("--catalog", default="coolcheck")
     ap.add_argument("--profile", default="coolcheck")
     ap.add_argument("--check-only", action="store_true", help="run the checks and write nothing")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
+    if not re.fullmatch(r"\w+", a.catalog):
+        raise SystemExit(f"bad catalog name: {a.catalog!r}")
+    table = f"{a.catalog}.{TABLE}"
     path = Path(a.data) / "analysis" / "area_exposure.csv"
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
     rows = read_rows(path)
@@ -65,16 +72,16 @@ def main():
     from databricks.connect import DatabricksSession
 
     spark = DatabricksSession.builder.serverless().profile(a.profile).getOrCreate()
-    spark.createDataFrame(rows, SCHEMA).write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(TABLE)
+    spark.createDataFrame(rows, SCHEMA).write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(table)
     comment = ("Residents, aged 65+ and aged 75+ per Master Plan 2025 planning area (55 areas; 41 with residents aged "
                "65+), from the SingStat file respopagesexfa2026.csv (reference period June 2026, downloaded 2026-10-21; "
                "Singapore Department of Statistics, Singapore Open Data Licence v1.0) via scripts/static/area_exposure.py. "
                "Each SingStat cell is rounded to 10, so an area is a sum of rounded cells; shares are blank where an area "
                f"has no residents. Loaded by scripts/static/load_area_exposure.py from area_exposure.csv, sha256 {sha}.")
-    spark.sql(f"COMMENT ON TABLE {TABLE} IS '{comment.replace(chr(39), '')}'")
-    n = spark.table(TABLE).count()
-    version = spark.sql(f"DESCRIBE HISTORY {TABLE} LIMIT 1").first()["version"]
-    print(f"loaded {n} rows into {TABLE}, Delta version {version}")
+    spark.sql(f"COMMENT ON TABLE {table} IS '{comment.replace(chr(39), '')}'")
+    n = spark.table(table).count()
+    version = spark.sql(f"DESCRIBE HISTORY {table} LIMIT 1").first()["version"]
+    print(f"loaded {n} rows into {table}, Delta version {version}")
 
 
 if __name__ == "__main__":
