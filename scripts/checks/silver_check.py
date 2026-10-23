@@ -3,7 +3,8 @@ label rule effects, and the High-day counts against docs/checks/wbgt_high_days.m
 
 Run from the repo root (Databricks Connect, serverless):
     .venv\\Scripts\\python scripts/checks/silver_check.py --update-id <id>
-Writes docs/checks/silver_check.md.
+Writes docs/checks/silver_check.md. Free Edition: add --catalog workspace --profile freeedition --out <another file>.
+The expected totals (EXPECTED, NOTES) are the trial's backfill to 19 Oct, so another catalog's later data differs.
 """
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -11,8 +12,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 SGT = timezone(timedelta(hours=8))
-C = "coolcheck"
-TABLES = ["bronze.wbgt_raw", "bronze.rainfall_raw", "bronze.forecast_raw",
+CATALOG = "coolcheck"
+TABLES =["bronze.wbgt_raw", "bronze.rainfall_raw", "bronze.forecast_raw",
           "silver.wbgt_readings_all", "silver.wbgt_readings", "silver.rainfall_readings_all", "silver.rainfall_readings",
           "silver.forecast_issues_all", "silver.forecast_issues", "silver.quarantine", "silver.wbgt_first_arrival",
           "silver.station_daily_label", "silver.dq_day", "silver.dq_events", "silver.dq_conflicts", "silver.station_gaps",
@@ -32,18 +33,28 @@ def md(df, limit=200):
            ["| " + " | ".join("" if r[c] is None else f"{r[c]:,}" if isinstance(r[c], int) else str(r[c]) for c in cols) + " |" for r in rows]
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--update-id", default="")
     ap.add_argument("--out", default=str(REPO / "docs" / "checks" / "silver_check.md"))
-    a = ap.parse_args()
+    ap.add_argument("--catalog", default=CATALOG)
+    ap.add_argument("--profile", default="coolcheck")
+    a = ap.parse_args(argv)
     from databricks.connect import DatabricksSession
-    spark = DatabricksSession.builder.serverless().profile("coolcheck").getOrCreate()
+    spark = DatabricksSession.builder.serverless().profile(a.profile).getOrCreate()
     spark.conf.set("spark.sql.session.timeZone", "Asia/Singapore")
-    q = spark.sql
+    L = report(spark.sql, a.catalog, a.update_id)
+    Path(a.out).write_text("\n".join(L) + "\n", encoding="utf-8")
+    print("\n".join(L))
+
+
+def report(q, catalog, update_id=""):
+    """The report's lines. q runs one SQL statement and returns a DataFrame; every table is read from catalog."""
+    C = catalog
     L = ["# Silver check after the first full pipeline update", "",
          f"Generated {datetime.now(SGT):%Y-%m-%d %H:%M} SGT by `scripts/checks/silver_check.py`"
-         + (f"; pipeline update `{a.update_id}`" if a.update_id else "") + ". Tables read only.", "", "## Row counts", ""]
+         + (f"; pipeline update `{update_id}`" if update_id else "") + f"; catalog `{C}`. Tables read only.", "",
+         "## Row counts", ""]
     counts = {t: q(f"SELECT count(*) AS n FROM {C}.{t}").first().n for t in TABLES}
     L += ["| table | rows |", "|---|---|"] + [f"| `{t}` | {n:,} |" for t, n in counts.items()]
 
@@ -110,8 +121,7 @@ def main():
              "w3_o8": "… original 8"}
     L += ["| measure | notes (20 Oct) | Silver labels | same? |", "|---|---|---|---|"]
     L += [f"| {names[k]} | {NOTES[k]:,} | {r[k]:,} | {'yes' if r[k] == NOTES[k] else 'NO'} |" for k in NOTES]
-    Path(a.out).write_text("\n".join(L) + "\n", encoding="utf-8")
-    print("\n".join(L))
+    return L
 
 
 if __name__ == "__main__":

@@ -6,7 +6,6 @@ bundle:
   name: coolcheck
 
 include:
-  - smoke/*.yml
   - resources/*.yml
 
 variables:
@@ -21,11 +20,23 @@ targets:
     workspace:
       host: https://dbc-2152ed82-df35.cloud.databricks.com
 
-  # Second workspace (e.g. Free Edition). Fill in the host before using this target.
+  # Free Edition, catalog `workspace`. Production mode gives clean names ("coolcheck latest readings", not
+  # "[dev <user>] ...") and a pipeline that is not held in development mode; development mode ignores an empty
+  # name_prefix preset. Production mode requires root_path, set to the deploying user's own folder. The schemas and
+  # the raw-files Volume are created once by setup_catalog.py, outside the bundle. The latest-readings job stays
+  # paused here until the collector writes to this workspace.
   free:
-    mode: development
+    mode: production
     workspace:
-      host: https://REPLACE-WITH-FREE-WORKSPACE-HOST
+      host: https://dbc-5b32c6e1-6fc0.cloud.databricks.com
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: workspace
+    resources:
+      jobs:
+        latest_readings:
+          schedule:
+            pause_status: PAUSED
 
   ## Optionally, there could be 'staging' or 'prod' targets here.
   #
