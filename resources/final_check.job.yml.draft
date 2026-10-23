@@ -1,0 +1,48 @@
+# The final check (docs/design/backtest.md §15): one model fitted on target dates 2025-01-17 to 2026-08-31, scored once
+# on 1 Sep to 19 Oct 2026. Written as final_check.job.yml.draft; renamed to final_check.job.yml for its first deploy.
+# Same serverless environment as the back-test (resources/backtest.job.yml: environment 4, mlflow-skinny 2.22.0 from
+# the base, only lightgbm added). Logs to the back-test's experiment, defined there.
+#
+# Stages, each on the user's word, in this order (src/jobs/final_check.py):
+#   databricks bundle run final_check -t dev -p coolcheck --params stage=lock   # the lock query only, read-only
+#   databricks bundle run final_check -t dev -p coolcheck --params stage=fit    # + training half and equivalence check
+#   databricks bundle run final_check -t dev -p coolcheck --params stage=score  # the final check; writes the lock
+# override_incomplete (empty by default) takes the id of a scored final_check run whose record is not whole, for a
+# rerun past it; only on the user's word. It is passed as one argument (--override-incomplete=<id>), so an empty value
+# stays a value.
+# Deploy from a clean tree, so ${bundle.git.commit} is the code that runs.
+resources:
+  jobs:
+    final_check:
+      name: coolcheck final check
+      max_concurrent_runs: 1
+      timeout_seconds: 3600
+      parameters:
+        - name: stage
+          default: "fit"
+        - name: override_incomplete
+          default: ""
+      environments:
+        - environment_key: ml
+          spec:
+            environment_version: "4"
+            dependencies:
+              - lightgbm==4.6.0
+      tasks:
+        - task_key: final_check
+          max_retries: 0
+          environment_key: ml
+          spark_python_task:
+            python_file: ../src/jobs/final_check.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --src
+              - ${workspace.file_path}/src
+              - --experiment-id
+              - ${resources.experiments.backtest_experiment.id}
+              - --git-sha
+              - ${bundle.git.commit}
+              - --stage
+              - "{{job.parameters.stage}}"
+              - "--override-incomplete={{job.parameters.override_incomplete}}"
