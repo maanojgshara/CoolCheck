@@ -2,8 +2,6 @@
 # job refreshes. It runs on the workspace's existing Serverless Starter Warehouse, looked up by name; the bundle never
 # creates a warehouse. The queries name the table bare (latest_readings); dataset_catalog and dataset_schema point
 # them at <catalog>.gold, so the same file deploys to Free Edition (catalog workspace).
-#
-# Kept as .yml.draft until window A's own deploy slot, so no other window's deploy picks it up.
 
 variables:
   warehouse_id:
