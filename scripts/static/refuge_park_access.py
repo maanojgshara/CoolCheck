@@ -12,7 +12,8 @@ Park sets: main = NParks Parks and Nature Reserves without the 7 N_RESERVE = 1 p
 with_reserves = all NParks polygons; ura = the URA MP2025 SDCP park layer (permanent and interim, exact duplicates out).
 Each park set is merged and pieces under 100 m2 are dropped.
 Blocks: analysis/hdb_blocks_to_areas.csv (scripts/static/blocks_to_areas.py); every block gets distances, the area
-shares use confirmed = Y only, and the report gives the effect of the 10 unconfirmed blocks.
+shares use confirmed = Y only, and the report gives the effect of the 10 unconfirmed blocks. Each block also carries its
+1room_rental and 2room_rental flats from HDB Property Information (joined on blk_no + street), for the risk score.
 Writes <data>/analysis/{refuge_points,park_polygons,block_access,area_access}.csv and docs/checks/refuge_park_access.md.
 Exit code 1, after the report is written, if a count differs from EXPECTED. If a point fails the coordinate check the
 failing points are printed and nothing is written (no OneMap call is made).
@@ -45,6 +46,7 @@ NPARKS = "static/nparks_parks_and_nature_reserves"
 URA_PARK = "static/ura_mp2025_sdcp_park"
 BOUNDARY = "static/ura_mp2025_planning_area_boundary"
 BLOCKS = "analysis/hdb_blocks_to_areas.csv"
+HDB = "static/hdb_property_information"
 LICENCE = "Singapore Open Data Licence v1.0"
 UBIN = "PULAU UBIN AND CHEK JAWA"
 RESERVOIR_PARKS = ("UPPER SELETAR RESERVOIR PARK", "LOWER PEIRCE RESERVOIR PARK", "UPPER PEIRCE RESERVOIR PARK")
@@ -63,7 +65,7 @@ PARK_COLUMNS = ["park_id", "layer", "name", "status", "n_reserve", "area_m2", "i
 BLOCK_COLUMNS = ["blk_no", "street", "planning_area", "planning_area_code", "total_dwelling_units", "rental_block",
                  "confirmed", "lat", "lon", "x_svy21", "y_svy21", "refuge_main_m", "refuge_main_id", "refuge_main_name",
                  "refuge_clubs_only_m", "refuge_with_sac_2016_m", "park_main_m", "park_main_name",
-                 "park_with_reserves_m", "park_ura_m"]
+                 "park_with_reserves_m", "park_ura_m", "1room_rental", "2room_rental"]
 AREA_COLUMNS = ["planning_area", "planning_area_code", "region", "measure", "layer_set", "is_main", "residents",
                 "aged_65_plus", "hdb_blocks_confirmed", "hdb_dwelling_units_confirmed", "refuges_in_area",
                 "refuges_per_1000_65_plus", "share_du_within_400m", "median_block_distance_m", "land_area_m2",
@@ -532,6 +534,8 @@ def main():
     if set(seniors) != set(codes):
         raise SystemExit(f"planning areas differ between the seniors and the boundary: {sorted(set(seniors) ^ set(codes))}")
 
+    with next((data / HDB).glob("*.csv")).open(encoding="utf-8", newline="") as fh:
+        rental = {(r["blk_no"], r["street"]): (int(r["1room_rental"]), int(r["2room_rental"])) for r in csv.DictReader(fh)}
     with (data / BLOCKS).open(encoding="utf-8", newline="") as fh:
         blocks = []
         for r in csv.DictReader(fh):
@@ -540,7 +544,9 @@ def main():
             blocks.append({"blk_no": r["blk_no"], "street": r["street"], "planning_area": r["planning_area"],
                            "planning_area_code": r["planning_area_code"], "total_dwelling_units": int(r["total_dwelling_units"]),
                            "rental_block": r["rental_block"] == "Y", "confirmed": r["confirmed"] == "Y",
-                           "lat": round(lat, 7), "lon": round(lon, 7), "x_svy21": round(x, 3), "y_svy21": round(y, 3)})
+                           "lat": round(lat, 7), "lon": round(lon, 7), "x_svy21": round(x, 3), "y_svy21": round(y, 3),
+                           "1room_rental": rental[(r["blk_no"], r["street"])][0],
+                           "2room_rental": rental[(r["blk_no"], r["street"])][1]})
     if not failing:
         block_measures(blocks, refuges, layers)
         area_rows = area_measures(areas, codes, regions, seniors, blocks, refuges, layers)

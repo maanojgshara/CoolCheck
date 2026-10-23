@@ -1,0 +1,8 @@
+component,sort_order,sub_index,weight,direction,source_column,small_area_rule,small_area_min,reason_phrase,review_status
+aged_75_plus,1,senior_exposure,0.20,higher,silver.area_exposure.aged_75_plus,none,,many residents aged 75+,"judgement (Guide decision 9), not yet reviewed by a practitioner"
+share_75_plus,2,senior_exposure,0.15,higher,silver.area_exposure.share_75_plus,residents,1000,a high share of residents aged 75+,"judgement (Guide decision 9), not yet reviewed by a practitioner"
+rental_1_2_room,3,cant_cool_down,0.25,higher,silver.block_access.1room_rental + 2room_rental (confirmed blocks),none,,many 1–2 room rental flats,"judgement (Guide decision 9), not yet reviewed by a practitioner"
+electricity_hot_rise,4,cant_cool_down,0.05,inverted,silver.ema_area_electricity.hot_ratio_mean,none,,a small hot-month rise in 1–2 room electricity use (may indicate less air-con use),"judgement (Guide decision 9), not yet reviewed by a practitioner"
+refuge_beyond_400m,5,cooling_access_gap,0.15,higher,1 - silver.area_access.share_du_within_400m (refuge main),hdb_du,1000,many flats beyond 400 m of a refuge,"judgement (Guide decision 9), not yet reviewed by a practitioner"
+refuges_per_1000_65,6,cooling_access_gap,0.10,inverted,silver.area_access.refuges_per_1000_65_plus (refuge main),aged_65,1000,few refuges per resident aged 65+,"judgement (Guide decision 9), not yet reviewed by a practitioner"
+park_beyond_400m,7,cooling_access_gap,0.10,higher,1 - silver.area_access.share_du_within_400m (park main),hdb_du,1000,many flats beyond 400 m of a park,"judgement (Guide decision 9), not yet reviewed by a practitioner"

@@ -3,13 +3,13 @@ replacing each table, with table and column comments and source and licence tags
 
 Run from the repo root; it writes tables, so only after the user's OK:
     .venv\\Scripts\\python scripts/static/load_refuge_park_access.py [--data <coolcheck-data>] [--catalog coolcheck]
-        [--profile coolcheck] [--check-only]
+        [--profile coolcheck] [--tables block_access ...] [--check-only]
 
 Tables: refuge_points, park_polygons, block_access, area_access. Before writing it checks each file's columns, its row
 count and the set sizes (EXPECTED), and stops if one differs. Each table is created with CREATE OR REPLACE TABLE
 (columns, types, column and table comments), then filled by an append and tagged; for a moment between the two the table
 is empty. After the write it reads back the row count, the columns without a comment, the tags and the Delta version.
---check-only runs the checks and writes nothing.
+--check-only runs the checks and writes nothing; --tables loads only the tables named (all four files are still checked).
 """
 import argparse
 import csv
@@ -24,7 +24,7 @@ FOLDERS = {"clubs": "community_club_passion_wave_outlet", "gtp": "moh_dementia_f
            "eldercare": "eldercare_services", "nparks": "nparks_parks_and_nature_reserves", "ura": "ura_mp2025_sdcp_park",
            "boundary": "ura_mp2025_planning_area_boundary", "hdb": "hdb_property_information"}
 EXPECTED = {"refuge_points": 279, "park_polygons": 888, "block_access": 10_817, "area_access": 330,
-            "in_main": 206, "in_clubs_only": 113, "in_with_sac_2016": 232, "areas": 55}
+            "in_main": 206, "in_clubs_only": 113, "in_with_sac_2016": 232, "areas": 55, "rental_1_2_room": 61_748}
 DIST = "straight line sqrt(dx^2 + dy^2) in SVY21 metres"
 
 TABLES = {
@@ -100,6 +100,8 @@ TABLES = {
             ("park_main_name", "STRING", "Name of the nearest NParks park of the main set."),
             ("park_with_reserves_m", "DOUBLE", "Distance in m to the nearest edge of the merged with_reserves park set, 0 inside."),
             ("park_ura_m", "DOUBLE", "Distance in m to the nearest edge of the merged URA park set, 0 inside."),
+            ("1room_rental", "BIGINT", "1-room rental flats in the block (HDB Property Information, joined on blk_no + street); for the risk score's can't-cool-down index."),
+            ("2room_rental", "BIGINT", "2-room rental flats in the block (HDB Property Information, joined on blk_no + street); for the risk score's can't-cool-down index."),
         ]},
     "area_access": {
         "tags": {"source": "SingStat population June 2026 (silver.area_exposure); HDB Property Information; OneMap geocodes (SLA); "
@@ -148,7 +150,7 @@ def table_comment(name, data, sha):
                          "(URA permanent and interim, exact duplicates out). Each set is merged and pieces under 100 m2 dropped "
                          "before distances. Sources: " + parks + ".",
         "block_access": "One row per residential HDB block (10,817): straight-line distances in SVY21 to the nearest refuge and "
-                        "park edge for the main and each sensitivity set. " + blocks + " Refuges: " + refuges + ". Parks: " + parks + ".",
+                        "park edge for the main and each sensitivity set, and its 1-room and 2-room rental flats (HDB Property Information). " + blocks + " Refuges: " + refuges + ". Parks: " + parks + ".",
         "area_access": "One row per Master Plan 2025 planning area and layer set (55 x 6): refuges per 1,000 residents aged 65+, "
                        "share of HDB dwelling units within 400 m of a refuge or a park (confirmed blocks only), park share as "
                        "context. Seniors from silver.area_exposure (SingStat June 2026). " + blocks,
@@ -191,6 +193,9 @@ def check(data):
     for s in ("in_main", "in_clubs_only", "in_with_sac_2016"):
         got[s] = sum(1 for r in out["refuge_points"][0] if r[cols.index(s)])
     got["areas"] = len({r[0] for r in out["area_access"][0]})
+    bcols = [c for c, _, _ in TABLES["block_access"]["columns"]]
+    got["rental_1_2_room"] = sum(r[bcols.index("1room_rental")] + r[bcols.index("2room_rental")]
+                                 for r in out["block_access"][0])
     if len({(r[0], r[1]) for r in out["block_access"][0]}) != got["block_access"]:
         raise SystemExit("STOP: a block (blk_no + street) appears more than once")
     for k, v in EXPECTED.items():
@@ -200,11 +205,34 @@ def check(data):
     return out
 
 
+def write_table(spark, t, columns, rows, comment, tags):
+    """CREATE OR REPLACE TABLE with column and table comments, append the rows, set the tags, then read back the row
+    count, the columns without a comment, the tags and the Delta version; stops if the table does not read back as written."""
+    cols = ", ".join(f"`{c}` {typ} COMMENT {sql_str(cm)}" for c, typ, cm in columns)
+    spark.sql(f"CREATE OR REPLACE TABLE {t} ({cols}) COMMENT {sql_str(comment)}")
+    schema = ", ".join(f"`{c}` {typ}" for c, typ, _ in columns)
+    spark.createDataFrame(rows, schema).write.mode("append").saveAsTable(t)
+    spark.sql(f"ALTER TABLE {t} SET TAGS ({', '.join(f'{sql_str(k)} = {sql_str(v)}' for k, v in tags.items())})")
+    catalog, schema_name, name = t.split(".")
+    n = spark.table(t).count()
+    bare = [r["col_name"] for r in spark.sql(f"DESCRIBE TABLE {t}").collect()
+            if r["col_name"] and not r["col_name"].startswith("#") and not r["comment"]]
+    got = {r["tag_name"]: r["tag_value"] for r in spark.sql(
+        f"SELECT tag_name, tag_value FROM {catalog}.information_schema.table_tags "
+        f"WHERE schema_name = '{schema_name}' AND table_name = '{name}'").collect()}
+    version = spark.sql(f"DESCRIBE HISTORY {t} LIMIT 1").first()["version"]
+    print(f"{t}: {n:,} rows (file {len(rows):,}), Delta version {version}, columns without a comment: {bare or 'none'}, "
+          f"tags: {sorted(got)}")
+    if n != len(rows) or bare or set(got) != set(tags):
+        raise SystemExit(f"STOP: {t} does not read back as written")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=str(REPO.parent / "coolcheck-data"))
     ap.add_argument("--catalog", default="coolcheck")
     ap.add_argument("--profile", default="coolcheck")
+    ap.add_argument("--tables", nargs="+", choices=list(TABLES), default=list(TABLES), help="load only these tables")
     ap.add_argument("--check-only", action="store_true", help="run the checks and write nothing")
     a = ap.parse_args()
     if not re.fullmatch(r"\w+", a.catalog):
@@ -220,25 +248,10 @@ def main():
     from databricks.connect import DatabricksSession
 
     spark = DatabricksSession.builder.serverless().profile(a.profile).getOrCreate()
-    for name, spec in TABLES.items():
+    for name in a.tables:
         rows, sha = files[name]
-        t = f"{a.catalog}.silver.{name}"
-        cols = ", ".join(f"{c} {typ} COMMENT {sql_str(cm)}" for c, typ, cm in spec["columns"])
-        spark.sql(f"CREATE OR REPLACE TABLE {t} ({cols}) COMMENT {sql_str(table_comment(name, data, sha))}")
-        schema = ", ".join(f"{c} {typ}" for c, typ, _ in spec["columns"])
-        spark.createDataFrame(rows, schema).write.mode("append").saveAsTable(t)
-        spark.sql(f"ALTER TABLE {t} SET TAGS ({', '.join(f'{sql_str(k)} = {sql_str(v)}' for k, v in spec['tags'].items())})")
-        n = spark.table(t).count()
-        bare = [r["col_name"] for r in spark.sql(f"DESCRIBE TABLE {t}").collect()
-                if r["col_name"] and not r["col_name"].startswith("#") and not r["comment"]]
-        tags = {r["tag_name"]: r["tag_value"] for r in spark.sql(
-            f"SELECT tag_name, tag_value FROM {a.catalog}.information_schema.table_tags "
-            f"WHERE schema_name = 'silver' AND table_name = '{name}'").collect()}
-        version = spark.sql(f"DESCRIBE HISTORY {t} LIMIT 1").first()["version"]
-        print(f"{t}: {n:,} rows (file {len(rows):,}), Delta version {version}, columns without a comment: {bare or 'none'}, "
-              f"tags: {sorted(tags)}")
-        if n != len(rows) or bare or set(tags) != set(spec["tags"]):
-            raise SystemExit(f"STOP: {t} does not read back as written")
+        write_table(spark, f"{a.catalog}.silver.{name}", TABLES[name]["columns"], rows,
+                    table_comment(name, data, sha), TABLES[name]["tags"])
 
 
 if __name__ == "__main__":
