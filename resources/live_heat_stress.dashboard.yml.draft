@@ -1,0 +1,21 @@
+# H5, the live heat-stress page: an AI/BI dashboard that reads only gold.latest_readings, which the latest-readings
+# job refreshes. It runs on the workspace's existing Serverless Starter Warehouse, looked up by name; the bundle never
+# creates a warehouse. The queries name the table bare (latest_readings); dataset_catalog and dataset_schema point
+# them at <catalog>.gold, so the same file deploys to Free Edition (catalog workspace).
+#
+# Kept as .yml.draft until window A's own deploy slot, so no other window's deploy picks it up.
+
+variables:
+  warehouse_id:
+    description: The existing SQL warehouse the dashboards run on (looked up by name, never created).
+    lookup:
+      warehouse: Serverless Starter Warehouse
+
+resources:
+  dashboards:
+    live_heat_stress:
+      display_name: CoolCheck live heat stress
+      file_path: ../src/dashboards/live_heat_stress.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: gold

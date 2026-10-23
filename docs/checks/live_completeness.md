@@ -48,3 +48,17 @@ A slot is the 15-minute window that holds a run's start time (SGT, from the file
 | `silver.rainfall_readings` | 288, 90, 25,729 | 171, 89, 14,882 |
 
 Newest live WBGT file in `bronze.wbgt_raw`: `wbgt_2026-10-22T203151_39779064006.jsonl`, ingested 22 Oct 20:39 SGT; 27 live files loaded. No pipeline update has loaded a file since, so the 23 Oct sweep files are not in Bronze or Silver yet.
+
+## After the pipeline update of 23 Oct (read 16:05 SGT)
+
+One refresh-only update (no full refresh), started by window A on your word: update `4110575e-4b77-4515-a66a-e584702526ef`, completed at 16:01 SGT. Bronze then held 108 live WBGT files, the newest from the 15:45 run on 23 Oct.
+
+| Table, 22 Oct | Reading times | Stations | Rows |
+|---|---|---|---|
+| `silver.wbgt_readings` | 96 of 96 | 30 | 2,880 |
+| `silver.rainfall_readings` | 288 of 288 | 89 | 25,543 |
+| `silver.forecast_issues` | 7 issues | n/a | 7 |
+
+- `silver.dq_day` marks all three feeds `ok` for 22 Oct. The 89 rainfall rows short of 288 × 89 are the 16 stations' missing readings listed above (10 + 10 + 10 + 10 + 9 + 8 + 7 + 6 + 5 + 5 + 4 + 5 × 1).
+- **`silver.station_daily_label`, 22 Oct: complete.** 30 stations, all labelled and all usable; none low-coverage; 31 or 32 of the 32 peak slots per station; 93 to 96 valid readings per station; 7 readings with heat stress `NA`. Labels: 18 Moderate, 12 Low, 0 High. 1,470 readings are flagged late (first live arrival over an hour after the reading), the readings that only the midnight sweep fetched; the flag does not affect `usable`.
+- 23 Oct is partial (63 WBGT times at 16:05) and its labels are provisional, as expected for the current day.

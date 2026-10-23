@@ -8,12 +8,14 @@ Read 23 Oct 2026 at about 15:35 SGT (window A), read-only, through the Serverles
 |---|---|---|
 | Per run (mean of 18 billed runs) | 0.363 | 0.142 |
 | Per run, range | 0.337 to 0.406 | 0.131 to 0.158 |
+| An hour at every 15 minutes (4 × the mean; estimate) | 1.45 | 0.57 |
 | A day at hourly runs (24 × the mean) | 8.71 | 3.40 |
 | A day at every 15 minutes (96 × the mean; estimate) | 34.86 | 13.59 |
 
 - SKU `PREMIUM_JOBS_SERVERLESS_COMPUTE_AP_SINGAPORE`, US$0.39 per DBU.
 - The 15-minute figure assumes every run costs what an hourly run costs. Each run reads the same 3-hour window of live files whatever the interval, so a shorter interval should not make a run smaller. It is an estimate, not a measurement.
 - At that rate, 30 days at every 15 minutes would be about US$408, more than the whole US$400 trial credit. Hourly is about US$102 for 30 days.
+- **Proposal (23 Oct; not a change, the schedule stays hourly):** refresh every 15 minutes during the Demo Day hours only, and hourly otherwise. For Demo Day, 27 Oct, 4 to 7 PM SGT, that is 9 extra runs, about US$1.27 more than hourly.
 
 ## What was measured
 

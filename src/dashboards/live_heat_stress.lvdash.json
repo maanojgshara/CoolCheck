@@ -1,0 +1,446 @@
+{
+  "datasets": [
+    {
+      "name": "ds_banner",
+      "displayName": "Refresh status",
+      "queryLines": [
+        "-- One row: is the live table fresh? Stale when its last refresh (the newest loaded_at) is over 90 minutes old.\n",
+        "WITH s AS (\n",
+        "  SELECT max(loaded_at) AS refreshed,\n",
+        "         coalesce(unix_timestamp(current_timestamp()) - unix_timestamp(max(loaded_at)) > 5400, true) AS stale\n",
+        "  FROM latest_readings\n",
+        ")\n",
+        "SELECT\n",
+        "  CASE WHEN stale THEN 'stale' ELSE 'live' END AS state,\n",
+        "  CASE\n",
+        "    WHEN refreshed IS NULL THEN 'Live data is stale: no refresh yet. Every station shows no recent reading.'\n",
+        "    WHEN stale THEN concat('Live data is stale: last refresh ',\n",
+        "      date_format(convert_timezone('Asia/Singapore', refreshed), 'd MMM HH:mm'),\n",
+        "      ' SGT. Every station shows no recent reading until the next refresh.')\n",
+        "    ELSE concat('Live data: last refresh ', date_format(convert_timezone('Asia/Singapore', refreshed), 'd MMM HH:mm'),\n",
+        "      ' SGT, ', CAST(CAST(floor((unix_timestamp(current_timestamp()) - unix_timestamp(refreshed)) / 60) AS INT) AS STRING),\n",
+        "      ' min ago.')\n",
+        "  END AS message\n",
+        "FROM s\n"
+      ]
+    },
+    {
+      "name": "ds_streams",
+      "displayName": "Streams",
+      "queryLines": [
+        "-- One row per stream: the newest reading, and the stations with a reading in the hour before the last refresh\n",
+        "-- (0 when the table is stale). 'of' counts the stations with a reading in the 24 hours before the refresh.\n",
+        "WITH s AS (\n",
+        "  SELECT max(loaded_at) AS refreshed,\n",
+        "         coalesce(unix_timestamp(current_timestamp()) - unix_timestamp(max(loaded_at)) > 5400, true) AS stale\n",
+        "  FROM latest_readings\n",
+        "),\n",
+        "m AS (SELECT * FROM VALUES ('wbgt', 'WBGT', 1), ('rainfall', 'Rainfall', 2),\n",
+        "      ('air_temperature', 'Air temperature', 3) AS v(measure, stream, ord)),\n",
+        "r AS (\n",
+        "  SELECT m.stream, m.ord, max(t.reading_ts) AS newest,\n",
+        "         count(CASE WHEN NOT s.stale AND unix_timestamp(t.reading_ts) > unix_timestamp(s.refreshed) - 3600 THEN 1 END)\n",
+        "           AS reporting,\n",
+        "         count(CASE WHEN unix_timestamp(t.reading_ts) > unix_timestamp(s.refreshed) - 86400 THEN 1 END) AS known\n",
+        "  FROM m CROSS JOIN s LEFT JOIN latest_readings t ON t.measure = m.measure\n",
+        "  GROUP BY m.stream, m.ord\n",
+        ")\n",
+        "SELECT stream, ord,\n",
+        "  coalesce(concat(date_format(convert_timezone('Asia/Singapore', newest), 'd MMM HH:mm'), ' SGT'), 'no recent reading')\n",
+        "    AS last_updated,\n",
+        "  CASE WHEN newest IS NULL THEN 'no recent reading'\n",
+        "    ELSE concat(CAST(CAST(floor((unix_timestamp(current_timestamp()) - unix_timestamp(newest)) / 60) AS INT) AS STRING), ' min')\n",
+        "  END AS age_now,\n",
+        "  concat(CAST(reporting AS STRING), ' of ', CAST(known AS STRING)) AS reporting_text,\n",
+        "  reporting, known\n",
+        "FROM r\n",
+        "ORDER BY ord\n"
+      ]
+    },
+    {
+      "name": "ds_wbgt",
+      "displayName": "WBGT stations",
+      "queryLines": [
+        "-- One row per WBGT station. Recent: a reading in the hour before the last refresh, and the table not stale.\n",
+        "-- The category is the API's own heat-stress field; a station without a recent reading is 'No recent reading'.\n",
+        "WITH s AS (\n",
+        "  SELECT max(loaded_at) AS refreshed,\n",
+        "         coalesce(unix_timestamp(current_timestamp()) - unix_timestamp(max(loaded_at)) > 5400, true) AS stale\n",
+        "  FROM latest_readings\n",
+        "),\n",
+        "w AS (\n",
+        "  SELECT t.station_id, t.station_name, t.lat, t.lon, t.value, t.heat_stress, t.reading_ts,\n",
+        "         NOT s.stale AND t.value IS NOT NULL\n",
+        "           AND unix_timestamp(t.reading_ts) > unix_timestamp(s.refreshed) - 3600 AS recent\n",
+        "  FROM latest_readings t CROSS JOIN s\n",
+        "  WHERE t.measure = 'wbgt'\n",
+        ")\n",
+        "SELECT station_id, station_name, lat, lon,\n",
+        "  CASE WHEN recent THEN value END AS wbgt,\n",
+        "  CASE WHEN NOT recent THEN 'No recent reading' ELSE coalesce(heat_stress, 'No category given') END AS heat_category,\n",
+        "  CASE WHEN recent THEN concat(format_number(value, 1), ' °C') ELSE 'no recent reading' END AS wbgt_text,\n",
+        "  concat(date_format(convert_timezone('Asia/Singapore', reading_ts), 'd MMM HH:mm'), ' SGT') AS reading_time,\n",
+        "  CASE WHEN recent THEN 0 ELSE 1 END AS sort_group\n",
+        "FROM w\n",
+        "ORDER BY sort_group, wbgt DESC, station_name\n"
+      ]
+    },
+    {
+      "name": "ds_air",
+      "displayName": "Air temperature stations",
+      "queryLines": [
+        "WITH s AS (\n",
+        "  SELECT max(loaded_at) AS refreshed,\n",
+        "         coalesce(unix_timestamp(current_timestamp()) - unix_timestamp(max(loaded_at)) > 5400, true) AS stale\n",
+        "  FROM latest_readings\n",
+        "),\n",
+        "a AS (\n",
+        "  SELECT t.station_name, t.value, t.reading_ts,\n",
+        "         NOT s.stale AND t.value IS NOT NULL\n",
+        "           AND unix_timestamp(t.reading_ts) > unix_timestamp(s.refreshed) - 3600 AS recent\n",
+        "  FROM latest_readings t CROSS JOIN s\n",
+        "  WHERE t.measure = 'air_temperature'\n",
+        ")\n",
+        "SELECT station_name,\n",
+        "  CASE WHEN recent THEN value END AS temp_c,\n",
+        "  CASE WHEN recent THEN concat(format_number(value, 1), ' °C') ELSE 'no recent reading' END AS temp_text,\n",
+        "  concat(date_format(convert_timezone('Asia/Singapore', reading_ts), 'd MMM HH:mm'), ' SGT') AS reading_time,\n",
+        "  CASE WHEN recent THEN 0 ELSE 1 END AS sort_group\n",
+        "FROM a\n",
+        "ORDER BY sort_group, temp_c DESC, station_name\n"
+      ]
+    },
+    {
+      "name": "ds_rain_label",
+      "displayName": "Rainfall window",
+      "queryLines": [
+        "-- One row: the rainfall panel's heading, from window_end (one end time for all stations).\n",
+        "WITH s AS (\n",
+        "  SELECT max(loaded_at) AS refreshed,\n",
+        "         coalesce(unix_timestamp(current_timestamp()) - unix_timestamp(max(loaded_at)) > 5400, true) AS stale\n",
+        "  FROM latest_readings\n",
+        "),\n",
+        "r AS (\n",
+        "  SELECT max(window_end) AS window_end, count(value) AS with_value,\n",
+        "         count(CASE WHEN value > 0 THEN 1 END) AS wet, max(value) AS most\n",
+        "  FROM latest_readings\n",
+        "  WHERE measure = 'rainfall_last_hour'\n",
+        ")\n",
+        "SELECT CASE\n",
+        "  WHEN s.stale THEN 'Rain in the last hour: no recent reading (live data is stale)'\n",
+        "  WHEN r.window_end IS NULL\n",
+        "    THEN 'Rain in the last hour: no recent reading (no rainfall station reported in the hour before the last refresh)'\n",
+        "  ELSE concat('Rain in the hour to ', date_format(convert_timezone('Asia/Singapore', r.window_end), 'd MMM HH:mm'),\n",
+        "    ' SGT: ', CAST(r.wet AS STRING), ' of ', CAST(r.with_value AS STRING), ' stations with a reading recorded rain',\n",
+        "    CASE WHEN r.wet > 0 THEN concat(', up to ', format_number(r.most, 1), ' mm') ELSE '' END)\n",
+        "END AS label\n",
+        "FROM s CROSS JOIN r\n"
+      ]
+    },
+    {
+      "name": "ds_rain",
+      "displayName": "Rainfall stations",
+      "queryLines": [
+        "-- Rain per station over (window_end - 60 min, window_end]. NULL (no reading in the window) and a stale table show\n",
+        "-- 'no recent reading', never 0 mm.\n",
+        "WITH s AS (\n",
+        "  SELECT max(loaded_at) AS refreshed,\n",
+        "         coalesce(unix_timestamp(current_timestamp()) - unix_timestamp(max(loaded_at)) > 5400, true) AS stale\n",
+        "  FROM latest_readings\n",
+        "),\n",
+        "r AS (\n",
+        "  SELECT t.station_name, t.value, t.n_readings,\n",
+        "         NOT s.stale AND t.window_end IS NOT NULL AND t.value IS NOT NULL AS has_value\n",
+        "  FROM latest_readings t CROSS JOIN s\n",
+        "  WHERE t.measure = 'rainfall_last_hour'\n",
+        ")\n",
+        "SELECT station_name,\n",
+        "  CASE WHEN has_value THEN value END AS rain_mm,\n",
+        "  CASE WHEN has_value THEN concat(format_number(value, 1), ' mm') ELSE 'no recent reading' END AS rain_text,\n",
+        "  CASE WHEN has_value THEN concat(CAST(n_readings AS STRING), ' of 12') END AS readings_text,\n",
+        "  CASE WHEN has_value THEN 0 ELSE 1 END AS sort_group\n",
+        "FROM r\n",
+        "ORDER BY sort_group, rain_mm DESC, station_name\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "live",
+      "displayName": "Live heat stress",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": ["## CoolCheck: live heat stress\n"]
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "subtitle",
+            "multilineTextboxSpec": {
+              "lines": [
+                "The newest readings from NEA's real-time feeds: WBGT heat stress, rainfall and air temperature. ",
+                "A scheduled job refreshes the readings (hourly at :05 SGT at present). ",
+                "A station shows *no recent reading* when it has no reading in the hour before the last refresh, and every station does when that refresh is more than 90 minutes old. ",
+                "Heat-stress categories (Low, Moderate, High) are NEA's own, as given in each reading. Times are Singapore time (SGT). Not official advice.\n",
+                "\n",
+                "Contains information from NEA's WBGT, Rainfall and Air Temperature real-time datasets, accessed continuously from data.gov.sg, which is made available under the terms of the [Singapore Open Data Licence version 1.0](https://data.gov.sg/open-data-licence)."
+              ]
+            }
+          },
+          "position": {"x": 0, "y": 1, "width": 12, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "banner",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_banner",
+                  "fields": [{"name": "message", "expression": "`message`"}],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [{"fieldName": "message", "displayName": "Status"}]
+              },
+              "frame": {"showTitle": false}
+            }
+          },
+          "position": {"x": 0, "y": 3, "width": 12, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "streams",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_streams",
+                  "fields": [
+                    {"name": "stream", "expression": "`stream`"},
+                    {"name": "last_updated", "expression": "`last_updated`"},
+                    {"name": "age_now", "expression": "`age_now`"},
+                    {"name": "reporting_text", "expression": "`reporting_text`"}
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "stream", "displayName": "Stream"},
+                  {"fieldName": "last_updated", "displayName": "Last updated (newest reading)"},
+                  {"fieldName": "age_now", "displayName": "Age now"},
+                  {"fieldName": "reporting_text", "displayName": "Stations reporting in the last hour (of those seen in 24 h)"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Streams"}
+            }
+          },
+          "position": {"x": 0, "y": 5, "width": 12, "height": 4}
+        },
+        {
+          "widget": {
+            "name": "wbgt-map",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_wbgt",
+                  "fields": [
+                    {"name": "lat", "expression": "`lat`"},
+                    {"name": "lon", "expression": "`lon`"},
+                    {"name": "heat_category", "expression": "`heat_category`"},
+                    {"name": "station_name", "expression": "`station_name`"},
+                    {"name": "wbgt_text", "expression": "`wbgt_text`"},
+                    {"name": "reading_time", "expression": "`reading_time`"}
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "symbol-map",
+              "encodings": {
+                "coordinates": {
+                  "latitude": {"fieldName": "lat"},
+                  "longitude": {"fieldName": "lon"}
+                },
+                "color": {
+                  "fieldName": "heat_category",
+                  "displayName": "Heat stress (NEA)",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {"value": "Low", "color": "#2f7fc1"},
+                      {"value": "Moderate", "color": "#fab219"},
+                      {"value": "High", "color": "#d03b3b"},
+                      {"value": "No recent reading", "color": "#a3a29b"}
+                    ]
+                  }
+                },
+                "extra": [
+                  {"fieldName": "station_name", "displayName": "Station"},
+                  {"fieldName": "wbgt_text", "displayName": "WBGT"},
+                  {"fieldName": "reading_time", "displayName": "Newest reading"}
+                ]
+              },
+              "mark": {"opacity": 0.9},
+              "frame": {"showTitle": true, "title": "WBGT stations by NEA heat-stress category"}
+            }
+          },
+          "position": {"x": 0, "y": 9, "width": 7, "height": 10}
+        },
+        {
+          "widget": {
+            "name": "wbgt-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_wbgt",
+                  "fields": [
+                    {"name": "station_name", "expression": "`station_name`"},
+                    {"name": "wbgt_text", "expression": "`wbgt_text`"},
+                    {"name": "heat_category", "expression": "`heat_category`"},
+                    {"name": "reading_time", "expression": "`reading_time`"}
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "station_name", "displayName": "Station"},
+                  {"fieldName": "wbgt_text", "displayName": "WBGT"},
+                  {"fieldName": "heat_category", "displayName": "Heat stress"},
+                  {"fieldName": "reading_time", "displayName": "Newest reading"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Latest WBGT per station"}
+            }
+          },
+          "position": {"x": 7, "y": 9, "width": 5, "height": 10}
+        },
+        {
+          "widget": {
+            "name": "air-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_air",
+                  "fields": [
+                    {"name": "station_name", "expression": "`station_name`"},
+                    {"name": "temp_text", "expression": "`temp_text`"},
+                    {"name": "reading_time", "expression": "`reading_time`"}
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "station_name", "displayName": "Station"},
+                  {"fieldName": "temp_text", "displayName": "Air temperature"},
+                  {"fieldName": "reading_time", "displayName": "Newest reading"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Air temperature (shown live only; not a model input)"}
+            }
+          },
+          "position": {"x": 0, "y": 19, "width": 6, "height": 9}
+        },
+        {
+          "widget": {
+            "name": "rain-label",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_rain_label",
+                  "fields": [{"name": "label", "expression": "`label`"}],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [{"fieldName": "label", "displayName": "Rainfall"}]
+              },
+              "frame": {"showTitle": false}
+            }
+          },
+          "position": {"x": 6, "y": 19, "width": 6, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "rain-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_rain",
+                  "fields": [
+                    {"name": "station_name", "expression": "`station_name`"},
+                    {"name": "rain_text", "expression": "`rain_text`"},
+                    {"name": "readings_text", "expression": "`readings_text`"}
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "station_name", "displayName": "Station"},
+                  {"fieldName": "rain_text", "displayName": "Rain in the hour"},
+                  {"fieldName": "readings_text", "displayName": "5-minute readings in the hour"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Rain per station"}
+            }
+          },
+          "position": {"x": 6, "y": 21, "width": 6, "height": 7}
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#FCFCFC", "dark": "#1F272D"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#11171C"},
+      "widgetBorderColor": {"light": "#FFFFFF", "dark": "#11171C"},
+      "fontColor": {"light": "#11171C", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#2272B4", "dark": "#8ACAFF"},
+      "visualizationColors": ["#2f7fc1", "#fab219", "#d03b3b", "#a3a29b", "#6c5fa8", "#2a9d8f"],
+      "widgetHeaderAlignment": "LEFT"
+    }
+  }
+}
