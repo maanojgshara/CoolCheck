@@ -24,7 +24,8 @@ targets:
   # "[dev <user>] ...") and a pipeline that is not held in development mode; development mode ignores an empty
   # name_prefix preset. Production mode requires root_path, set to the deploying user's own folder. The schemas and
   # the raw-files Volume are created once by setup_catalog.py, outside the bundle. The latest-readings job stays
-  # paused here until the collector writes to this workspace.
+  # paused here until the collector writes to this workspace, and the heat forecast until a champion model is
+  # registered here (production mode does not pause schedules).
   free:
     mode: production
     workspace:
@@ -35,6 +36,9 @@ targets:
     resources:
       jobs:
         latest_readings:
+          schedule:
+            pause_status: PAUSED
+        heat_forecast:
           schedule:
             pause_status: PAUSED
 

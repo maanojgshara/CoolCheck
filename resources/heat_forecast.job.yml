@@ -2,7 +2,8 @@
 # refresh-only pipeline update, then the target date (the run date in SGT) scored with the champion model and written
 # to gold.heat_forecast, one row per area of the 41 with MERGE on (target_date, planning_area). The job parameter
 # target_date (empty by default) allows a backfill; it is passed as one argument (--target-date=<date>), so an empty
-# value stays a value. Deployed PAUSED; the schedule is unpaused on the user's word.
+# value stays a value. First deployed PAUSED; unpaused on the user's word on 23 Oct 2026, so 00:45 SGT on 24 Oct is its
+# first scheduled run. The free target keeps it paused (databricks.yml): Free Edition has no champion model yet.
 #   databricks bundle run heat_forecast -t dev -p coolcheck --params target_date=2026-10-23
 # The failure e-mail goes to the deploying user (workspace.current_user.userName), so no address is in the repository.
 # Written as heat_forecast.job.yml.draft; renamed to heat_forecast.job.yml for its first deploy.
@@ -15,7 +16,7 @@ resources:
       schedule:
         quartz_cron_expression: "0 45 0 * * ?"
         timezone_id: Asia/Singapore
-        pause_status: PAUSED
+        pause_status: UNPAUSED
       email_notifications:
         on_failure:
           - ${workspace.current_user.userName}
