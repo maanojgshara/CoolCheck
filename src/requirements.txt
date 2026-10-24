@@ -1,0 +1,5 @@
+# Packages for the Databricks App only (src/app.py; resources/coolcheck_app.app.yml). The jobs pin theirs in resources/,
+# local scripts use requirements-dev.txt. databricks-sdk matches .venv, where the plan code is tested.
+databricks-sdk==0.154.0
+mlflow-tracing==3.16.1
+streamlit==1.50.0

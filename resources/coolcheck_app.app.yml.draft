@@ -1,0 +1,77 @@
+# The approval App (Guide D13, M6; docs/design/agent_app.md) and the experiment its drafts are traced to. The App's source
+# is the whole src/ folder, so it runs the same coolcheck package that window D's evaluations import; src/app.py is the
+# Streamlit page and src/requirements.txt its packages. The App's service principal is created by the first deploy, and
+# the resources below are the grants the deploy gives it: CAN_USE on the existing warehouse (looked up by name in
+# live_heat_stress.dashboard.yml, never created), EXECUTE on the three functions (SQL SECURITY DEFINER, so no SELECT on the
+# tables they read), SELECT on the gold.area_heat_risk view (default date, scored_at, run ID), SELECT and MODIFY on
+# gold.pending_approval (the Approve MERGE), CAN_EDIT on the experiment (traces). No access to gold.heat_forecast or silver.
+# Defined for dev only: the free target gets the App and the experiment once its functions and pending_approval exist.
+# Nothing is sent by the App. 800 calls and 25 calls per volunteer are placeholders until the user decides.
+# Written as coolcheck_app.app.yml.draft; renamed to coolcheck_app.app.yml for its first deploy.
+targets:
+  dev:
+    resources:
+      experiments:
+        coolcheck_agent:
+          name: /Workspace/Users/${workspace.current_user.userName}/coolcheck-agent
+      apps:
+        coolcheck_app:
+          name: coolcheck
+          description: CoolCheck next-day heat outreach plan; a person approves, nothing is sent.
+          source_code_path: ../src
+          config:
+            command: ["streamlit", "run", "app.py"]
+            env:
+              - name: COOLCHECK_CATALOG
+                value: ${var.catalog}
+              - name: DATABRICKS_WAREHOUSE_ID
+                value_from: sql-warehouse
+              - name: MLFLOW_TRACKING_URI
+                value: databricks
+              - name: MLFLOW_EXPERIMENT_ID
+                value_from: experiment
+              - name: APP_COMMIT
+                value: ${bundle.git.commit}
+              - name: DEFAULT_CALL_CAPACITY
+                value: "800"
+              - name: CALLS_PER_VOLUNTEER
+                value: "25"
+          resources:
+            - name: sql-warehouse
+              sql_warehouse:
+                id: ${var.warehouse_id}
+                permission: CAN_USE
+            - name: experiment
+              experiment:
+                experiment_id: ${resources.experiments.coolcheck_agent.id}
+                permission: CAN_EDIT
+            - name: fn-get-priority-areas
+              uc_securable:
+                securable_full_name: ${var.catalog}.gold.get_priority_areas
+                securable_type: FUNCTION
+                permission: EXECUTE
+            - name: fn-find-refuges
+              uc_securable:
+                securable_full_name: ${var.catalog}.gold.find_refuges
+                securable_type: FUNCTION
+                permission: EXECUTE
+            - name: fn-what-if-add-refuge
+              uc_securable:
+                securable_full_name: ${var.catalog}.gold.what_if_add_refuge
+                securable_type: FUNCTION
+                permission: EXECUTE
+            - name: area-heat-risk
+              uc_securable:
+                securable_full_name: ${var.catalog}.gold.area_heat_risk
+                securable_type: TABLE
+                permission: SELECT
+            - name: pending-approval-select
+              uc_securable:
+                securable_full_name: ${var.catalog}.gold.pending_approval
+                securable_type: TABLE
+                permission: SELECT
+            - name: pending-approval-modify
+              uc_securable:
+                securable_full_name: ${var.catalog}.gold.pending_approval
+                securable_type: TABLE
+                permission: MODIFY
