@@ -1,0 +1,72 @@
+%% CoolCheck architecture: what exists on 24 Oct 2026 (dev target; deploy 3 plus the committed agent code).
+%% Same flow as the diagram in docs/submission/writeup.md, with the briefing dashboard, the three functions, the agent
+%% loop, the approval App and the MLflow traces filled in. Dashed = planned, not built.
+%% Render:  mmdc -i docs/figures/architecture.mmd -o docs/figures/architecture.svg
+%%          mmdc -i docs/figures/architecture.mmd -o docs/figures/architecture.png -s 2
+flowchart LR
+  subgraph OPEN["Open data"]
+    NEA["NEA feeds on data.gov.sg<br/>WBGT readings, 24-hour forecast,<br/>rainfall, air temperature"]
+    STATIC["Static open data<br/>SingStat, HDB, URA, NParks, EMA,<br/>People's Association, MOH lists<br/>OneMap geocodes the HDB blocks once"]
+  end
+
+  subgraph OUT["Outside Databricks"]
+    COLL["Collector<br/>GitHub Actions every 15 minutes,<br/>started by cron-job.org"]
+  end
+
+  subgraph WS["Databricks workspace: Unity Catalog coolcheck"]
+    VOL[("Unity Catalog Volume<br/>raw JSON")]
+    PIPE["Lakeflow pipeline (serverless, triggered)<br/>Bronze (Auto Loader)<br/>→ Silver (parsed, rule flags, deduplicated)<br/>→ daily station labels"]
+    GOLD["Gold views and tables over Silver<br/>vulnerability thirds and reasons, blocks,<br/>refuges, parks, observed heat"]
+    MODEL["LightGBM in MLflow<br/>14-month back-test, final check<br/>live model refit to 22 Oct,<br/>registered as champion"]
+    NIGHT["Nightly job, 00:45 SGT<br/>refresh the pipeline, then score<br/>→ gold.heat_forecast: 41 areas"]
+    TIER["gold.area_heat_risk: the tier view<br/>heat level × vulnerability third<br/>no probability or score column"]
+    LIVE["Live heat-stress page (AI/BI dashboard)<br/>hourly job → gold.latest_readings"]
+    DASH["Briefing dashboard (AI/BI)<br/>Briefing, Blocks, Observed heat, About"]
+    FUNCS["Three Unity Catalog SQL functions<br/>get_priority_areas, find_refuges,<br/>what_if_add_refuge"]
+
+    subgraph APPG["Approval App (Databricks Apps)"]
+      APP["Request, draft plan, Approve<br/>a person approves, nothing is sent"]
+      AGENT["Agent loop (draft_plan)<br/>code allocates the calls<br/>a number check gates the summary<br/>notes written by code<br/>template fallback"]
+    end
+
+    LLM["Llama 3.3 70B<br/>through the Unity Gateway"]
+    APPR[("gold.pending_approval<br/>one row per approval")]
+    TRACE["MLflow traces<br/>coolcheck-agent experiment"]
+  end
+
+  LANG["Advisories in four languages<br/>planned, not in the App yet"]
+
+  NEA --> COLL
+  COLL -->|uploads raw files| VOL
+  VOL -->|Auto Loader| PIPE
+  VOL -->|hourly job reads the live files| LIVE
+  STATIC -->|fetched on a laptop, loaded to Silver| GOLD
+  PIPE -->|daily station labels| GOLD
+  PIPE -->|daily labels train the model| MODEL
+  MODEL -->|champion| NIGHT
+  NIGHT -->|refreshes first| PIPE
+  NIGHT -->|gold.heat_forecast| TIER
+  GOLD -->|vulnerability thirds| TIER
+  TIER --> DASH
+  GOLD --> DASH
+  TIER --> FUNCS
+  GOLD --> FUNCS
+  APP --> AGENT
+  AGENT -->|tool calls through the SQL warehouse| FUNCS
+  AGENT <-->|chat| LLM
+  AGENT -->|traces| TRACE
+  APP -->|Approve| APPR
+  APP -.->|planned| LANG
+
+  classDef source fill:#f1f1f1,stroke:#777777,color:#111111
+  classDef store fill:#e6f0fa,stroke:#2272b4,color:#111111
+  classDef job fill:#fff4d6,stroke:#b8860b,color:#111111
+  classDef ai fill:#efe6fa,stroke:#6a3d9a,color:#111111
+  classDef people fill:#e3f3e8,stroke:#2e7d4f,color:#111111
+  classDef planned fill:#ffffff,stroke:#888888,color:#555555,stroke-dasharray: 5 5
+  class NEA,STATIC source
+  class COLL,PIPE,NIGHT job
+  class VOL,GOLD,TIER,APPR store
+  class MODEL,AGENT,LLM,TRACE ai
+  class LIVE,DASH,FUNCS,APP people
+  class LANG planned
