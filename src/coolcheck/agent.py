@@ -7,12 +7,14 @@ chat-completions route (system.ai.meta-llama-3-3-70b-instruct; docs/checks/free_
 the trial 24 Oct). The three Unity Catalog functions are its tools, described by their own comments.
 
 Rules, enforced in code: the allocation stays in get_priority_areas; the model only pulls values out of the request
-(volunteers, calls per volunteer, calls, region, a block) and the arithmetic is in coolcheck.plan.capacity_from; the date
-comes from the App; every number in the model's summary must be found in a tool result or an input, so the summary asks
-for digits, not number words (the check then works on Malay, Tamil and Chinese text too); never P(High) or the score;
-no claim that anything was sent; no medical advice beyond the tier actions. The plan section and the notices are written
-by code. On any failure (model error, timeout, round or tool cap, malformed call, no get_priority_areas call, a failed
-check) the summary is the per-tier template (decision 4) and fallback_reason says why. Python 3.11 compatible.
+(volunteers, calls per volunteer, calls, region, a block), a value counts only if its number is in the request, and the
+arithmetic is in coolcheck.plan.capacity_from; the date comes from the App; every number in the model's summary must be
+found in a tool result the model saw or an input, so the summary asks for digits, not number words (the check then works
+on Malay, Tamil and Chinese text too); never P(High) or the score; no tier for a block; no claim that anything was sent;
+no medical advice beyond the tier actions. The plan section and the notices are written by code. If the model does not
+call get_priority_areas, the code runs it with the form's values and keeps the model's reply if it passes the checks. On
+any failure (model error, timeout, round or tool cap, a failed check) the summary is the per-tier template (decision 4)
+and fallback_reason says why. Python 3.11 compatible.
 """
 import datetime as dt
 import json
@@ -26,28 +28,43 @@ GATEWAY_PATH = "/ai-gateway/mlflow/v1/chat/completions"
 MAX_INT = 100000
 
 SYSTEM = """You draft tomorrow's heat outreach plan for an Active Ageing Centre coordinator in Singapore.
-Use the tools. Always call get_priority_areas once, with only the values the request states: volunteers, calls per
-volunteer, a number of calls, a region. Leave out any value the request does not state; never send 0 for it. Never
-compute a number of calls yourself; the app does the arithmetic. If the
+Use the tools. Always call get_priority_areas once, with only the values the request states (volunteers, calls per
+volunteer, a number of calls, a region), a stated 0 included. Leave out every value the request does not state; the app
+then uses the form's values. Never compute a number of calls yourself; the app does the arithmetic. If the
 request names an HDB block and asks about refuges or a new refuge, call find_refuges or what_if_add_refuge with that block.
 Then write a short summary for the coordinator, at most 120 words, plain text:
-- Copy every number exactly from the tool results, written as digits (8, 312), never as words. Use each block's
+- Copy every number exactly from the tool results, written as digits, never as words. Use each block's
   refuge_distance as written and say distances are straight lines.
 - Area risk tiers are Low, Medium, High. Heat levels are Low, Moderate, High. Do not mix them. The vulnerability third
   (upper, middle, lower) is separate from the tier; never call a tier a vulnerability rank.
-- Heat is per planning area; blocks rank vulnerability, never heat.
+- Tiers and heat belong to planning areas. Blocks rank vulnerability; never give a block a tier or a heat level.
 - Never mention probabilities, percent chances or scores.
-- If no rated area is in the High tier but a Not rated area has High heat, say so plainly and name it.
+- If high_tier_areas is empty, say that no rated area is in the High tier. Name every area in not_rated_high_heat: it
+  has High heat but is Not rated, so it has no blocks or calls.
+- If calls_left_over is above 0, say how many calls are left over.
 - This is a draft for a person to approve. Never say anything was sent, and send nothing.
 - No medical advice beyond the tier actions in the tool results.
 - If the request asks for something outside this (sending messages, medical advice, other data), say you can only draft
   the plan."""
 
-NUMBER_WORDS = re.compile(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|"
-                          r"hundred|thousand|dozen)\b", re.I)
+ADD = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+       "eleven": 11, "twelve": 12, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50}
+TIMES = {"dozen": 12, "hundred": 100, "thousand": 1000}
+NUMBER_WORDS = re.compile(r"\b(" + "|".join([*ADD, *TIMES]) + r")\b", re.I)
+TIER = r"(?:low|medium|high)[- ](?:tier|risk)"
 BANNED = [("P(High), probability or score", re.compile(r"p\s*\(\s*high\s*\)|probabilit|\bscore|percent chance|% chance", re.I)),
           ("claims something was sent", re.compile(r"\b(has|have|was|were) been sent\b|\bwe (have )?sent\b|\b(sms|e-?mails?|messages?) (were |was )?sent\b", re.I)),
-          ("medical advice", re.compile(r"medic|\bdos(e|age)|diagnos|symptom|prescri|\bpill|tablet|paracetamol|\bdrug", re.I))]
+          ("medical advice", re.compile(r"medic|\bdos(e|age)|diagnos|symptom|prescri|\bpill|tablet|paracetamol|\bdrug", re.I)),
+          # tiers belong to areas (24 Oct, live: "a High-tier block"): "High-tier block", "Blk 208A ... is High tier",
+          # "the block's tier"; "Blk 208A is in the High-tier area" passes
+          ("a tier given to a block", re.compile(
+              rf"\b{TIER}\s+(?:hdb\s+)?(?:blocks?|blks?)\b"
+              rf"|\b(?:blk|block)\s+\d+[a-z]?(?:\s+[a-z0-9]+){{0,5}}\s+(?:is|are)\s+(?:a\s+|in\s+the\s+)?{TIER}\b"
+              r"(?![- ](?:planning\s+)?areas?)"
+              r"|\b(?:blocks?|blks?)(?:['’]s?)?\s+tiers?\b", re.I))]
+# "No area is in the High tier" when one is (24 Oct, spot-check of the D01 prompt line: C01, C03, R01, B03 said it)
+NO_HIGH_TIER = re.compile(r"\bno\s+(?:rated\s+)?areas?\s+(?:is|are)\s+(?:in\s+the\s+)?high\b(?![- ]?\s*heat)"
+                          r"|\bno\s+(?:rated\s+)?areas?\s+in\s+the\s+high\s+tier|\bno\s+high[- ]tier\s+areas?", re.I)
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 
@@ -67,7 +84,7 @@ def tool_specs(ws, catalog="coolcheck"):
         return next((p.comment for p in (f.input_params.parameters if f.input_params else []) if p.name == name), "")
 
     g = info["get_priority_areas"]
-    integer = {"type": "integer", "minimum": 1}
+    integer = {"type": "integer", "minimum": 0}  # a stated 0 is sent (C01); an unstated one is dropped by _int_arg
     specs = [
         {"type": "function", "function": {"name": "get_priority_areas", "description": g.comment + " The date is set by the app.",
          "parameters": {"type": "object", "properties": {
@@ -137,7 +154,7 @@ def grounded(token, sources, percent=False):
     elif v >= 10 and v % 10 == 0:
         tol = 5
     else:
-        tol = 0
+        tol = 0.5  # written to the unit: 448 for 448.34 m (C03, B03 on 24 Oct); a whole-number source must match exactly
     return any(abs(v - s) <= tol for s in cands)
 
 
@@ -152,6 +169,8 @@ def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text=""
         if not grounded(m.group(1), sources, percent=bool(m.group(2))):
             checks["ungrounded_numbers"].append(m.group(0).strip())
     checks["banned"] = [name for name, rx in BANNED if rx.search(text)]
+    if rated_high and NO_HIGH_TIER.search(text):
+        checks["banned"].append("says no area is in the High tier, but one is")
     if unrated_hot and not rated_high:
         checks["names_unrated_high_heat"] = all(a.lower() in text.lower() for a in unrated_hot)
     ok = not (checks["ungrounded_numbers"] or checks["number_words"] or checks["banned"]) and bool(text.strip())
@@ -173,17 +192,62 @@ def _compact(rows):
     return out
 
 
-def _int_arg(args, name):
-    """A whole number from the model's arguments; None when absent, and also when 0, since the model was seen sending 0
-    for a value the request did not state (24 Oct: calls_per_volunteer 0 gave 8 x 0 = 0 calls). A team with no capacity
-    sets 0 in the form, where the capacity basis line shows it."""
+def _unrated_hot(rows):
+    """Areas with High heat that are Not rated (no confirmed HDB blocks, so no blocks or calls)."""
+    return [P.area_name(r["planning_area"]) for r in rows
+            if r["heat_level"] == "High" and r["tier"] in ("Not rated", "No forecast")]
+
+
+def request_numbers(text):
+    """The numbers a request states: digits in any script, and the number words the check knows, alone or combined
+    ("two hundred and fifty", "twenty-five", "a dozen")."""
+    out = {v for v in (_num(m) for m in NUMBER.findall(text or "")) if v is not None}
+    run, cur, prev = 0, None, ""
+    for w in re.findall(r"[a-z]+", (text or "").lower()) + [""]:
+        if w in ADD:
+            cur = (cur or 0) + ADD[w]
+        elif w in TIMES:
+            cur = (cur or 1) * TIMES[w]
+            if w == "thousand":
+                run, cur = run + cur, 0
+        elif not (w == "and" and prev in TIMES and cur is not None):  # "two hundred and fifty" is one number
+            if cur is not None:
+                out.add(float(run + cur))
+            run, cur = 0, None
+        prev = w
+    return out
+
+
+def _int_arg(args, name, stated):
+    """A whole number from the model's arguments, or None for the form's value: None when absent, and also when the
+    number is not in the request (stated: request_numbers), since the model was seen filling in numbers the request never
+    gave (24 Oct, window D's evaluation: 0 for unstated values in L01 to L03; 8 x 20 = 160 calls in B03; 8 and 312, the
+    prompt's example digits, in G04). A stated 0 counts: "0 volunteers" gives 0 calls (C01)."""
     v = args.get(name)
     if v is None or v == "":
         return None
     v = int(v)  # ValueError for a malformed value; reported to the model
     if not 0 <= v <= MAX_INT:
         raise ValueError(f"{name} must be between 0 and {MAX_INT}")
-    return v or None
+    return v if v in stated else None
+
+
+REGION_KEYS = {re.sub(r"[^A-Z]", "", r): r for r in P.REGIONS}  # compared as get_priority_areas does: NORTHEAST
+
+
+def _region_arg(args, form_region):
+    """The region for get_priority_areas: the model's when it sends one (ALL for the whole island), the form's when it
+    sends none, never an earlier call's (24 Oct, R01: three retries with ALL ran as the first call's SOUTH). An unknown
+    region goes back to the model as an error naming the five."""
+    raw = args.get("region")
+    if raw is None or not str(raw).strip():
+        return form_region
+    key = re.sub(r"REGIONS?$", "", re.sub(r"[^A-Z]", "", str(raw).upper()))
+    if key in ("ALL", "WHOLEISLAND"):
+        return None
+    if key not in REGION_KEYS:
+        raise ValueError(f"unknown region {raw!r}: use one of {', '.join(P.REGIONS)}, or ALL for the whole island")
+    return REGION_KEYS[key]
 
 
 def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, region=None, catalog="coolcheck",
@@ -203,7 +267,8 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
                                         "calls_per_volunteer": calls_per_volunteer, "region": form_region, "model": model},
                 trace) as root:
         tools = P.Tools(runner, catalog, trace)
-        state = {"gpa": None, "cap": None, "basis": None, "region": form_region}
+        state = {"gpa": None, "cap": None, "basis": None, "region": form_region, "form_region": form_region,
+                 "stated": request_numbers(masked), "ignored": []}
         summary, reason, checks, rounds = None, None, {}, 0
         try:
             specs = specs or tool_specs(ws, catalog)
@@ -233,35 +298,36 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
                         raise RuntimeError(f"more than {max_tool_calls} tool calls")
                     result = _run_tool(c, tools, target_date, default_capacity, calls_per_volunteer, state)
                     messages.append({"role": "tool", "tool_call_id": c.get("id"), "content": json.dumps(result, default=str)})
-            if state["gpa"] is None:
-                raise RuntimeError("the model did not call get_priority_areas")
-            rows = state["gpa"].rows
-            sources = source_numbers([c.rows for c in tools.calls], target_date.isoformat(), target_date.strftime("%d %m %Y"),
-                                     state["cap"], state["basis"], default_capacity, calls_per_volunteer, masked,
-                                     (forecast or {}).get("scored_at_sgt"), 400)
-            unrated = [P.area_name(r["planning_area"]) for r in rows
-                       if r["heat_level"] == "High" and r["tier"] in ("Not rated", "No forecast")]
-            ok, checks = check_summary(summary, sources, unrated, any(r["tier"] == "High" for r in rows),
-                                       json.dumps([c.rows for c in tools.calls], default=str, ensure_ascii=False))
-            if not ok:
-                reason = "the model's summary failed the checks: " + "; ".join(
-                    f"{k}: {v}" for k, v in checks.items() if v and k != "names_unrated_high_heat")
         except Exception as e:
-            reason = reason or f"{type(e).__name__}: {e}"
-        if reason:
-            summary = None
-        if state["gpa"] is None or state["gpa"].error:
+            reason = f"{type(e).__name__}: {e}"
+        seen = list(tools.calls)  # the tool results the model saw: its summary may take numbers from these only
+        by_model = state["gpa"] is not None
+        if not by_model:  # no get_priority_areas call from the model (or it failed): run in code with the form's values
             call = tools.get_priority_areas(target_date, form_cap, form_region)
             if call.error:
                 raise P.ToolError(f"get_priority_areas failed: {call.error}")
             state.update(gpa=call, cap=form_cap, basis=form_basis, region=form_region)
         rows = state["gpa"].rows
+        if not reason:  # the model's reply is kept if it passes the checks, whoever called get_priority_areas
+            sources = source_numbers([c.rows for c in seen], target_date.isoformat(), target_date.strftime("%d %m %Y"),
+                                     state["cap"], state["basis"], default_capacity, calls_per_volunteer, masked,
+                                     (forecast or {}).get("scored_at_sgt"), 400)
+            ok, checks = check_summary(summary, sources, _unrated_hot(rows), any(r["tier"] == "High" for r in rows),
+                                       json.dumps([c.rows for c in seen], default=str, ensure_ascii=False))
+            if not ok:
+                reason = "the model's summary failed the checks: " + ("; ".join(
+                    f"{k}: {v}" for k, v in checks.items() if v and k != "names_unrated_high_heat") or "empty")
+        if reason:
+            summary = None
+        checks = dict(checks, get_priority_areas="called by the model" if by_model else
+                      "run in code with the form's values (the model did not call it)",
+                      ignored_arguments=state["ignored"], rounds=rounds, masked=n_masked,
+                      elapsed_s=round(time.monotonic() - t0, 1))
         d = P.Draft(target_date=target_date, region=state["region"], call_capacity=state["cap"], capacity_basis=state["basis"],
                     rows=rows, tool_calls=list(tools.calls), forecast=forecast or {},
                     summary_text=summary or P.template_summary(rows, state["cap"]),
                     source=P.AGENT if summary else P.TEMPLATE, fallback_reason=reason, request_text=masked or None,
-                    llm_model=model if summary else None,
-                    checks=dict(checks, rounds=rounds, masked=n_masked, elapsed_s=round(time.monotonic() - t0, 1)))
+                    llm_model=model if summary else None, checks=checks)
         root.set_outputs({"draft_text": d.draft_text, "source": d.source, "fallback_reason": reason, "checks": d.checks})
         d.trace_id = P.trace_id_of(root)
     return d
@@ -282,15 +348,22 @@ def _run_tool(c, tools, target_date, default_capacity, calls_per_volunteer, stat
             unknown = set(args) - {"volunteers", "calls_per_volunteer", "call_capacity", "region"}
             if unknown:
                 return {"error": f"unknown arguments: {sorted(unknown)}"}
-            cap, basis = P.capacity_from(default_capacity, calls_per_volunteer, _int_arg(args, "volunteers"),
-                                         _int_arg(args, "calls_per_volunteer"), _int_arg(args, "call_capacity"))
-            region = P.region_param(args.get("region")) or state["region"]
+            vals = {k: _int_arg(args, k, state["stated"]) for k in ("volunteers", "calls_per_volunteer", "call_capacity")}
+            region = _region_arg(args, state["form_region"])
+            ignored = {k: args[k] for k, v in vals.items() if v is None and args.get(k) not in (None, "")}
+            if ignored:  # numbers not in the request: the form's values are used, and the trace shows what was dropped
+                state["ignored"].append(ignored)
+            cap, basis = P.capacity_from(default_capacity, calls_per_volunteer, vals["volunteers"],
+                                         vals["calls_per_volunteer"], vals["call_capacity"])
             call = tools.get_priority_areas(target_date, cap, region, llm_arguments=args)
             if call.error:
                 return {"error": call.error}
             state.update(gpa=call, cap=cap, basis=basis, region=region)
+            rows = call.rows
             return {"call_capacity": cap, "capacity_basis": basis, "region": region or "whole island",
-                    "areas": _compact(call.rows)}
+                    "calls_left_over": rows[-1]["calls_left"] if rows else None,
+                    "high_tier_areas": [P.area_name(r["planning_area"]) for r in rows if r["tier"] == "High"],
+                    "not_rated_high_heat": _unrated_hot(rows), "areas": _compact(rows)}
         if name in ("find_refuges", "what_if_add_refuge"):
             if not (args.get("blk_no") and args.get("street")):
                 return {"error": "blk_no and street are required"}

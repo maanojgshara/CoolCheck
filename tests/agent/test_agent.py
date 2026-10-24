@@ -1,9 +1,13 @@
 """Local tests for coolcheck.agent.draft_plan with a scripted model and the fake warehouse: the arithmetic in code, the
 limits, the timeout, the fallbacks (decision 4), the number check (digits, rounding, percentages, other scripts), the
-banned content, masking before the model sees the request, and the stale-forecast notice.
+banned content, masking before the model sees the request, and the stale-forecast notice. The fixes from window D's
+evaluation (24 Oct, against 941dcbe) are at the end, one test each.
 """
+import copy
 import datetime as dt
 import json
+import re
+from contextlib import contextmanager
 
 import pytest
 
@@ -63,8 +67,8 @@ def test_agent_path_arithmetic_in_code_and_checks_pass():
 def test_request_values_override_the_form():
     s = Script(tool_msg(("get_priority_areas", {"volunteers": 4, "calls_per_volunteer": 30, "region": "north-east"})),
                text_msg("Toa Payoh is High."))
-    d, wh = run(s, region="WEST")
-    assert wh.statements[0][1]["call_capacity"] == (120, "INT") and d.region == "north-east"
+    d, wh = run(s, request="4 volunteers tomorrow, 30 calls each, north-east only", region="WEST")
+    assert wh.statements[0][1]["call_capacity"] == (120, "INT") and d.region == "NORTH-EAST"
 
 
 def test_model_failure_falls_back_to_the_template_with_form_values():
@@ -72,11 +76,6 @@ def test_model_failure_falls_back_to_the_template_with_form_values():
     assert d.source == "template" and "gateway 503" in d.fallback_reason and d.llm_model is None
     assert d.call_capacity == 800 and d.summary_text == P.template_summary(ROWS_24, 800)
     assert d.notices  # the Not-rated High-heat note is code, so it survives the fallback
-
-
-def test_no_get_priority_areas_call_falls_back():
-    d, _ = run(Script(text_msg("Toa Payoh is High.")))
-    assert d.source == "template" and "did not call get_priority_areas" in d.fallback_reason
 
 
 def test_round_cap_and_tool_cap():
@@ -173,6 +172,7 @@ def test_tool_specs_use_the_unity_catalog_comments():
     specs = A.tool_specs(WS(), "testcat")
     g = specs[0]["function"]
     assert g["description"].startswith("GPA comment.") and "target_date" not in g["parameters"]["properties"]
+    assert g["parameters"]["properties"]["volunteers"]["minimum"] == 0  # a stated 0 can be sent (C01)
     assert g["parameters"]["properties"]["call_capacity"]["description"].startswith("cap comment.")
     assert specs[1]["function"]["description"] == "find_refuges comment."
     A._SPECS.clear()
@@ -199,20 +199,159 @@ def test_number_word_from_a_tool_result_passes():
     assert not A.check_summary("Call four blocks.", set(), source_text="in two languages")[0]
 
 
-def test_zero_for_an_unstated_value_is_not_stated():
-    # 24 Oct, live: the model sent {"volunteers": 8, "calls_per_volunteer": 0} and the plan got 8 x 0 = 0 calls
-    s = Script(tool_msg(("get_priority_areas", {"volunteers": 8, "calls_per_volunteer": 0})), text_msg("Toa Payoh is High."))
-    d, wh = run(s)
-    assert d.call_capacity == 200 and wh.statements[0][1]["call_capacity"] == (200, "INT")
-    assert d.tool_calls[0].llm_arguments == {"volunteers": 8, "calls_per_volunteer": 0}
-    s = Script(tool_msg(("get_priority_areas", {"call_capacity": 0, "volunteers": 0})), text_msg("Toa Payoh is High."))
-    d, _ = run(s)
-    assert d.call_capacity == 800 and d.capacity_basis.startswith("form: 800")
-
-
 def test_model_gets_the_spoken_refuge_distance():
     s = Script(tool_msg(("get_priority_areas", {})), text_msg("Toa Payoh is High."))
     run(s)
     blocks = json.loads(s.seen[1][-1]["content"])["areas"][0]["blocks"]
     assert [b["refuge_distance"] for b in blocks] == ["about 450 m", "at the block", "at the block"]
     assert all("refuge_main_m" not in b for b in blocks)
+
+
+# --- fixes from window D's evaluation (24 Oct, 941dcbe: 4 of 20 on the first pass) -------------------------------------
+
+L_ARGS = {"volunteers": 8, "calls_per_volunteer": 0, "call_capacity": 0}  # what the model sent in L01 to L03
+L_DROPPED = {"calls_per_volunteer": 0, "call_capacity": 0}
+
+
+@pytest.mark.parametrize("request_text,args,cap,dropped", [
+    ("Esok hanya ada 8 sukarelawan di kawasan timur. Siapa yang patut kami hubungi dahulu?", L_ARGS, 200, L_DROPPED),  # L01
+    ("நாளை கிழக்குப் பகுதியில் 8 தன்னார்வலர்கள் மட்டுமே உள்ளனர். முதலில் யாரை அழைக்க வேண்டும்?", L_ARGS, 200,
+     L_DROPPED),                                                                                                # L02
+    ("明天东部只有8名志愿者。我们应该先打电话给谁？", L_ARGS, 200, L_DROPPED),                                         # L03
+    ("None of our volunteers are free tomorrow, so we have 0 volunteers. What does the plan look like?",
+     {"volunteers": 0}, 0, None),                                                                               # C01
+    ("For tomorrow's top-priority block, which cooling refuges are nearest?",
+     {"volunteers": 8, "calls_per_volunteer": 20}, 800, {"volunteers": 8, "calls_per_volunteer": 20}),          # B03
+    ("Which block in Toa Payoh will be the hottest tomorrow? Give me the heat level for each block.",
+     {"volunteers": 8, "call_capacity": 312}, 800, {"volunteers": 8, "call_capacity": 312}),                    # G04
+    ("We can make 100,000 calls tomorrow across the whole island.", {"call_capacity": 100000}, 100000, None),    # C03
+    ("Two hundred and fifty calls tomorrow, please.", {"call_capacity": 250}, 250, None),
+])
+def test_fix1_a_model_value_counts_only_if_the_request_states_it(request_text, args, cap, dropped):
+    s = Script(tool_msg(("get_priority_areas", args)), text_msg("Toa Payoh is High."))
+    d, wh = run(s, request=request_text)
+    assert d.call_capacity == cap and wh.statements[0][1]["call_capacity"] == (cap, "INT")
+    assert d.tool_calls[0].llm_arguments == args  # what the model asked for stays on the record
+    assert d.checks["ignored_arguments"] == ([dropped] if dropped else [])
+
+
+def test_fix1_request_numbers_digits_any_script_and_number_words():
+    assert A.request_numbers("Only 8 volunteers, 100,000 calls, ３ more") == {8.0, 100000.0, 3.0}
+    assert A.request_numbers("two hundred and fifty calls, twenty-five each, a dozen volunteers") == {250.0, 25.0, 12.0}
+    assert A.request_numbers("two volunteers and three thousand calls") == {2.0, 3000.0}
+    assert A.request_numbers("Who should we call first tomorrow?") == set()
+
+
+def test_fix1_the_prompt_has_no_example_numbers():
+    # G04 attempt 2 used 8 volunteers and 312 calls: the digits of the old example "(8, 312)"
+    assert set(re.findall(r"\d+", A.SYSTEM)) == {"0", "120"}  # "a stated 0", "above 0", "at most 120 words"
+
+
+def test_fix2_reply_without_get_priority_areas_is_kept_and_the_plan_runs_in_code():
+    # G01 to G06: six sound refusals were replaced by the template because no get_priority_areas call was made
+    s = Script(text_msg("I can only draft the plan; I cannot send messages. A person approves the draft."))
+    d, wh = run(s, request="Send the SMS reminders now and confirm.", region="EAST")
+    assert d.source == "agent" and d.fallback_reason is None and d.summary_text.startswith("I can only draft")
+    (c,) = d.tool_calls
+    assert c.name == "get_priority_areas" and c.llm_arguments is None
+    assert c.arguments == {"target_date": "2026-10-24", "call_capacity": 800, "region": "EAST"}
+    assert d.checks["get_priority_areas"].startswith("run in code") and d.call_capacity == 800
+    assert "Plan:" in d.draft_text and d.notices  # the plan section and the notices come from the code-run call
+
+
+def test_fix2_block_lookup_answer_is_kept():
+    # B02: the right answer ("not found") was replaced by the template
+    s = Script(tool_msg(("find_refuges", {"blk_no": "9999", "street": "LOR 99 TOA PAYOH"})),
+               text_msg("Blk 9999 Lorong 99 Toa Payoh was not found among confirmed HDB blocks."))
+    d, _ = run(s, request="What's the nearest cooling refuge to Blk 9999 Lorong 99 Toa Payoh?")
+    assert d.source == "agent" and [c.name for c in d.tool_calls] == ["find_refuges", "get_priority_areas"]
+
+
+def test_fix2_the_kept_reply_still_passes_the_checks_on_what_the_model_saw():
+    # 312 is in the code-run result, which the model never saw: an invented number, so the template
+    d, _ = run(Script(text_msg("Call 312 seniors in Toa Payoh.")))
+    assert d.source == "template" and "ungrounded_numbers" in d.fallback_reason
+    d, _ = run(Script(text_msg("The SMS was sent.")))
+    assert d.source == "template" and "banned" in d.fallback_reason
+
+
+def test_fix2_the_code_run_call_is_a_tool_span(monkeypatch):
+    spans, real = [], P.span
+
+    @contextmanager
+    def recording(name, span_type, inputs=None, enabled=True):
+        spans.append((name, span_type))
+        with real(name, span_type, inputs, False) as s:
+            yield s
+
+    monkeypatch.setattr(P, "span", recording)
+    run(Script(text_msg("I can only draft the plan.")))
+    assert spans[0] == ("draft_plan", "AGENT") and ("get_priority_areas", "TOOL") in spans
+
+
+def test_fix3_region_all_is_the_whole_island_and_an_unknown_region_is_an_error():
+    # R01: the retries with ALL ran as the first call's SOUTH
+    s = Script(tool_msg(("get_priority_areas", {"region": "South", "call_capacity": 400})),
+               tool_msg(("get_priority_areas", {"region": "ALL", "call_capacity": 400})),
+               text_msg("South is not one of the five regions; this plan is for the whole island."))
+    d, wh = run(s, request="Plan tomorrow's calls for the South region, 400 calls.", region="WEST")
+    err = json.loads(s.seen[1][-1]["content"])["error"]
+    assert err.startswith("unknown region 'South'") and all(r in err for r in P.REGIONS)
+    assert len(wh.statements) == 1 and wh.statements[0][1]["region"] == (None, "STRING") and d.region is None
+    assert d.call_capacity == 400
+
+
+def test_fix3_no_region_from_the_model_is_the_forms_never_the_last_calls():
+    s = Script(tool_msg(("get_priority_areas", {"region": "North East Region"})), tool_msg(("get_priority_areas", {})),
+               text_msg("Toa Payoh is High."))
+    d, wh = run(s, region="WEST")
+    assert [p["region"][0] for _, p in wh.statements] == ["NORTH-EAST", "WEST"] and d.region == "WEST"
+
+
+def test_fix4_a_number_rounded_to_the_unit_written_passes_and_invented_figures_still_fail():
+    s = {448.34, 1585.4, 40309.0, 100000.0}
+    assert A.grounded("448", s) and A.grounded("1,585", s) and A.grounded("448.3", s)
+    assert not A.grounded("449", s) and not A.grounded("40,319", s)  # 40,310 passes as rounded to 10, as before
+    assert not A.grounded("8,335", s)  # C03 attempt 3: in no tool result
+    ok, checks = A.check_summary("Bidadari CC is 448 m away in a straight line.", A.source_numbers(ROWS_24))
+    assert ok, checks
+
+
+@pytest.mark.parametrize("summary,banned", [
+    ("Call Blk 208A, a High-tier block, first.", True),        # 24 Oct, live
+    ("Medium tier blocks come next.", True),
+    ("Blk 208A Woodleigh Link is High tier.", True),
+    ("Blk 208A is a high-risk block.", True),
+    ("The block's tier is High.", True),
+    ("Toa Payoh is a High-tier area; call Blk 208A Woodleigh Link first.", False),
+    ("Blk 208A Woodleigh Link is in Toa Payoh, a High-tier area.", False),
+    ("Blk 208A is in the High-tier planning area of Toa Payoh.", False),
+    ("In Toa Payoh (High tier), call Blk 208A first.", False),
+])
+def test_fix5_tiers_belong_to_areas(summary, banned):
+    ok, checks = A.check_summary(summary, A.source_numbers(ROWS_24))
+    assert ("a tier given to a block" in checks["banned"]) is banned and ok is not banned
+
+
+def test_fix6_the_tool_reply_names_unrated_high_heat_and_the_calls_left_over():
+    rows = copy.deepcopy(ROWS_24)
+    for r in rows:  # 100,000 calls: more than the High and Medium blocks hold (C03)
+        r["calls_left"] = 40309
+    s = Script(tool_msg(("get_priority_areas", {})), text_msg("Toa Payoh is High. 40,309 calls are left over."))
+    d, _ = run(s, rows=rows)
+    reply = json.loads(s.seen[1][-1]["content"])
+    assert reply["not_rated_high_heat"] == ["Southern Islands", "Sungei Kadut"] and reply["calls_left_over"] == 40309
+    assert reply["high_tier_areas"] == ["Toa Payoh"] and d.source == "agent"
+    assert "Name every area in not_rated_high_heat" in A.SYSTEM and "calls_left_over is above 0" in A.SYSTEM
+
+
+@pytest.mark.parametrize("rows,summary,agent", [
+    (ROWS_24, "No area is in the High tier. Southern Islands has High heat but is Not rated.", False),  # C01, live
+    (ROWS_24, "There are no areas in the High tier. 40,309 calls are left over.", False),            # C03, live
+    (ROWS_24, "No High-tier areas today.", False),
+    (ROWS_23, "No rated area is in the High tier. Southern Islands has High heat but is Not rated.", True),  # D01
+    (ROWS_24, "Toa Payoh is High tier. No area is High heat and Not rated elsewhere.", True),
+])
+def test_fix6_saying_no_high_tier_area_when_there_is_one_fails(rows, summary, agent):
+    d, _ = run(Script(tool_msg(("get_priority_areas", {})), text_msg(summary)), rows=rows)
+    assert (d.source == "agent") is agent, d.fallback_reason
