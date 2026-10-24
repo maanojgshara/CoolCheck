@@ -389,6 +389,23 @@ def test_the_runner_dry_run_lists_the_20_without_a_workspace():
     assert out.stdout.strip().endswith("20 scenarios; nothing run") and "D01 [no High area" in out.stdout
 
 
+def test_the_runner_runs_the_held_out_set_apart_and_locks_it_on_every_run():
+    import subprocess
+    import sys
+    R = _runner()
+    assert R.HELDOUT == "tests/agent_eval/scenarios_heldout.json"
+    assert set(R.LOCKED) == {R.SCENARIOS, R.HELDOUT, R.GRADER}  # the 20's run refuses an uncommitted held-out file too
+    root = Path(__file__).resolve().parents[2]
+    out = subprocess.run([sys.executable, "scripts/eval/run_agent_eval.py", "--heldout", "--dry-run"], cwd=root,
+                         capture_output=True, text=True, encoding="utf-8",
+                         env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"})
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip().endswith("9 held-out scenarios; nothing run") and "H01 [capacity" in out.stdout
+    assert "A01 [" not in out.stdout
+    src = (root / "scripts/eval/run_agent_eval.py").read_text(encoding="utf-8")
+    assert "_heldout' if a.heldout" in src and "(None, None) if a.heldout else grader_at" in src
+
+
 # ------------------------------------------------------------------------------------------------ B's own Draft object
 def test_the_grader_reads_window_bs_draft_object():
     """A real coolcheck.plan.Draft (the template path, as draft_plan's fallback returns it) through a fake warehouse."""

@@ -11,6 +11,9 @@ the SQL warehouse.
   can be made again.
 - draft_plan gets what the App gives it: the form (the date always from here), the catalog, workspace_client,
   warehouse_id and the date's forecast row (coolcheck.plan.forecast_info).
+- --heldout runs tests/agent_eval/scenarios_heldout.json instead (written after run 2, not shown to window B), under the
+  current criteria only, into <stamp>_heldout.json, reported apart from the 20. Both scenario files are locked on
+  every run.
 - Pass 1 runs every scenario once: the headline. Each scenario that fails it runs twice more and is reported x/3; one
   that fails only under run 1's criteria runs twice more too, for that score's x/3.
 - Traces go to a separate experiment, /Users/<the user running it>/coolcheck-agent-eval (resolved at run time; no name
@@ -43,8 +46,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from coolcheck import agent_eval as E  # noqa: E402
 
 SCENARIOS = "tests/agent_eval/scenarios.json"
+HELDOUT = "tests/agent_eval/scenarios_heldout.json"  # written after run 2, not shown to window B; --heldout
 GRADER = "src/coolcheck/agent_eval.py"
-LOCKED = (SCENARIOS, GRADER)
+LOCKED = (SCENARIOS, HELDOUT, GRADER)
 AGENT_CODE = ("src/coolcheck/agent.py", "src/coolcheck/plan.py")
 RUN1_CRITERIA = "9ff1874"  # run 1's scenarios and grader (docs/checks/agent_eval.md, 20261024T121843Z)
 
@@ -181,9 +185,13 @@ def main():
     ap.add_argument("--reruns", type=int, default=2)
     ap.add_argument("--out-dir", default="docs/checks/agent_eval")
     ap.add_argument("--dry-run", action="store_true", help="validate and list the runs; no workspace, no lock")
+    ap.add_argument("--heldout", action="store_true",
+                    help=f"run the held-out set ({HELDOUT}) under the current criteria only, into <stamp>_heldout.json, "
+                         "reported apart from the 20")
     a = ap.parse_args()
 
-    data = E.load_scenarios(ROOT / SCENARIOS)
+    scenario_file = HELDOUT if a.heldout else SCENARIOS
+    data = E.load_scenarios(ROOT / scenario_file)
     problems = E.validate(data)
     if problems:
         raise SystemExit("scenario file: " + "; ".join(problems))
@@ -191,13 +199,13 @@ def main():
     if a.dry_run:
         for s in chosen:
             print(f"{s['id']} [{s['group']}; expects {s['expected_source']}] form {E.form_of(data, s)}: {s['title']}")
-        print(f"{len(chosen)} scenarios; nothing run")
+        print(f"{len(chosen)} {'held-out ' if a.heldout else ''}scenarios; nothing run")
         return
     criteria, agent_code = lock(LOCKED), lock(AGENT_CODE)
     head = _git("rev-parse", "HEAD").stdout.strip()
     clean = not _git("status", "--porcelain").stdout.strip()
-    E1, e1_sha = grader_at(RUN1_CRITERIA)
-    criteria_run1 = {"commit": RUN1_CRITERIA, "sha256": {GRADER: e1_sha}}
+    E1, e1_sha = (None, None) if a.heldout else grader_at(RUN1_CRITERIA)  # run 1's criteria have no held-out set
+    criteria_run1 = {"commit": RUN1_CRITERIA, "sha256": {GRADER: e1_sha}} if E1 else None
     if not a.warehouse_id:
         raise SystemExit("--warehouse-id (or DATABRICKS_WAREHOUSE_ID) is needed for the tools")
     if a.judge_model and "llama" in a.judge_model.lower():
@@ -218,7 +226,7 @@ def main():
     client = MlflowClient()
     flush = getattr(mlflow, "flush_trace_async_logging", None)
     judge = make_judge(ws, a.judge_model) if a.judge_model else None
-    judge1 = make_judge(ws, a.judge_model, E1) if a.judge_model else None
+    judge1 = make_judge(ws, a.judge_model, E1) if a.judge_model and E1 else None
     wh = P.Warehouse(ws, a.warehouse_id)
     forecasts = {d: P.forecast_info(wh, dt.date.fromisoformat(d), a.catalog)  # as the App reads it
                  for d in sorted({E.form_of(data, s)["target_date"] for s in chosen})}
@@ -236,24 +244,27 @@ def main():
         except Exception as e:  # noqa: BLE001 - graded as a failure, with the error
             error = f"{type(e).__name__}: {e}"
         res = E.normalise(restored_draft(stored, rows) if stored else None, error)
-        res1 = E1.normalise(restored_draft(stored, rows) if stored else None, error)
+        res1 = E1.normalise(restored_draft(stored, rows) if stored else None, error) if E1 else None
         for r in (res, res1):
-            if r.elapsed_s is None:
+            if r is not None and r.elapsed_s is None:
                 r.elapsed_s = round(time.monotonic() - t0, 1)
         if flush:
             flush()
         trace = read_trace(client, res.trace_id)
         if trace and trace.get("found"):
-            for k, v in {"eval": "true", "eval_scenario": s["id"], "eval_attempt": str(n), "eval_pass": stamp}.items():
+            for k, v in {"eval": "true", "eval_scenario": s["id"], "eval_attempt": str(n), "eval_pass": stamp,
+                         "eval_set": "held-out" if a.heldout else "the 20"}.items():
                 try:
                     client.set_trace_tag(res.trace_id, k, v)
                 except Exception as e:  # noqa: BLE001 - recorded, not graded
                     trace.setdefault("tag_errors", []).append(f"{k}: {type(e).__name__}: {e}")
         g = grade_safely(E, s, form, res, judge, trace, exp.experiment_id)
-        g1 = grade_safely(E1, s, form, res1, judge1, trace, exp.experiment_id)
-        g.update(attempt=n, trace=trace, draft=stored, error=error,
-                 run1_criteria={k: g1.get(k) for k in ("passed", "checks", "grader_error") if k in g1})
-        print(f"{s['id']} attempt {n}: {g['passed']} (run 1's criteria: {g1['passed']}; {g['source']}, "
+        g.update(attempt=n, trace=trace, draft=stored, error=error)
+        if E1:
+            g1 = grade_safely(E1, s, form, res1, judge1, trace, exp.experiment_id)
+            g["run1_criteria"] = {k: g1.get(k) for k in ("passed", "checks", "grader_error") if k in g1}
+        print(f"{s['id']} attempt {n}: {g['passed']} (run 1's criteria: "
+              f"{g['run1_criteria']['passed'] if E1 else 'not applied'}; {g['source']}, "
               f"{res.elapsed_s} s, trace {res.trace_id}) "
               + "; ".join(f"{c['name']}: {c['detail']}" for c in g["checks"] if c["passed"] is False), flush=True)
         return g
@@ -263,32 +274,38 @@ def main():
 
     first = [attempt(s, 1) for s in chosen]
     reruns = {g["id"]: [attempt(next(s for s in chosen if s["id"] == g["id"]), n) for n in range(2, 2 + a.reruns)]
-              for g in first if g["passed"] is False or g["run1_criteria"]["passed"] is False}
+              for g in first if g["passed"] is False or (E1 and g["run1_criteria"]["passed"] is False)}
     summary = E.summarise(first, {i: gs for i, gs in reruns.items()
                                   if next(g for g in first if g["id"] == i)["passed"] is False})
-    first1 = [run1_view(g) for g in first]
-    summary_run1 = E1.summarise(first1, {i: [run1_view(x) for x in gs] for i, gs in reruns.items()
-                                         if next(g for g in first1 if g["id"] == i)["passed"] is False})
-    out = {"stamp": stamp, "head": head, "clean_worktree": clean, "agent_code": agent_code, "criteria": criteria,
+    summary_run1 = None
+    if E1:
+        first1 = [run1_view(g) for g in first]
+        summary_run1 = E1.summarise(first1, {i: [run1_view(x) for x in gs] for i, gs in reruns.items()
+                                             if next(g for g in first1 if g["id"] == i)["passed"] is False})
+    out = {"stamp": stamp, "set": "held-out" if a.heldout else "the 20", "scenario_file": scenario_file,
+           "head": head, "clean_worktree": clean, "agent_code": agent_code, "criteria": criteria,
            "criteria_run1": criteria_run1, "agent_model": A.MODEL, "judge_model": a.judge_model,
            "experiment_id": exp.experiment_id,
            "forecasts": {d: {k: f.get(k) for k in ("run_id", "scored_at_sgt", "forecast_missing")}
                          for d, f in forecasts.items()},
            "summary": summary, "summary_run1_criteria": summary_run1, "first_pass": first, "reruns": reruns,
            "rows": rows}
-    path = ROOT / a.out_dir / f"{stamp}.json"
+    path = ROOT / a.out_dir / f"{stamp}{'_heldout' if a.heldout else ''}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, default=str, ensure_ascii=False, indent=1), encoding="utf-8")  # before MLflow
     try:
-        with mlflow.start_run(experiment_id=exp.experiment_id, run_name=f"agent-eval {stamp}",
-                              tags={"eval": "true"}) as run:
+        with mlflow.start_run(experiment_id=exp.experiment_id,
+                              run_name=f"agent-eval {stamp}{' held-out' if a.heldout else ''}",
+                              tags={"eval": "true", "eval_set": out["set"]}) as run:
             mlflow.log_params({"agent_commit": agent_code["commit"], "criteria_commit": criteria["commit"],
-                               "criteria_run1_commit": RUN1_CRITERIA, "head": head, "scenarios": len(first),
-                               "agent_model": A.MODEL, "judge_model": a.judge_model or "none"})
+                               "criteria_run1_commit": RUN1_CRITERIA if E1 else "not applied", "head": head,
+                               "scenario_file": scenario_file, "scenarios": len(first), "agent_model": A.MODEL,
+                               "judge_model": a.judge_model or "none"})
             mlflow.log_metrics({"first_pass_passed": summary["first_pass_passed"],
                                 "first_pass_failed": len(summary["first_pass_failed"]),
                                 "first_pass_incomplete": len(summary["first_pass_incomplete"]),
-                                "first_pass_passed_run1_criteria": summary_run1["first_pass_passed"]})
+                                **({"first_pass_passed_run1_criteria": summary_run1["first_pass_passed"]}
+                                   if summary_run1 else {})})
             mlflow.log_dict(json.loads(json.dumps(out, default=str)), "agent_eval_results.json")
         out["mlflow_run_id"] = run.info.run_id
     except Exception as e:  # noqa: BLE001 - the results file stands; the error is recorded in it
