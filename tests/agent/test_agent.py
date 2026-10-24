@@ -446,3 +446,29 @@ def test_3b_calls_left_over_get_a_note_unless_the_summary_says_it():
     d, _ = run(Script(tool_msg(("get_priority_areas", args)), text_msg("Toa Payoh is High. 40,309 calls are left over.")),
                request=req, rows=rows)
     assert note not in d.notices
+
+
+def test_3c_a_planning_area_the_model_never_saw_fails_the_check():
+    # replies are now kept without get_priority_areas, so one could name areas it never looked up
+    d, _ = run(Script(text_msg("I can only draft the plan. Bedok and Tampines are usually the hottest.")))
+    assert d.source == "template" and "unseen_areas: ['Bedok', 'Tampines']" in d.fallback_reason
+    d, _ = run(Script(tool_msg(("get_priority_areas", {})), text_msg("Toa Payoh is High; Sungei Kadut is Not rated.")))
+    assert d.source == "agent" and d.checks["unseen_areas"] == []
+    d, _ = run(Script(tool_msg(("get_priority_areas", {"region": "North-East"})), text_msg("Call Sengkang, then Toa Payoh.")),
+               request="North-East only", rows=ROWS_NE)  # Toa Payoh is not in the North-East result the model saw
+    assert d.source == "template" and "unseen_areas: ['Toa Payoh']" in d.fallback_reason
+
+
+def test_3c_an_area_named_in_the_request_counts_as_seen():
+    # B02: the right answer names the request's own street, "Lorong 99 Toa Payoh", with no rows from find_refuges
+    s = Script(tool_msg(("find_refuges", {"blk_no": "9999", "street": "LOR 99 TOA PAYOH"})),
+               text_msg("Blk 9999 Lorong 99 Toa Payoh was not found among confirmed HDB blocks."))
+    d, _ = run(s, request="What's the nearest cooling refuge to Blk 9999 Lorong 99 Toa Payoh?", wh=FakeWarehouse(refuges=[]))
+    assert d.source == "agent" and d.checks["unseen_areas"] == []
+
+
+def test_3c_area_names_are_compared_with_hdb_abbreviations():
+    assert len(A.PLANNING_AREAS) == 55 and A._words("Bukit Batok") == " BT BATOK "
+    assert A.unseen_areas("Blk 101 Bukit Batok West Ave 6, in Bukit Batok.", '{"street": "BT BATOK WEST AVE 6"}') == []
+    assert A.unseen_areas("The North-Eastern Islands and the North-East region.", "") == ["North-Eastern Islands"]
+    assert A.check_summary("Bedok is first.", set())[0]  # no seen_text (e.g. a translation): not checked

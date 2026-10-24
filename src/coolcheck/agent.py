@@ -21,6 +21,7 @@ import json
 import re
 import time
 
+from coolcheck import agent_tools as T
 from coolcheck import plan as P
 
 MODEL = "system.ai.meta-llama-3-3-70b-instruct"
@@ -68,6 +69,16 @@ NO_HIGH_TIER = re.compile(r"\bno\s+(?:rated\s+)?areas?\s+(?:in\s+(?:the\s+)?[\w-
                           r"(?:in\s+the\s+)?high\b(?![- ]?\s*heat)"
                           r"|\bno\s+(?:rated\s+)?areas?\s+in\s+the\s+high\s+tier|\bno\s+high[- ]tier\s+areas?", re.I)
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+# The 55 planning areas of silver.planning_area_boundary (URA Master Plan 2025), read 24 Oct: a name in the summary must
+# be in a tool result the model saw or in the request, since a reply is kept without a get_priority_areas call
+PLANNING_AREAS = (
+    "ANG MO KIO", "BEDOK", "BISHAN", "BOON LAY", "BUKIT BATOK", "BUKIT MERAH", "BUKIT PANJANG", "BUKIT TIMAH",
+    "CENTRAL WATER CATCHMENT", "CHANGI", "CHANGI BAY", "CHOA CHU KANG", "CLEMENTI", "DOWNTOWN CORE", "GEYLANG", "HOUGANG",
+    "JURONG EAST", "JURONG WEST", "KALLANG", "LIM CHU KANG", "MANDAI", "MARINA EAST", "MARINA SOUTH", "MARINE PARADE",
+    "MUSEUM", "NEWTON", "NORTH-EASTERN ISLANDS", "NOVENA", "ORCHARD", "OUTRAM", "PASIR RIS", "PAYA LEBAR", "PIONEER",
+    "PUNGGOL", "QUEENSTOWN", "RIVER VALLEY", "ROCHOR", "SELETAR", "SEMBAWANG", "SENGKANG", "SERANGOON", "SIMPANG",
+    "SINGAPORE RIVER", "SOUTHERN ISLANDS", "STRAITS VIEW", "SUNGEI KADUT", "TAMPINES", "TANGLIN", "TENGAH", "TOA PAYOH",
+    "TUAS", "WESTERN ISLANDS", "WESTERN WATER CATCHMENT", "WOODLANDS", "YISHUN")
 
 
 # --- tools for the model, described by the Unity Catalog comments ------------------------------------------------------
@@ -160,17 +171,29 @@ def grounded(token, sources, percent=False):
     return any(abs(v - s) <= tol for s in cands)
 
 
+def _words(s):
+    """' WORDS ' in upper case with HDB's street abbreviations (agent_tools.STREET_WORDS), to compare names: 'Bukit
+    Batok' and 'BT BATOK ST 21' share ' BT BATOK '."""
+    return " " + " ".join(T.STREET_WORDS.get(w, w) for w in re.sub(r"[^A-Z0-9]+", " ", (s or "").upper()).split()) + " "
+
+
+def unseen_areas(text, seen_text):
+    """Planning areas named in text that appear nowhere in seen_text (the tool results the model saw, and the request)."""
+    t, seen = _words(text), _words(seen_text)
+    return [P.area_name(a) for a in PLANNING_AREAS if _words(a) in t and _words(a) not in seen]
+
+
 def _names(text, name):
     """Whether text names name as a whole, ignoring case, spaces and hyphens: 'East' is not named in 'North-East'."""
     pat = r"[\s-]*".join(map(re.escape, re.split(r"[\s-]+", name.strip())))
     return re.search(rf"(?<![\w-]){pat}(?![\w-])", text, re.I) is not None
 
 
-def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text="", region=None):
+def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text="", region=None, seen_text=None):
     """(passed, checks): digits only (a number word passes only if a tool result uses it, e.g. "four languages" in the
     tier actions), every number grounded, no banned content, no "no area is in the High tier" when one is or, in a plan
-    for a region (its display name), without naming it. Records whether Not-rated High heat is named when no rated area
-    is High (the code notice is shown either way)."""
+    for a region (its display name), without naming it, and, given seen_text, no planning area the model never saw.
+    Records whether Not-rated High heat is named when no rated area is High (the code notice is shown either way)."""
     used = {w.lower() for w in NUMBER_WORDS.findall(source_text or "")}
     checks = {"ungrounded_numbers": [], "number_words": [w for w in NUMBER_WORDS.findall(text) if w.lower() not in used],
               "banned": []}
@@ -184,9 +207,12 @@ def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text=""
         elif region and not _names(sentence, region):  # the dashboard shows the whole island (24 Oct: Toa Payoh is High)
             checks["banned"].append(f"says no area is in the High tier without naming the region ({region})")
         break
+    if seen_text is not None:
+        checks["unseen_areas"] = unseen_areas(text, seen_text)
     if unrated_hot and not rated_high:
         checks["names_unrated_high_heat"] = all(a.lower() in text.lower() for a in unrated_hot)
-    ok = not (checks["ungrounded_numbers"] or checks["number_words"] or checks["banned"]) and bool(text.strip())
+    ok = (not (checks["ungrounded_numbers"] or checks["number_words"] or checks["banned"] or checks.get("unseen_areas"))
+          and bool(text.strip()))
     return ok, checks
 
 
@@ -349,9 +375,10 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
             sources = source_numbers([c.rows for c in seen], target_date.isoformat(), target_date.strftime("%d %m %Y"),
                                      state["cap"], state["basis"], default_capacity, calls_per_volunteer, masked,
                                      (forecast or {}).get("scored_at_sgt"), 400)
+            seen_rows = json.dumps([c.rows for c in seen], default=str, ensure_ascii=False)
             ok, checks = check_summary(summary, sources, _unrated_hot(rows), any(r["tier"] == "High" for r in rows),
-                                       json.dumps([c.rows for c in seen], default=str, ensure_ascii=False),
-                                       P.region_name(state["region"]) if state["region"] else None)
+                                       seen_rows, P.region_name(state["region"]) if state["region"] else None,
+                                       seen_text=seen_rows + "\n" + masked)
             if not ok:
                 reason = "the model's summary failed the checks: " + ("; ".join(
                     f"{k}: {v}" for k, v in checks.items() if v and k != "names_unrated_high_heat") or "empty")
