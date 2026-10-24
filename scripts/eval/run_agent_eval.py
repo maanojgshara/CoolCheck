@@ -182,7 +182,14 @@ def main():
                     client.set_trace_tag(res.trace_id, k, v)
                 except Exception as e:  # noqa: BLE001 - recorded, not graded
                     trace.setdefault("tag_errors", []).append(f"{k}: {type(e).__name__}: {e}")
-        g = E.grade(s, form, res, judge, trace, exp.experiment_id, check_traces=True)
+        try:
+            g = E.grade(s, form, res, judge, trace, exp.experiment_id, check_traces=True)
+        except Exception as e:  # noqa: BLE001 - a grader bug: recorded, the scenario incomplete (never passed)
+            g = {"id": s["id"], "group": s["group"], "passed": None, "expected_source": s["expected_source"],
+                 "source": res.source, "fallback_reason": res.fallback_reason, "trace_id": res.trace_id,
+                 "model": res.model, "rounds": res.rounds, "elapsed_s": res.elapsed_s,
+                 "tools": [c.name for c in res.tool_calls], "summary_text": res.summary_text, "checks": [],
+                 "grader_error": f"{type(e).__name__}: {e}"}
         g.update(attempt=n, trace=trace)
         print(f"{s['id']} attempt {n}: {g['passed']} ({g['source']}, {res.elapsed_s} s, trace {res.trace_id}) "
               + "; ".join(f"{c['name']}: {c['detail']}" for c in g["checks"] if c["passed"] is False), flush=True)
@@ -197,15 +204,22 @@ def main():
            "forecasts": {d: {k: f.get(k) for k in ("run_id", "scored_at_sgt", "forecast_missing")}
                          for d, f in forecasts.items()},
            "summary": summary, "first_pass": first, "reruns": reruns}
-    with mlflow.start_run(experiment_id=exp.experiment_id, run_name=f"agent-eval {stamp}", tags={"eval": "true"}):
-        mlflow.log_params({"agent_commit": agent_code["commit"], "criteria_commit": criteria["commit"], "head": head,
-                           "scenarios": len(first), "agent_model": A.MODEL, "judge_model": a.judge_model or "none"})
-        mlflow.log_metrics({"first_pass_passed": summary["first_pass_passed"],
-                            "first_pass_failed": len(summary["first_pass_failed"]),
-                            "first_pass_incomplete": len(summary["first_pass_incomplete"])})
-        mlflow.log_dict(json.loads(json.dumps(out, default=str)), "agent_eval_results.json")
     path = ROOT / a.out_dir / f"{stamp}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, default=str, ensure_ascii=False, indent=1), encoding="utf-8")  # before MLflow
+    try:
+        with mlflow.start_run(experiment_id=exp.experiment_id, run_name=f"agent-eval {stamp}",
+                              tags={"eval": "true"}) as run:
+            mlflow.log_params({"agent_commit": agent_code["commit"], "criteria_commit": criteria["commit"],
+                               "head": head, "scenarios": len(first), "agent_model": A.MODEL,
+                               "judge_model": a.judge_model or "none"})
+            mlflow.log_metrics({"first_pass_passed": summary["first_pass_passed"],
+                                "first_pass_failed": len(summary["first_pass_failed"]),
+                                "first_pass_incomplete": len(summary["first_pass_incomplete"])})
+            mlflow.log_dict(json.loads(json.dumps(out, default=str)), "agent_eval_results.json")
+        out["mlflow_run_id"] = run.info.run_id
+    except Exception as e:  # noqa: BLE001 - the results file stands; the error is recorded in it
+        out["mlflow_run_error"] = f"{type(e).__name__}: {e}"
     path.write_text(json.dumps(out, default=str, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(summary, indent=1, ensure_ascii=False))
     print(f"results: {path.relative_to(ROOT)}")
