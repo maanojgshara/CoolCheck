@@ -1,13 +1,18 @@
 """Run the agent evaluation (docs/design/agent_eval.md): the 20 scenarios of tests/agent_eval/scenarios.json through
-coolcheck.agent.draft_plan (window B, 941dcbe), graded by coolcheck.agent_eval. Only on the user's word: it calls the
-model and the SQL warehouse.
+coolcheck.agent.draft_plan (window B), graded by coolcheck.agent_eval. Only on the user's word: it calls the model and
+the SQL warehouse.
 
 - Refuses unless the scenario file and the grader are committed and unchanged since HEAD, so the criteria can't move
   after the results are seen, and unless the agent code (coolcheck/agent.py and plan.py) is too, so the commit it ran
   against is the one recorded. Both commits, HEAD and the files' sha256 go into the results.
+- Every draft is graded twice: by the grader at HEAD (the headline) and by run 1's grader, read from git at
+  RUN1_CRITERIA, with its own judge prompt; so run 2's drafts are also scored under run 1's criteria. The drafts are
+  stored in the results (each distinct set of tool rows once), and both grades are made from the stored copy, so they
+  can be made again.
 - draft_plan gets what the App gives it: the form (the date always from here), the catalog, workspace_client,
   warehouse_id and the date's forecast row (coolcheck.plan.forecast_info).
-- Pass 1 runs every scenario once: the headline. Each scenario that fails it runs twice more and is reported x/3.
+- Pass 1 runs every scenario once: the headline. Each scenario that fails it runs twice more and is reported x/3; one
+  that fails only under run 1's criteria runs twice more too, for that score's x/3.
 - Traces go to a separate experiment, /Users/<the user running it>/coolcheck-agent-eval (resolved at run time; no name
   is in the repository), and every trace is tagged eval=true, scenario and attempt, in case draft_plan writes to the
   demo's experiment. One MLflow run in the eval experiment holds the parameters, the metrics and the graded results.
@@ -29,6 +34,7 @@ import os
 import subprocess
 import sys
 import time
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,10 +46,49 @@ SCENARIOS = "tests/agent_eval/scenarios.json"
 GRADER = "src/coolcheck/agent_eval.py"
 LOCKED = (SCENARIOS, GRADER)
 AGENT_CODE = ("src/coolcheck/agent.py", "src/coolcheck/plan.py")
+RUN1_CRITERIA = "9ff1874"  # run 1's scenarios and grader (docs/checks/agent_eval.md, 20261024T121843Z)
 
 
 def _git(*args, root=ROOT):
     return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
+
+
+def grader_at(commit, root=ROOT):
+    """The grader as committed at `commit` (run 1's criteria), read from git as UTF-8 bytes, and its sha256."""
+    src = subprocess.run(["git", "show", f"{commit}:{GRADER}"], cwd=root, capture_output=True)
+    if src.returncode:
+        raise SystemExit(f"cannot read {GRADER} at {commit}: {src.stderr.decode('utf-8', 'replace').strip()}")
+    name = f"agent_eval_at_{commit}"
+    module = types.ModuleType(name)
+    module.__file__ = f"{GRADER}@{commit}"
+    sys.modules[name] = module  # dataclasses look their module up here
+    exec(compile(src.stdout.decode("utf-8"), module.__file__, "exec"), module.__dict__)
+    return module, hashlib.sha256(src.stdout).hexdigest()
+
+
+def _plain(value):
+    return json.loads(json.dumps(value, default=str))
+
+
+def stored_draft(d, rows):
+    """A draft_plan result as plain data with every field either grader reads; each distinct set of tool rows goes once
+    into `rows` (keyed by its sha256), since most runs return the same plan."""
+    calls = []
+    for c in getattr(d, "tool_calls", None) or []:
+        r = _plain(getattr(c, "rows", None) or [])
+        key = hashlib.sha256(json.dumps(r, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+        rows.setdefault(key, r)
+        calls.append({"name": c.name, "arguments": _plain(c.arguments), "rows_ref": key, "error": c.error,
+                      "llm_arguments": _plain(c.llm_arguments), "elapsed_ms": getattr(c, "elapsed_ms", None)})
+    keep = ("summary_text", "draft_text", "source", "fallback_reason", "capacity_basis", "call_capacity", "region",
+            "checks", "trace_id", "llm_model", "request_text", "notes", "notices")
+    return _plain({**{k: getattr(d, k, None) for k in keep}, "tool_calls": calls})
+
+
+def restored_draft(stored, rows):
+    """A stored draft with its tool rows back in place: what both graders read."""
+    return {**stored, "tool_calls": [{**{k: v for k, v in c.items() if k != "rows_ref"}, "rows": rows[c["rows_ref"]]}
+                                     for c in stored["tool_calls"]]}
 
 
 def lock(paths, root=ROOT):
@@ -95,20 +140,33 @@ def reply_text(r):
     return content or ""
 
 
-def make_judge(ws, model):
+def make_judge(ws, model, grader=E):
     """The LLM judge on the Unity Gateway chat-completions path, called as coolcheck.agent.Gateway calls the agent's
-    model. A failed call is no verdict: the check stays pending."""
+    model, with the prompt of `grader` (run 1's grader has its own). A failed call is no verdict: the check stays
+    pending."""
     from coolcheck.agent import GATEWAY_PATH
 
     def judge(question, context):
         try:
             r = ws.api_client.do("POST", GATEWAY_PATH, body={
                 "model": model, "temperature": 0, "max_tokens": 2000,
-                "messages": [{"role": "user", "content": E.judge_prompt(question, context)}]})
+                "messages": [{"role": "user", "content": grader.judge_prompt(question, context)}]})
         except Exception as e:  # noqa: BLE001 - recorded with the check
             return {"pass": None, "why": f"judge call failed: {type(e).__name__}: {e}"}
-        return E.parse_verdict(reply_text(r))
+        return grader.parse_verdict(reply_text(r))
     return judge
+
+
+def grade_safely(grader, s, form, res, judge, trace, experiment_id):
+    """One grade; a grader bug is recorded and leaves the scenario incomplete (never passed)."""
+    try:
+        return grader.grade(s, form, res, judge, trace, experiment_id, check_traces=True)
+    except Exception as e:  # noqa: BLE001
+        return {"id": s["id"], "group": s["group"], "passed": None, "expected_source": s["expected_source"],
+                "source": res.source, "fallback_reason": res.fallback_reason, "trace_id": res.trace_id,
+                "model": res.model, "rounds": res.rounds, "elapsed_s": res.elapsed_s,
+                "tools": [c.name for c in res.tool_calls], "summary_text": res.summary_text, "checks": [],
+                "grader_error": f"{type(e).__name__}: {e}"}
 
 
 def main():
@@ -137,6 +195,9 @@ def main():
         return
     criteria, agent_code = lock(LOCKED), lock(AGENT_CODE)
     head = _git("rev-parse", "HEAD").stdout.strip()
+    clean = not _git("status", "--porcelain").stdout.strip()
+    E1, e1_sha = grader_at(RUN1_CRITERIA)
+    criteria_run1 = {"commit": RUN1_CRITERIA, "sha256": {GRADER: e1_sha}}
     if not a.warehouse_id:
         raise SystemExit("--warehouse-id (or DATABRICKS_WAREHOUSE_ID) is needed for the tools")
     if a.judge_model and "llama" in a.judge_model.lower():
@@ -157,22 +218,28 @@ def main():
     client = MlflowClient()
     flush = getattr(mlflow, "flush_trace_async_logging", None)
     judge = make_judge(ws, a.judge_model) if a.judge_model else None
+    judge1 = make_judge(ws, a.judge_model, E1) if a.judge_model else None
     wh = P.Warehouse(ws, a.warehouse_id)
     forecasts = {d: P.forecast_info(wh, dt.date.fromisoformat(d), a.catalog)  # as the App reads it
                  for d in sorted({E.form_of(data, s)["target_date"] for s in chosen})}
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    rows = {}
 
     def attempt(s, n):
         form = E.form_of(data, s)
         kw = draft_kwargs(form, catalog=a.catalog, workspace_client=ws, warehouse_id=a.warehouse_id,
                           forecast=forecasts[form["target_date"]])
         t0 = time.monotonic()
+        stored, error = None, None
         try:
-            res = E.normalise(A.draft_plan(s["request"], **kw))
+            stored = stored_draft(A.draft_plan(s["request"], **kw), rows)
         except Exception as e:  # noqa: BLE001 - graded as a failure, with the error
-            res = E.normalise(None, f"{type(e).__name__}: {e}")
-        if res.elapsed_s is None:
-            res.elapsed_s = round(time.monotonic() - t0, 1)
+            error = f"{type(e).__name__}: {e}"
+        res = E.normalise(restored_draft(stored, rows) if stored else None, error)
+        res1 = E1.normalise(restored_draft(stored, rows) if stored else None, error)
+        for r in (res, res1):
+            if r.elapsed_s is None:
+                r.elapsed_s = round(time.monotonic() - t0, 1)
         if flush:
             flush()
         trace = read_trace(client, res.trace_id)
@@ -182,28 +249,33 @@ def main():
                     client.set_trace_tag(res.trace_id, k, v)
                 except Exception as e:  # noqa: BLE001 - recorded, not graded
                     trace.setdefault("tag_errors", []).append(f"{k}: {type(e).__name__}: {e}")
-        try:
-            g = E.grade(s, form, res, judge, trace, exp.experiment_id, check_traces=True)
-        except Exception as e:  # noqa: BLE001 - a grader bug: recorded, the scenario incomplete (never passed)
-            g = {"id": s["id"], "group": s["group"], "passed": None, "expected_source": s["expected_source"],
-                 "source": res.source, "fallback_reason": res.fallback_reason, "trace_id": res.trace_id,
-                 "model": res.model, "rounds": res.rounds, "elapsed_s": res.elapsed_s,
-                 "tools": [c.name for c in res.tool_calls], "summary_text": res.summary_text, "checks": [],
-                 "grader_error": f"{type(e).__name__}: {e}"}
-        g.update(attempt=n, trace=trace)
-        print(f"{s['id']} attempt {n}: {g['passed']} ({g['source']}, {res.elapsed_s} s, trace {res.trace_id}) "
+        g = grade_safely(E, s, form, res, judge, trace, exp.experiment_id)
+        g1 = grade_safely(E1, s, form, res1, judge1, trace, exp.experiment_id)
+        g.update(attempt=n, trace=trace, draft=stored, error=error,
+                 run1_criteria={k: g1.get(k) for k in ("passed", "checks", "grader_error") if k in g1})
+        print(f"{s['id']} attempt {n}: {g['passed']} (run 1's criteria: {g1['passed']}; {g['source']}, "
+              f"{res.elapsed_s} s, trace {res.trace_id}) "
               + "; ".join(f"{c['name']}: {c['detail']}" for c in g["checks"] if c["passed"] is False), flush=True)
         return g
 
+    def run1_view(g):
+        return {**g, **g["run1_criteria"]}
+
     first = [attempt(s, 1) for s in chosen]
     reruns = {g["id"]: [attempt(next(s for s in chosen if s["id"] == g["id"]), n) for n in range(2, 2 + a.reruns)]
-              for g in first if g["passed"] is False}
-    summary = E.summarise(first, reruns)
-    out = {"stamp": stamp, "head": head, "agent_code": agent_code, "criteria": criteria, "agent_model": A.MODEL,
-           "judge_model": a.judge_model, "experiment_id": exp.experiment_id,
+              for g in first if g["passed"] is False or g["run1_criteria"]["passed"] is False}
+    summary = E.summarise(first, {i: gs for i, gs in reruns.items()
+                                  if next(g for g in first if g["id"] == i)["passed"] is False})
+    first1 = [run1_view(g) for g in first]
+    summary_run1 = E1.summarise(first1, {i: [run1_view(x) for x in gs] for i, gs in reruns.items()
+                                         if next(g for g in first1 if g["id"] == i)["passed"] is False})
+    out = {"stamp": stamp, "head": head, "clean_worktree": clean, "agent_code": agent_code, "criteria": criteria,
+           "criteria_run1": criteria_run1, "agent_model": A.MODEL, "judge_model": a.judge_model,
+           "experiment_id": exp.experiment_id,
            "forecasts": {d: {k: f.get(k) for k in ("run_id", "scored_at_sgt", "forecast_missing")}
                          for d, f in forecasts.items()},
-           "summary": summary, "first_pass": first, "reruns": reruns}
+           "summary": summary, "summary_run1_criteria": summary_run1, "first_pass": first, "reruns": reruns,
+           "rows": rows}
     path = ROOT / a.out_dir / f"{stamp}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, default=str, ensure_ascii=False, indent=1), encoding="utf-8")  # before MLflow
@@ -211,11 +283,12 @@ def main():
         with mlflow.start_run(experiment_id=exp.experiment_id, run_name=f"agent-eval {stamp}",
                               tags={"eval": "true"}) as run:
             mlflow.log_params({"agent_commit": agent_code["commit"], "criteria_commit": criteria["commit"],
-                               "head": head, "scenarios": len(first), "agent_model": A.MODEL,
-                               "judge_model": a.judge_model or "none"})
+                               "criteria_run1_commit": RUN1_CRITERIA, "head": head, "scenarios": len(first),
+                               "agent_model": A.MODEL, "judge_model": a.judge_model or "none"})
             mlflow.log_metrics({"first_pass_passed": summary["first_pass_passed"],
                                 "first_pass_failed": len(summary["first_pass_failed"]),
-                                "first_pass_incomplete": len(summary["first_pass_incomplete"])})
+                                "first_pass_incomplete": len(summary["first_pass_incomplete"]),
+                                "first_pass_passed_run1_criteria": summary_run1["first_pass_passed"]})
             mlflow.log_dict(json.loads(json.dumps(out, default=str)), "agent_eval_results.json")
         out["mlflow_run_id"] = run.info.run_id
     except Exception as e:  # noqa: BLE001 - the results file stands; the error is recorded in it

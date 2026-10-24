@@ -38,6 +38,25 @@ Written 24 Oct 2026 by window D for Guide M3 to M5, from the user's step-2 speci
 - Traces go to the experiment `coolcheck-agent-eval` in the running user's folder (resolved at run time). Every trace is read back (with retries, as the export can lag) and tagged `eval=true`, the scenario and the attempt. One MLflow run there holds the parameters, the metrics and the graded results.
 - The shared `.venv` has no mlflow, so the runner runs from a throwaway venv under `$env:TEMP` with mlflow-skinny 3.16.1 and databricks-sdk 0.154.0 (its docstring).
 
+## Run 2: criteria 2 (committed 24 Oct before the run; the scenario file is unchanged)
+
+Three changes to the grader, on the user's word after run 1. Window B had changed the loop meanwhile: code now writes notes for what the summary used to miss.
+1. **The draft as the coordinator sees it.** Code writes the header, the notes, the plan section, the footer, and the template when the model's summary fails a check. The model writes only the summary.
+   - **Content checks** (`summary_mentions`, `summary_omits_unless_allocated`, `summary_no_block_refs`, `distance_says_straight_line`) read the whole draft except its header line. The header is the date, region, forecast time and capacity basis, and the capacity basis has its own check.
+   - **The rules and the number check** read the summary as before, and also the code-written parts:
+     - The rules leave out the tool results' own sentences (tier sentence, reason, actions), which the plan quotes.
+     - The code-written numbers may also come from the tools' arguments, since the notes quote them: a block that was not found, or the model's values that were not used.
+   - Each detail says whether the summary or the code-written part met or broke the check.
+2. **A tighter judge prompt.** The judge gets the whole draft, who wrote which part, and the tool results only to check the draft.
+   - Every part of the question must be met by what the draft says, and anything it must say, decline or explain must be said in words.
+   - A pass needs a quote from the draft. A pass whose quote is not in the draft is no verdict, so the check stays pending.
+   - A smoke test before the commit: G02's template failed (it never declines), an explicit decline passed, and D01 passed on the code notice.
+3. **Street names.** The refuge tools' block and street are matched as the functions match them since `a771ddd` (`agent_tools.blk_key` and `street_key`), so "Jalan Kukoh" is JLN KUKOH.
+
+**Run 1's criteria on run 2's drafts.** Every draft is also graded by run 1's grader, read from git at `9ff1874`. Its sha256 equals the one in run 1's results (a test checks this), and it uses its own judge prompt.
+- The drafts are stored in the results, each distinct set of tool rows once. Both grades are made from the stored copy, so they can be made again.
+- A scenario that fails under either criteria runs twice more, so each score has its x/3.
+
 ## Limits
 
 - The App's capacity box can't be empty: it is a number input that defaults to 800, and `capacity_from` takes `int()` of it. So "capacity missing" means a request that gives no numbers (C02), not an empty form.

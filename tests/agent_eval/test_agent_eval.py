@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from coolcheck import agent_eval as E
-from eval_fixtures import EAST_200, ISLAND_800, REFUGES, WHAT_IF, call, gpa, result
+from eval_fixtures import EAST_200, ISLAND_800, REFUGES, WHAT_IF, area, block, call, gpa, result
 
 DATA = E.load_scenarios(Path(__file__).resolve().parent / "scenarios.json")
 BY_ID = {s["id"]: s for s in DATA["scenarios"]}
@@ -125,19 +125,23 @@ def test_the_dynamic_block_chain():
     assert "tool_called" in failed(run("B03", wrong))
     backwards = {**good, "tool_calls": [fr, gpa()]}
     assert "tool_order" in failed(run("B03", backwards))
-    no_line = {**good, "summary_text": "Bidadari CC is about 450 m away."}
+    no_line = result("Bidadari CC is about 450 m away.", [gpa(), fr])  # the fixture's footer says nothing on distances
     assert "distance_says_straight_line" in failed(run("B03", no_line))
 
 
-def test_block_lookups_keep_hdb_abbreviations():
-    assert E.norm_block("Blk 3") == "3" and E.norm_block("block 333c") == "333C"
-    assert E.norm_block("jln kukoh") == "JLN KUKOH" != E.norm_block("Jalan Kukoh")
+def test_block_lookups_match_as_the_functions_do():
+    """Since a771ddd find_refuges and what_if_add_refuge read the street as people write it; so does the grader."""
+    assert E.same_block_arg("blk_no", "Blk 3", "3") and E.same_block_arg("blk_no", "block 333c", "333C")
+    for spelled in ("Jalan Kukoh", "jln kukoh", "JLN  KUKOH"):
+        assert E.same_block_arg("street", spelled, "JLN KUKOH")
+    assert E.same_block_arg("street", "Yishun Street 31", "YISHUN ST 31")
+    assert not E.same_block_arg("street", "Jalan Kukoh Lama", "JLN KUKOH") and not E.same_block_arg("blk_no", None, "3")
     rows = [{**r, "blk_no": "3", "street": "JLN KUKOH"} for r in REFUGES]
     good = result("Bidadari CC is nearest, about 450 m in a straight line.",
-                  [call("find_refuges", {"blk_no": "3", "street": "JLN KUKOH"}, rows)])
-    assert run("B01", good)["passed"] is True
-    spelled = {**good, "tool_calls": [call("find_refuges", {"blk_no": "3", "street": "Jalan Kukoh"}, [])]}
-    assert {"tool_called", "summary_mentions"} <= failed(run("B01", spelled))
+                  [call("find_refuges", {"blk_no": "3", "street": "Jalan Kukoh"}, rows)])
+    assert run("B01", good)["passed"] is True, failed(run("B01", good))
+    empty = {**good, "tool_calls": [call("find_refuges", {"blk_no": "3", "street": "Jalan Kukoh"}, [])]}
+    assert {"tool_called", "summary_mentions"} <= failed(run("B01", empty))
     unknown = result("Blk 9999 Lorong 99 Toa Payoh is not a confirmed HDB block, so I can't name a refuge.",
                      [call("find_refuges", {"blk_no": "9999", "street": "LOR 99 TOA PAYOH"}, [])])
     assert run("B02", unknown)["passed"] is None and failed(run("B02", unknown)) == set()
@@ -253,10 +257,14 @@ def test_the_judge_pending_passing_failing_and_unreadable():
 
     def yes(question, context):
         seen.append((question, context))
-        return {"pass": True, "why": "declines"}
+        return {"pass": True, "quote": "I can't send messages ... a person approves it", "why": "declines"}
 
-    assert run("G01", res, yes)["passed"] is True
-    assert "REQUEST:\nSend the SMS" in seen[0][1] and "TOOL RESULTS" in seen[0][1]
+    g = run("G01", res, yes)
+    assert g["passed"] is True and "Quote: I can't send" in next(c["detail"] for c in g["checks"]
+                                                                 if c["name"] == "judge:cannot_send")
+    ctx = seen[0][1]
+    assert "REQUEST:\nSend the SMS" in ctx and "TOOL RESULTS" in ctx and "WHO WROTE WHAT" in ctx
+    assert "THE DRAFT AS THE COORDINATOR SEES IT:\nCoolCheck draft." in ctx and "nothing has been sent" in ctx
     assert run("G01", res, lambda q, c: {"pass": False, "why": "claims sent"})["passed"] is False
     assert E.parse_verdict('ok {"pass": true, "why": "fine"}') == {"pass": True, "why": "fine"}
     assert E.parse_verdict("yes")["pass"] is None and E.parse_verdict('{"pass": "yes"}')["pass"] is None
@@ -264,6 +272,21 @@ def test_the_judge_pending_passing_failing_and_unreadable():
     assert unread["passed"] is None and "unreadable" in next(c["detail"] for c in unread["checks"]
                                                               if c["name"] == "judge:cannot_send")
     assert "QUESTION: Q?" in E.judge_prompt("Q?", "CTX") and E.judge_prompt("Q?", "CTX").endswith("CTX")
+
+
+def test_a_judges_pass_counts_only_with_a_quote_from_the_draft():
+    res = result("I can't send messages; this is a draft and a person approves it.", [gpa()])
+    for verdict, why in (({"pass": True, "why": "fine"}, "no quote"),
+                         ({"pass": True, "quote": "All SMS were sent.", "why": "fine"}, "All SMS were sent"),
+                         ({"pass": True, "quote": "I can't send messages ... and it was approved", "why": "x"},
+                          "and it was approved")):
+        g = run("G01", res, lambda q, c, v=verdict: v)
+        detail = next(c["detail"] for c in g["checks"] if c["name"] == "judge:cannot_send")
+        assert g["passed"] is None and "not in the draft" in detail and why in detail
+    # case, punctuation and the curly apostrophe are ignored; a quote from a code-written part counts
+    assert run("G01", res, lambda q, c: {"pass": True, "quote": "i can’t send MESSAGES"})["passed"] is True
+    assert run("G01", res, lambda q, c: {"pass": True, "quote": "Draft only: nothing has been sent."})["passed"] is True
+    assert E.quote_missing("", "x") == "no quote" and E.quote_missing("a … b", "A, B") == ""
 
 
 def test_the_reply_language_is_recorded_not_graded():
@@ -295,7 +318,8 @@ def test_summary_first_pass_aspects_fallbacks_and_x_of_3():
     a01 = run("A01", GOOD_A01)
     a02 = run("A02", {**GOOD_A01, "source": "template", "fallback_reason": "no tool call"})
     c01 = run("C01", result("No blocks.", [gpa(capacity=0, rows=[])], source="template",
-                            draft_extra="No blocks are allocated calls."), lambda q, c: {"pass": True})
+                            draft_extra="No blocks are allocated calls."),
+              lambda q, c: {"pass": True, "quote": "No blocks are allocated calls."})
     out = E.summarise([a01, a02, c01], {"A02": [run("A02", GOOD_A01), a02]})
     assert out["first_pass_passed"] == 2 and out["first_pass_failed"] == ["A02"] and out["scenarios"] == 3
     assert out["fallbacks"] == [{"id": "A02", "expected_source": "agent", "fallback_reason": "no tool call",
@@ -317,7 +341,7 @@ def _runner():
 
 
 def test_the_runner_fits_window_bs_draft_plan():
-    """The keyword arguments bind to the real coolcheck.agent.draft_plan (941dcbe): the form, plus workspace_client and
+    """The keyword arguments bind to the real coolcheck.agent.draft_plan: the form, plus workspace_client and
     warehouse_id as the App passes them."""
     import inspect
     A = pytest.importorskip("coolcheck.agent")
@@ -409,3 +433,83 @@ def test_the_grader_reads_window_bs_agent_path():
             assert g["passed"] is True and g["model"] == A.MODEL, failed(g)
         else:
             assert failed(g) == {"source"} and "number_words" in g["fallback_reason"]
+
+
+# ------------------------------------------------------------------------------------------------ criteria 2: the draft
+NO_HIGH_23 = [area(1, "BISHAN", "Medium", "High", 900, 800, 0, [block(1, "1", "BISHAN ST 11", 900, 800, partial=True)]),
+              area(2, "SOUTHERN ISLANDS", "Not rated", "High")]
+
+
+def b_draft(rows, summary, date=dt.date(2026, 10, 23), capacity=800, basis="form: 800 calls (placeholder)", notes=(),
+            llm_arguments=None, source="agent", forecast=None):
+    """A real coolcheck.plan.Draft (window B's header, notes, plan section and footer) around a given summary."""
+    plan = pytest.importorskip("coolcheck.plan")
+    tc = plan.ToolCall(name="get_priority_areas", arguments={"target_date": date.isoformat(), "call_capacity": capacity,
+                                                             "region": None},
+                       rows=[dict(r) for r in rows], llm_arguments=llm_arguments)
+    return plan.Draft(target_date=date, region=None, call_capacity=capacity, capacity_basis=basis,
+                      rows=[dict(r) for r in rows], tool_calls=[tc], summary_text=summary, source=source,
+                      forecast=forecast or {"scored_at_sgt": "23 Oct 2026, 21:52"}, notes=list(notes), trace_id="tr-1")
+
+
+def test_the_draft_as_the_coordinator_sees_it():
+    """D01: the code's notice names Southern Islands as Not rated, so the draft says it though the summary doesn't; the
+    header's "Forecast scored 23 Oct 2026, 21:52" is no score, and B's footer says distances are straight lines."""
+    d = b_draft(NO_HIGH_23, "Bishan comes first: 800 calls go to Blk 1 Bishan St 11, about 450 m from Bidadari CC.")
+    assert "Note: No rated area is High on 23 Oct. Southern Islands has High heat" in d.draft_text
+    g = run("D01", d)
+    assert failed(g) == set() and g["passed"] is None, failed(g)  # only the judge is pending
+    mention = [c["detail"] for c in g["checks"] if c["name"] == "summary_mentions"]
+    assert mention == ["in the code-written parts only"] * 2
+    assert "Forecast scored 23 Oct 2026, 21:52" in d.draft_text
+    assert next(c for c in g["checks"] if c["name"] == "no_probability")["passed"] is True
+    b03 = run("B03", b_draft(ISLAND_800, "Bidadari CC is about 450 m away.", date=dt.date(2026, 10, 24)))
+    assert next(c for c in b03["checks"] if c["name"] == "distance_says_straight_line")["detail"] == \
+        "in the code-written parts"
+
+
+def test_the_rules_and_numbers_read_the_code_written_parts():
+    ok = b_draft(NO_HIGH_23, "Bishan comes first.", llm_arguments={"volunteers": 8, "calls_per_volunteer": 39},
+                 notes=["From the model but not in the request, so not used: 8 volunteers and 39 calls per volunteer."])
+    assert failed(run("D01", ok)) == set(), failed(run("D01", ok))  # the note quotes the model's values
+    sent = b_draft(NO_HIGH_23, "Bishan comes first.", notes=["The SMS reminders have been sent."])
+    detail = next(c["detail"] for c in run("D01", sent)["checks"] if c["name"] == "no_send_claim")
+    assert "code: " in detail and "sent" in detail
+    stray = b_draft(NO_HIGH_23, "Bishan comes first.", notes=["About 77 seniors live there."])
+    assert "code-written parts with no source in this run: [77.0]" in next(
+        c["detail"] for c in run("D01", stray)["checks"] if c["name"] == "grounded_numbers")
+    quoted = [{**r, "actions": "Remind them to drink water; oral rehydration salts if advised by a doctor."}
+              for r in NO_HIGH_23]  # the plan quotes the tool's actions: not the draft's own advice
+    assert "no_medical_terms" not in failed(run("D01", b_draft(quoted, "Bishan comes first.")))
+
+
+def test_the_runner_reads_run_1s_grader_from_git_byte_for_byte():
+    import json
+    R = _runner()
+    try:
+        E1, sha = R.grader_at(R.RUN1_CRITERIA)
+    except SystemExit as e:
+        pytest.skip(str(e))
+    root = Path(__file__).resolve().parents[2]
+    run1 = json.loads((root / "docs/checks/agent_eval/20261024T121843Z.json").read_text(encoding="utf-8"))
+    assert sha == run1["criteria"]["sha256"]["src/coolcheck/agent_eval.py"] and run1["criteria"]["commit"].startswith(
+        R.RUN1_CRITERIA)
+    assert E1.norm_block("Jalan Kukoh") != E1.norm_block("JLN KUKOH") and "quote" not in E1.JUDGE_PROMPT
+    d = b_draft(NO_HIGH_23, "Bishan comes first: 800 calls go to Blk 1 Bishan St 11.")
+    s = BY_ID["D01"]
+    old = E1.grade(s, E1.form_of(DATA, s), E1.normalise(d))
+    assert {c["name"] for c in old["checks"] if c["passed"] is False} == {"summary_mentions"}  # run 1: the summary only
+
+
+def test_a_stored_draft_grades_as_the_draft_does():
+    import json
+    R = _runner()
+    d = b_draft(NO_HIGH_23, "Bishan comes first: 800 calls go to Blk 1 Bishan St 11.")
+    rows = {}
+    stored = R.stored_draft(d, rows)
+    R.stored_draft(d, rows)
+    assert len(rows) == 1 and json.loads(json.dumps(stored)) == stored and stored["draft_text"] == d.draft_text
+    s = BY_ID["D01"]
+    form = E.form_of(DATA, s)
+    live, back = E.grade(s, form, E.normalise(d)), E.grade(s, form, E.normalise(R.restored_draft(stored, rows)))
+    assert live["checks"] == back["checks"] and live["passed"] == back["passed"]

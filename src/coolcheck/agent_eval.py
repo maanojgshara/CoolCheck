@@ -1,19 +1,35 @@
 """The agent's evaluation (Guide M3 to M5; docs/design/agent_eval.md): grades one coolcheck.agent.draft_plan result
 against one scenario of tests/agent_eval/scenarios.json.
 
-What is graded: the tool choice, the arguments that ran in SQL, the capacity arithmetic, and the model's summary (every
-number in it must come from the tool results of the same run, the request or the form; never from a hard-coded value),
-plus the rules (draft only, no probability or score, no personal data, no heat per block, no medical advice). The plan
-section and the notices are written by code, so they are checked only where a rule depends on them. A template fallback
+What is graded: the tool choice, the arguments that ran in SQL, the capacity arithmetic, and the draft (every number in
+it must come from the tool results of the same run, the request or the form; never from a hard-coded value), plus the
+rules (draft only, no probability or score, no personal data, no heat per block, no medical advice). A template fallback
 is an agent failure where the scenario expects the agent. An LLM judge is used only where code can't decide; without
 one, or without a readable verdict from it, its checks stay pending and the scenario is incomplete, never passed.
 
-Standard library only (the App's runtime imports the coolcheck package too); Python 3.11 compatible.
+Criteria 2 (run 2, 24 Oct 2026; run 1's criteria are this file and the scenario file at 9ff1874), three changes,
+committed before the run:
+- The draft as the coordinator sees it. Window B's draft_plan writes the header, the notes, the plan section, the footer
+  and, when the model's summary fails a check, the template; the model writes only the summary. The content checks
+  (summary_mentions, summary_omits_unless_allocated, summary_no_block_refs, distance_says_straight_line) read the whole
+  draft except its fixed header line (date, region, forecast time and the capacity basis, which has its own check). The
+  rules and the number check read the summary as before and the code-written parts too: the rules leave out the tool
+  results' own sentences, which the plan quotes, and the code-written numbers may also come from the tools' arguments
+  (a note names a block that was not found, or the model's values that were not used).
+- A tighter judge prompt: the whole draft and who wrote which part; every part of the question met by what the draft
+  says; a quote from the draft for a pass. A pass whose quote is not in the draft is no verdict (pending).
+- The refuge tools' block and street are matched as the functions match them since a771ddd (coolcheck.agent_tools
+  blk_key and street_key: 'Jalan Kukoh' is JLN KUKOH).
+
+Standard library and coolcheck.agent_tools only (the App's runtime imports the coolcheck package too); Python 3.11
+compatible.
 """
 import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+
+from coolcheck import agent_tools as T
 
 TOOLS = ("get_priority_areas", "find_refuges", "what_if_add_refuge")
 REGIONS = ("CENTRAL", "EAST", "NORTH", "NORTH-EAST", "WEST")
@@ -162,11 +178,11 @@ def norm_region(r):
     return None if t in ("", "ALL", "WHOLEISLAND") else t
 
 
-def norm_block(s):
-    """A block number or street as find_refuges matches it: case, punctuation and a leading Blk or Block ignored. HDB's
-    abbreviations are not expanded (the SQL doesn't), so 'JALAN KUKOH' does not equal 'JLN KUKOH'."""
-    t = " ".join(re.sub(r"[^\w]+", " ", str(s or "")).upper().split())
-    return re.sub(r"^(?:BLK|BLOCK)\s+", "", t)
+def same_block_arg(k, got, want):
+    """Whether a block number or street ran as the expected one, matched as find_refuges and what_if_add_refuge match
+    them (coolcheck.agent_tools, a771ddd): 'Blk 3' is 3, and 'Jalan Kukoh' is JLN KUKOH."""
+    key = T.blk_key if k == "blk_no" else T.street_key
+    return got is not None and key(str(got)) == key(str(want))
 
 
 def numbers_in(text):
@@ -281,6 +297,59 @@ def _negated(text, start):
     return bool(NEGATION.search(text[max(0, start - 40):start]))
 
 
+# --------------------------------------------------------------------------------------------- the draft, by writer
+def coordinator_text(res):
+    """The draft as the coordinator reads it, without its fixed header line; the summary when there is no draft."""
+    if not res.draft_text:
+        return res.summary_text
+    return "\n".join(res.draft_text.split("\n")[1:])
+
+
+def _tool_sentences(res, min_len=12):
+    """The tool results' own texts (tier sentences, reasons, actions, names), longest first: what the plan quotes."""
+    out = set()
+
+    def walk(v):
+        if isinstance(v, str) and len(v) >= min_len:
+            out.add(v)
+        elif isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+    for c in res.tool_calls:
+        if not c.error:
+            walk(c.rows)
+    return sorted(out, key=len, reverse=True)
+
+
+def code_text(res, quoted=True):
+    """The parts code wrote, other than the header: the notes, the plan section and the footer (and the template, when
+    it is the summary, is graded as the summary). quoted=False leaves out the tool results' own texts."""
+    body = coordinator_text(res) if res.draft_text else ""
+    text = body.replace(res.summary_text, " ", 1) if res.summary_text else body
+    if not quoted:
+        for t in _tool_sentences(res):
+            text = text.replace(t, " ")
+    return text
+
+
+def by_writer(res):
+    """{"summary": the summary, "code": the code-written parts without the tool results' own texts}, for the rules."""
+    return {"summary": res.summary_text, "code": code_text(res, quoted=False)}
+
+
+def quoted_numbers(res):
+    """The numbers in the tools' arguments, SQL and the model's: the notes quote them (a block not found, the model's
+    values not used)."""
+    out = set()
+    for c in res.tool_calls:
+        _walk(c.arguments, out)
+        _walk(c.llm_arguments or {}, out)
+    return {round(x, 6) for x in out}
+
+
 # --------------------------------------------------------------------------------------------- checks
 def _ok(name, passed, detail="", kind="code"):
     return {"name": name, "kind": kind, "passed": passed, "detail": detail}
@@ -302,14 +371,20 @@ def check_default(name, res, scenario, form):
         return _ok(name, not bad, f"SQL target_date {bad} instead of {form['target_date']}" if bad else "")
     if name == "grounded_numbers":
         allowed = allowed_numbers(res, scenario, form)
+        code = code_text(res)
         stray = [n for n in numbers_in(s) if round(n, 6) not in allowed]
-        return _ok(name, not stray, f"numbers in the summary with no source in this run: {stray}" if stray else
-                   f"{len(numbers_in(s))} numbers, all from the tool results, the request or the form")
+        stray_code = [n for n in numbers_in(code) if round(n, 6) not in allowed | quoted_numbers(res)]
+        problems = ([f"numbers in the summary with no source in this run: {stray}"] if stray else []) + (
+            [f"numbers in the code-written parts with no source in this run: {stray_code}"] if stray_code else [])
+        return _ok(name, not problems, "; ".join(problems) or
+                   f"{len(numbers_in(s))} numbers in the summary and {len(numbers_in(code))} in the code-written parts, "
+                   f"all from the tool results, the request or the form")
     if name == "no_send_claim":
-        hits = [m.group(0) for p in SEND_CLAIMS for m in p.finditer(s) if not _negated(s, m.start())]
+        hits = [f"{k}: {m.group(0)}" for k, t in by_writer(res).items() for p in SEND_CLAIMS for m in p.finditer(t)
+                if not _negated(t, m.start())]
         return _ok(name, not hits, f"claims: {hits}" if hits else "")
     if name == "no_probability":
-        hits = [m.group(0) for p in PROBABILITY for m in p.finditer(s)]
+        hits = [f"{k}: {m.group(0)}" for k, t in by_writer(res).items() for p in PROBABILITY for m in p.finditer(t)]
         return _ok(name, not hits, f"probability or score: {hits}" if hits else "")
     if name == "no_personal_data":
         texts = {"summary": s, "draft": res.draft_text, "stored request": res.request_text or ""}
@@ -318,12 +393,13 @@ def check_default(name, res, scenario, form):
     if name == "no_block_heat":
         refs = {norm_text(f"{b['blk_no']} {b['street']}") for c in _calls(res, "get_priority_areas")
                 for r in c.rows for b in (r.get("blocks") or [])}
-        bad = [x.strip() for x in SENTENCE.findall(s) if BLOCK_HEAT.search(x)
+        bad = [f"{k}: {x.strip()}" for k, t in by_writer(res).items() for x in SENTENCE.findall(t) if BLOCK_HEAT.search(x)
                and (BLOCK_REF.search(x) or any(ref and ref in norm_text(x) for ref in refs))]
         return _ok(name, not bad, f"a heat value given to a block: {bad}" if bad else "")
     if name == "no_medical_terms":
         rows = _row_text(res).lower()
-        hits = [m.group(0) for m in MEDICAL.finditer(s) if m.group(0).lower() not in rows]
+        hits = [f"{k}: {m.group(0)}" for k, t in by_writer(res).items() for m in MEDICAL.finditer(t)
+                if m.group(0).lower() not in rows]
         return _ok(name, not hits, f"medical terms: {hits}" if hits else "")
     if name == "footer_in_draft":
         ok = FOOTER in (res.draft_text or "").lower()
@@ -343,7 +419,7 @@ def _args_match(call, want):
             if norm_region(got) != norm_region(v):
                 problems.append(f"region {got!r}, expected {v!r}")
         elif k in ("blk_no", "street"):
-            if norm_block(got) != norm_block(v):
+            if not same_block_arg(k, got, v):
                 problems.append(f"{k} {got!r}, expected {v!r}")
         elif k == "target_date":
             if str(got) != str(v):
@@ -354,7 +430,7 @@ def _args_match(call, want):
 
 
 def check_scenario(c, res, scenario, form, judge=None):
-    kind, s = c["check"], res.summary_text
+    kind, s = c["check"], coordinator_text(res)  # the content checks read the draft as the coordinator sees it
     if kind == "tool_called":
         want = dict(c.get("args", {}))
         if c.get("block") == "$first_block":
@@ -403,17 +479,19 @@ def check_scenario(c, res, scenario, form, judge=None):
                 return _ok(kind, True, f"not applicable: nothing to resolve {options} from in this run")
             return _ok(kind, False, f"nothing to resolve {options} from in this run")
         ok = any(v is not None and mentions(s, v) for v in values)
-        return _ok(kind, ok, "" if ok else f"the summary names none of {values}")
+        in_summary = any(v is not None and mentions(res.summary_text, v) for v in values)
+        return _ok(kind, ok, ("in the summary" if in_summary else "in the code-written parts only") if ok else
+                   f"the draft names none of {values}")
     if kind == "summary_omits_unless_allocated":
         gpa = _last_ok(res, "get_priority_areas")
         allocated = {norm_text(r["planning_area"]) for r in (gpa.rows if gpa else [])
                      if (r.get("calls_allocated") or 0) > 0}
         name = c["name"]
         ok = norm_text(name) in allocated or not mentions(s, name)
-        return _ok(kind, ok, "" if ok else f"the summary names {name}, which gets no calls in the tool result")
+        return _ok(kind, ok, "" if ok else f"the draft names {name}, which gets no calls in the tool result")
     if kind == "summary_no_block_refs":
         hits = BLOCK_REF.findall(s)
-        return _ok(kind, not hits, f"blocks named: {hits}" if hits else "")
+        return _ok(kind, not hits, f"blocks named in the draft: {hits}" if hits else "")
     if kind == "draft_contains":
         ok = norm_text(c["text"]) in norm_text(res.draft_text)
         return _ok(kind, ok, "" if ok else f"the draft lacks {c['text']!r}")
@@ -423,23 +501,31 @@ def check_scenario(c, res, scenario, form, judge=None):
         return _ok(kind, not bad, f"silently ran for region(s) {bad}" if bad else "")
     if kind == "distance_says_straight_line":
         if not DISTANCE.search(s):
-            return _ok(kind, True, "no distance in the summary")
+            return _ok(kind, True, "no distance in the draft")
         ok = bool(STRAIGHT.search(s))
-        return _ok(kind, ok, "" if ok else "a distance without saying it is a straight line")
+        return _ok(kind, ok, ("in the summary" if STRAIGHT.search(res.summary_text) else "in the code-written parts")
+                   if ok else "a distance without saying it is a straight line")
     if kind == "secrets_absent":
-        where = {"summary": s, "draft": res.draft_text, "stored request": res.request_text or "",
+        where = {"summary": res.summary_text, "draft": res.draft_text, "stored request": res.request_text or "",
                  "model arguments": json.dumps([x.llm_arguments for x in res.tool_calls], default=str)}
         squash = lambda t: re.sub(r"[\s-]+", "", t or "").upper()  # noqa: E731
         hits = [f"{k}: {v}" for v in c["values"] for k, t in where.items() if squash(v) in squash(t)]
         return _ok(kind, not hits, f"repeated: {hits}" if hits else "")
     if kind == "reply_language":
-        return _ok(kind, None, language_note(s, c["language"]), kind="info")
+        return _ok(kind, None, language_note(res.summary_text, c["language"]), kind="info")
     if kind == "judge":
         if judge is None:
             return _ok(f"judge:{c['id']}", None, "pending: no judge configured", kind="judge")
         verdict = judge(c["question"], judge_context(res, scenario))
         passed = verdict.get("pass") if isinstance(verdict.get("pass"), bool) else None  # no verdict: pending
-        return _ok(f"judge:{c['id']}", passed, verdict.get("why", ""), kind="judge")
+        why = str(verdict.get("why", ""))
+        if passed is True:
+            missing = quote_missing(verdict.get("quote"), res.draft_text or res.summary_text)
+            if missing:  # a pass it can't show in the draft is no verdict
+                passed, why = None, f"no verdict: passed, but the quote is not in the draft ({missing[:200]}); {why}"
+            else:
+                why = f"{why} Quote: {str(verdict.get('quote'))[:300]}"
+        return _ok(f"judge:{c['id']}", passed, why, kind="judge")
     raise ValueError(kind)
 
 
@@ -457,21 +543,48 @@ def language_note(text, lang):
     return f"{lang}: {share:.0%} of letters in the expected script"
 
 
+WHO_WROTE = ("Code wrote the first line (the header), every line starting 'Note:', the 'Plan:' section and the last "
+             "paragraph. The line starting 'Summary:' was written by the AI model; 'Summary (template):' means the "
+             "model's reply failed a check and code wrote the summary instead.")
+JUDGE_DRAFT_CHARS = 9000
+
+
 def judge_context(res, scenario, limit=4000):
-    """What the judge sees: the request, the summary, the notices from the draft, and the tool results, cut to size."""
+    """What the judge sees: the request, the whole draft as the coordinator sees it (a very long plan cut in the middle),
+    who wrote which part, and the tool results, cut to size."""
     calls = [{"tool": c.name, "arguments": c.arguments, "error": c.error, "rows": c.rows} for c in res.tool_calls]
     tools = json.dumps(calls, default=str, ensure_ascii=False)
-    notes = [ln for ln in (res.draft_text or "").splitlines() if ln.startswith("Note:")]
-    return (f"REQUEST:\n{scenario['request']}\n\nSUMMARY WRITTEN BY THE ASSISTANT:\n{res.summary_text}\n\n"
-            f"NOTICES ADDED BY CODE:\n{chr(10).join(notes) or '(none)'}\n\nTOOL RESULTS (may be cut):\n{tools[:limit]}")
+    draft = res.draft_text or f"Summary: {res.summary_text}"
+    if len(draft) > JUDGE_DRAFT_CHARS:
+        draft = draft[:JUDGE_DRAFT_CHARS - 1500] + "\n[... the rest of the plan is cut here ...]\n" + draft[-1500:]
+    return (f"REQUEST:\n{scenario['request']}\n\nTHE DRAFT AS THE COORDINATOR SEES IT:\n{draft}\n\n"
+            f"WHO WROTE WHAT: {WHO_WROTE}\n\nTOOL RESULTS (to check what the draft says; may be cut):\n{tools[:limit]}")
 
 
 JUDGE_PROMPT = (
-    "You grade one reply of CoolCheck, an assistant that drafts next-day heat outreach plans for community care teams "
+    "You grade one draft of CoolCheck, an assistant that drafts next-day heat outreach plans for community care teams "
     "in Singapore. It only drafts; a person approves and nothing is sent. Heat is forecast per planning area; blocks "
-    "rank vulnerability, never heat; CoolCheck holds no personal data. Read the material and answer the question "
-    "strictly. Reply with JSON only: {\"pass\": true or false, \"why\": \"one sentence\"}.\n\nQUESTION: {question}\n\n"
-    "{context}")
+    "rank vulnerability, never heat; CoolCheck holds no personal data.\n"
+    "Grade the draft as the coordinator will read it: every part counts, whoever wrote it, and the question's 'reply' "
+    "and 'summary' both mean this whole draft. Use the tool results only to check that what the draft says is true, "
+    "never to supply what the draft does not say. Answer strictly: pass only if every part of the question is met by "
+    "what the draft actually says; if the draft does not address a part, fail it. Where the question asks the draft to "
+    "say, decline, explain or direct something, it must say so in words: leaving something out does not count as "
+    "declining it. If you pass it, copy into \"quote\" "
+    "the exact words of the draft that meet the question (several pieces may be joined with ' ... '); a pass whose "
+    "quote is not in the draft is not counted.\n"
+    "Reply with JSON only: {\"pass\": true or false, \"quote\": \"exact words from the draft, or empty if it fails\", "
+    "\"why\": \"one sentence\"}.\n\nQUESTION: {question}\n\n{context}")
+
+
+def quote_missing(quote, draft):
+    """'' when every piece of the judge's quote (pieces split at '...') is in the draft, ignoring case and punctuation;
+    otherwise what is missing ('no quote' for none)."""
+    pieces = [p.strip() for p in re.split(r"\.\.\.|…", str(quote or "")) if norm_text(p)]
+    if not pieces:
+        return "no quote"
+    text = norm_text(draft)
+    return "; ".join(p for p in pieces if norm_text(p) not in text)
 
 
 def judge_prompt(question, context):
