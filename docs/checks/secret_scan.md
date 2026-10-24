@@ -91,4 +91,5 @@ The push check of 25 Oct 2026, 01:41 SGT, covered the 50 commits after `origin/m
 
 - **Fixed forward** in `aebe170`: the scan reads the name at run time, from `WORDING_SCAN_NAMES` or `git config user.name`, and `tests/ops/test_wording_scan.py` checks that a file holding the name is still flagged.
 - **Accepted:** the line stays in `887d0a6`'s patch. The history was not rewritten and nothing was force-pushed. The same name is in the author line of every commit, including the 107 already on GitHub (`origin/main` at `dbe5f93`; all 107 checked on 25 Oct with `git log --format=%an`), so the pattern exposes nothing new. A rewrite would also have changed the hash of every commit after `887d0a6`, which the README, the write-up and the check notes cite.
-- **Later push checks** allow this one match and stop on any other.
+- **Also allowed** since the push check of 25 Oct, 03:18 SGT (`dbe5f93`..`9f21229`): the file-name rule matches this file because of its name, and the 10 `eyJ…` strings in `docs/figures/architecture.svg` (added in `ca9881e`) are base64 of Mermaid's `{"x` data-points (edge coordinates), not tokens, like that file's other 34 long strings (the rest of its 21 data-points and 6 Mermaid marker ids).
+- **Later push checks** allow these three and stop on any other.
