@@ -278,19 +278,29 @@ def test_area_names_are_title_case_on_the_blocks_and_observed_pages(views):
     assert "Downtown Core" in {r["planning_area"] for r in rows_of(views, "ds_area_facts")}
 
 
-def test_counts_and_distances_have_thousands_separators(views):
-    shown = {"ds_top_areas": ["rental_1_2_room"], "ds_area_map": ["rental_1_2_room"],
-             "ds_area_facts": ["aged_75_plus", "rental_1_2_room", "hdb_dwelling_units_confirmed"],
-             "ds_blocks": ["rental_1_2_room", "total_dwelling_units", "refuge_m", "park_m"]}
-    over_1000 = {("ds_top_areas", "rental_1_2_room"), ("ds_area_facts", "aged_75_plus"),
-                 ("ds_area_facts", "hdb_dwelling_units_confirmed"), ("ds_blocks", "refuge_m")}  # some value is 1,000 or more
-    for name, cols in shown.items():
+def test_table_counts_and_distances_are_numbers_so_a_header_click_sorts_them_right(views):
+    """A text column would put "9,000" after "10,000". Whether a table shows thousands separators by itself is for the
+    deployed page to show; the SQL keeps the columns numeric and in its own order."""
+    from numbers import Number
+    tables = {"ds_top_areas": ["rental_1_2_room"], "ds_more_areas": ["rental_1_2_room"],
+              "ds_area_facts": ["aged_75_plus", "rental_1_2_room", "hdb_dwelling_units_confirmed"],
+              "ds_blocks": ["rental_1_2_room", "total_dwelling_units", "refuge_m", "park_m"]}
+    for name, cols in tables.items():
         rows = rows_of(views, name)
         for col in cols:
             values = [r[col] for r in rows if r[col] is not None]
-            assert values and all(re.fullmatch(r"\d{1,3}(,\d{3})*", v) for v in values), (name, col)
-            if (name, col) in over_1000:
-                assert any("," in v for v in values), (name, col)
+            assert values and all(isinstance(v, Number) and not isinstance(v, bool) for v in values), (name, col, values[:3])
+    assert [r["briefing_order"] for r in rows_of(views, "ds_top_areas")] == list(range(1, 11))  # the SQL order is kept
+    assert any(r["aged_75_plus"] >= 1000 for r in rows_of(views, "ds_area_facts"))
+
+
+def test_map_tooltips_and_detail_text_carry_the_thousands_separators(views):
+    """Nothing sorts in a tooltip or in the Blocks map's detail text, so format_number stays there."""
+    tooltip = {r["area"]: r["rental_1_2_room"] for r in rows_of(views, "ds_area_map")}
+    assert tooltip["Toa Payoh"] == "3,835"
+    assert all(re.fullmatch(r"\d{1,3}(,\d{3})*", v) for v in tooltip.values())
+    details = [r["detail"] for r in rows_of(views, "ds_points") if r["point_type"] != "Refuge"]
+    assert all(re.fullmatch(r"priority \d+; 1-2 room rental flats \d{1,3}(,\d{3})*", d) for d in details)
 
 
 def test_weights_status_drops_the_guide_reference(views):

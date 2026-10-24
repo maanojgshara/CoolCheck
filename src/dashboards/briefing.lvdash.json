@@ -78,7 +78,7 @@
         "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
         "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
         ")\n",
-        "SELECT briefing_order, area, tier, tier_sentence, reason, format_number(rental_1_2_room, 0) AS rental_1_2_room, actions FROM ordered WHERE briefing_order <= 10 ORDER BY briefing_order\n"
+        "SELECT briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order <= 10 ORDER BY briefing_order\n"
       ]
     },
     {
@@ -96,7 +96,7 @@
         "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
         "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
         ")\n",
-        "SELECT briefing_order, area, tier, tier_sentence, reason, format_number(rental_1_2_room, 0) AS rental_1_2_room, actions FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium')\n",
+        "SELECT briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium')\n",
         "UNION ALL\n",
         "SELECT NULL, 'None: every High or Medium area is in the top 10', NULL, NULL, NULL, NULL, NULL\n",
         "WHERE NOT EXISTS (SELECT 1 FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium'))\n",
@@ -129,8 +129,7 @@
       "displayName": "Area facts",
       "queryLines": [
         "SELECT initcap(planning_area) AS planning_area, initcap(third) AS third, CASE WHEN reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE reason END AS reason,\n",
-        "  format_number(aged_75_plus, 0) AS aged_75_plus, format_number(rental_1_2_room, 0) AS rental_1_2_room,\n",
-        "  format_number(hdb_dwelling_units_confirmed, 0) AS hdb_dwelling_units_confirmed, CASE WHEN small_hdb THEN 'too few flats to measure' ELSE concat(format_number(100 * refuge_beyond_400m, 0), '%') END AS refuge_beyond,\n",
+        "  aged_75_plus, rental_1_2_room, hdb_dwelling_units_confirmed, CASE WHEN small_hdb THEN 'too few flats to measure' ELSE concat(format_number(100 * refuge_beyond_400m, 0), '%') END AS refuge_beyond,\n",
         "  CASE WHEN small_hdb THEN 'too few flats to measure' ELSE concat(format_number(100 * park_beyond_400m, 0), '%') END AS park_beyond, coalesce(neutral_components, '') AS held_neutral\n",
         "FROM area_vulnerability\n"
       ]
@@ -140,10 +139,10 @@
       "displayName": "Blocks in priority order",
       "queryLines": [
         "SELECT initcap(planning_area) AS planning_area, priority, concat(blk_no, ' ', street) AS block,\n",
-        "  format_number(rental_1_2_room, 0) AS rental_1_2_room, format_number(total_dwelling_units, 0) AS total_dwelling_units,\n",
-        "  refuge_main_name, format_number(round(refuge_main_m), 0) AS refuge_m,\n",
+        "  rental_1_2_room, total_dwelling_units,\n",
+        "  refuge_main_name, CAST(round(refuge_main_m) AS INT) AS refuge_m,\n",
         "  CASE WHEN refuge_within_400m THEN 'yes' ELSE 'no' END AS refuge_400m,\n",
-        "  park_main_name, format_number(round(park_main_m), 0) AS park_m,\n",
+        "  park_main_name, CAST(round(park_main_m) AS INT) AS park_m,\n",
         "  CASE WHEN park_within_400m THEN 'yes' ELSE 'no' END AS park_400m,\n",
         "  CASE WHEN confirmed THEN '' ELSE 'coordinate from a tenant record' END AS note\n",
         "FROM block_vulnerability\n",

@@ -72,7 +72,9 @@ ordered AS (
     row_number() OVER (ORDER BY {TIER_ORDER}, r.tier_rank) AS briefing_order
   FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area
 )"""
-AREA_COLUMNS = "briefing_order, area, tier, tier_sentence, reason, format_number(rental_1_2_room, 0) AS rental_1_2_room, actions"
+# Table columns stay numbers (a text column sorts "9,000" after "10,000" if a viewer clicks a header); format_number is
+# used only where nothing sorts: the map tooltip and the Blocks map's detail text.
+AREA_COLUMNS = "briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions"
 NAMES = "CASE WHEN size(nr) = 1 THEN nr[0] ELSE concat(array_join(slice(nr, 1, size(nr) - 1), ', '), ' and ', element_at(nr, -1)) END"
 LONG_DATE = "date_format(target_date, 'EEEE, d MMMM yyyy')"
 NOTICES = [  # copied exactly from docs/attribution.md (register notices 1, 3, 7, 9, 12, 14, 16, 19, 22, 23)
@@ -158,17 +160,16 @@ ORDER BY planning_area, sgt_date DESC
 """),
     "ds_area_facts": ("Area facts", f"""
 SELECT initcap(planning_area) AS planning_area, initcap(third) AS third, {reason_sql('reason')} AS reason,
-  format_number(aged_75_plus, 0) AS aged_75_plus, format_number(rental_1_2_room, 0) AS rental_1_2_room,
-  format_number(hdb_dwelling_units_confirmed, 0) AS hdb_dwelling_units_confirmed, {share_sql('refuge_beyond_400m')} AS refuge_beyond,
+  aged_75_plus, rental_1_2_room, hdb_dwelling_units_confirmed, {share_sql('refuge_beyond_400m')} AS refuge_beyond,
   {share_sql('park_beyond_400m')} AS park_beyond, coalesce(neutral_components, '') AS held_neutral
 FROM area_vulnerability
 """),
     "ds_blocks": ("Blocks in priority order", """
 SELECT initcap(planning_area) AS planning_area, priority, concat(blk_no, ' ', street) AS block,
-  format_number(rental_1_2_room, 0) AS rental_1_2_room, format_number(total_dwelling_units, 0) AS total_dwelling_units,
-  refuge_main_name, format_number(round(refuge_main_m), 0) AS refuge_m,
+  rental_1_2_room, total_dwelling_units,
+  refuge_main_name, CAST(round(refuge_main_m) AS INT) AS refuge_m,
   CASE WHEN refuge_within_400m THEN 'yes' ELSE 'no' END AS refuge_400m,
-  park_main_name, format_number(round(park_main_m), 0) AS park_m,
+  park_main_name, CAST(round(park_main_m) AS INT) AS park_m,
   CASE WHEN park_within_400m THEN 'yes' ELSE 'no' END AS park_400m,
   CASE WHEN confirmed THEN '' ELSE 'coordinate from a tenant record' END AS note
 FROM block_vulnerability
