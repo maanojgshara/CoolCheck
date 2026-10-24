@@ -80,6 +80,13 @@ def test_no_rated_area_sentences_name_the_plans_region():
     assert P.where_in("ALL") == "" and P.region_name("NORTH-EAST REGION") == "North-East"
 
 
+def test_regional_plan_with_no_high_tier_area_gets_a_note():
+    assert P.notices(ROWS_NE, D24, region="NORTH-EAST") == ["No rated area in the North-East region is in the High tier."]
+    assert P.notices(ROWS_NE, D24) == []                      # the whole island: nothing to scope
+    central = [r for r in ROWS_24 if r["region"] == "CENTRAL REGION"]
+    assert not any("is in the High tier" in n for n in P.notices(central, D24, region="CENTRAL"))  # Toa Payoh is High
+
+
 def test_notices_missing_forecast_and_empty():
     assert P.notices([], D24, {"forecast_missing": True})[0].startswith("The NEA forecast issue was missing")
     assert "unknown region" in P.notices([], D24)[-1]

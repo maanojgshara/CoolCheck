@@ -388,6 +388,20 @@ def test_3a_a_no_high_tier_claim_must_be_true_and_name_the_region(rows, region, 
         assert d.summary_text.startswith("No rated area in the North-East region is in the High tier.")
 
 
+NE_NOTE = "No rated area in the North-East region is in the High tier."
+
+
+def test_3a_a_regional_plan_with_no_high_tier_area_gets_the_note_once():
+    s = Script(tool_msg(("get_priority_areas", {"region": "North-East"})), text_msg("Call Sengkang first."))
+    d, _ = run(s, request="Only 8 volunteers tomorrow, North-East only", rows=ROWS_NE)
+    assert d.source == "agent" and NE_NOTE in d.notices and d.draft_text.count(NE_NOTE) == 1
+    s = Script(tool_msg(("get_priority_areas", {"region": "North-East"})), text_msg(NE_NOTE + " Call Sengkang first."))
+    d, _ = run(s, request="Only 8 volunteers tomorrow, North-East only", rows=ROWS_NE)
+    assert NE_NOTE not in d.notices and d.draft_text.count(NE_NOTE) == 1  # the summary has it: not repeated
+    d, _ = run(Script(RuntimeError("gateway 503")), request="North-East only", rows=ROWS_NE, region="NORTH-EAST")
+    assert d.source == "template" and d.draft_text.count(NE_NOTE) == 1    # the template has it
+
+
 NOT_FOUND = "was not found among CoolCheck's confirmed HDB blocks"
 
 

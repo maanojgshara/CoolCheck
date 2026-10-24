@@ -341,6 +341,8 @@ def notices(rows, target_date, forecast=None, region=None):
                    f"blocks or calls there; check with the local team.")
     elif unrated_hot:
         out.append(f"High heat but Not rated (no confirmed HDB blocks, so no blocks or calls): {_join(unrated_hot)}.")
+    elif not rated_high and region_param(region):  # a regional plan; the dashboard shows the whole island
+        out.append(no_tier_sentence("High", region))
     no_fc = [area_name(r["planning_area"]) for r in rows if r["tier"] == "No forecast"]
     if no_fc:
         out.append(f"No forecast for {_join(no_fc)}.")
@@ -461,8 +463,9 @@ class Draft:
     def notices(self):
         """Every note on the draft, all written by code: the loop's, the areas', the block lookups' and the calls left."""
         left = leftover_notice(self.rows, self.call_capacity, self.summary_text)
-        return (list(self.notes) + notices(self.rows, self.target_date, self.forecast, self.region)
-                + lookup_notices(self.tool_calls) + ([left] if left else []))
+        out = (list(self.notes) + notices(self.rows, self.target_date, self.forecast, self.region)
+               + lookup_notices(self.tool_calls) + ([left] if left else []))
+        return [n for n in out if n not in (self.summary_text or "")]  # a sentence the summary already has, once
 
     @property
     def calls_allocated(self):
