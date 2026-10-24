@@ -197,3 +197,22 @@ def test_number_word_from_a_tool_result_passes():
     ok, checks = A.check_summary("The AAC broadcasts an advisory in four languages.", set(), source_text="in four languages")
     assert ok, checks
     assert not A.check_summary("Call four blocks.", set(), source_text="in two languages")[0]
+
+
+def test_zero_for_an_unstated_value_is_not_stated():
+    # 24 Oct, live: the model sent {"volunteers": 8, "calls_per_volunteer": 0} and the plan got 8 x 0 = 0 calls
+    s = Script(tool_msg(("get_priority_areas", {"volunteers": 8, "calls_per_volunteer": 0})), text_msg("Toa Payoh is High."))
+    d, wh = run(s)
+    assert d.call_capacity == 200 and wh.statements[0][1]["call_capacity"] == (200, "INT")
+    assert d.tool_calls[0].llm_arguments == {"volunteers": 8, "calls_per_volunteer": 0}
+    s = Script(tool_msg(("get_priority_areas", {"call_capacity": 0, "volunteers": 0})), text_msg("Toa Payoh is High."))
+    d, _ = run(s)
+    assert d.call_capacity == 800 and d.capacity_basis.startswith("form: 800")
+
+
+def test_model_gets_the_spoken_refuge_distance():
+    s = Script(tool_msg(("get_priority_areas", {})), text_msg("Toa Payoh is High."))
+    run(s)
+    blocks = json.loads(s.seen[1][-1]["content"])["areas"][0]["blocks"]
+    assert [b["refuge_distance"] for b in blocks] == ["about 450 m", "at the block", "at the block"]
+    assert all("refuge_main_m" not in b for b in blocks)

@@ -27,12 +27,14 @@ MAX_INT = 100000
 
 SYSTEM = """You draft tomorrow's heat outreach plan for an Active Ageing Centre coordinator in Singapore.
 Use the tools. Always call get_priority_areas once, with only the values the request states: volunteers, calls per
-volunteer, a number of calls, a region. Never compute a number of calls yourself; the app does the arithmetic. If the
+volunteer, a number of calls, a region. Leave out any value the request does not state; never send 0 for it. Never
+compute a number of calls yourself; the app does the arithmetic. If the
 request names an HDB block and asks about refuges or a new refuge, call find_refuges or what_if_add_refuge with that block.
 Then write a short summary for the coordinator, at most 120 words, plain text:
-- Copy every number exactly from the tool results, written as digits (8, 312), never as words. Round distances to the
-  nearest 10 m and say they are straight-line distances.
-- Area risk tiers are Low, Medium, High. Heat levels are Low, Moderate, High. Do not mix them.
+- Copy every number exactly from the tool results, written as digits (8, 312), never as words. Use each block's
+  refuge_distance as written and say distances are straight lines.
+- Area risk tiers are Low, Medium, High. Heat levels are Low, Moderate, High. Do not mix them. The vulnerability third
+  (upper, middle, lower) is separate from the tier; never call a tier a vulnerability rank.
 - Heat is per planning area; blocks rank vulnerability, never heat.
 - Never mention probabilities, percent chances or scores.
 - If no rated area is in the High tier but a Not rated area has High heat, say so plainly and name it.
@@ -65,7 +67,7 @@ def tool_specs(ws, catalog="coolcheck"):
         return next((p.comment for p in (f.input_params.parameters if f.input_params else []) if p.name == name), "")
 
     g = info["get_priority_areas"]
-    integer = {"type": "integer", "minimum": 0}
+    integer = {"type": "integer", "minimum": 1}
     specs = [
         {"type": "function", "function": {"name": "get_priority_areas", "description": g.comment + " The date is set by the app.",
          "parameters": {"type": "object", "properties": {
@@ -164,20 +166,24 @@ def _compact(rows):
     out = []
     for r in rows:
         a = {k: r[k] for k in keep}
-        a["blocks"] = [{k: b[k] for k in ("blk_no", "street", "rental_1_2_room", "calls_allocated", "partial",
-                                          "refuge_main_name", "refuge_main_m", "refuge_within_400m")} for b in r["blocks"]]
+        a["blocks"] = [dict({k: b[k] for k in ("blk_no", "street", "rental_1_2_room", "calls_allocated", "partial",
+                                               "refuge_main_name", "refuge_within_400m")},
+                            refuge_distance=P.metres(b["refuge_main_m"])) for b in r["blocks"]]
         out.append(a)
     return out
 
 
 def _int_arg(args, name):
+    """A whole number from the model's arguments; None when absent, and also when 0, since the model was seen sending 0
+    for a value the request did not state (24 Oct: calls_per_volunteer 0 gave 8 x 0 = 0 calls). A team with no capacity
+    sets 0 in the form, where the capacity basis line shows it."""
     v = args.get(name)
     if v is None or v == "":
         return None
     v = int(v)  # ValueError for a malformed value; reported to the model
     if not 0 <= v <= MAX_INT:
         raise ValueError(f"{name} must be between 0 and {MAX_INT}")
-    return v
+    return v or None
 
 
 def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, region=None, catalog="coolcheck",
