@@ -112,6 +112,16 @@
       ]
     },
     {
+      "name": "ds_area_observed",
+      "displayName": "Observed heat per planning area",
+      "queryLines": [
+        "SELECT planning_area, sgt_date, station_name, round(max_wbgt, 1) AS max_wbgt, heat_category, heat_order\n",
+        "FROM observed_heat_daily\n",
+        "WHERE planning_area IS NOT NULL\n",
+        "ORDER BY planning_area, sgt_date DESC\n"
+      ]
+    },
+    {
       "name": "ds_area_facts",
       "displayName": "Area facts",
       "queryLines": [
@@ -663,6 +673,22 @@
         },
         {
           "widget": {
+            "name": "app-pointer",
+            "multilineTextboxSpec": {
+              "lines": [
+                "To test a new refuge near a block, open the CoolCheck App ([https://coolcheck-7474646896364032.aws.databricksapps.com](https://coolcheck-7474646896364032.aws.databricksapps.com)) and use 'What if a refuge opened here?'\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
             "name": "area-filter",
             "queries": [
               {
@@ -747,7 +773,7 @@
           },
           "position": {
             "x": 0,
-            "y": 3,
+            "y": 4,
             "width": 4,
             "height": 3
           }
@@ -853,7 +879,7 @@
           },
           "position": {
             "x": 4,
-            "y": 3,
+            "y": 4,
             "width": 8,
             "height": 3
           }
@@ -958,7 +984,7 @@
           },
           "position": {
             "x": 0,
-            "y": 6,
+            "y": 7,
             "width": 12,
             "height": 9
           }
@@ -1080,9 +1106,344 @@
           },
           "position": {
             "x": 0,
-            "y": 15,
+            "y": 16,
             "width": 12,
             "height": 9
+          }
+        }
+      ]
+    },
+    {
+      "name": "observed",
+      "displayName": "Observed heat",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "observed-title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Observed heat: the last 30 completed days\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "observed-subtitle",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Observed values only, never forecasts; the forecast is on the Briefing page. Each WBGT station's observed daily heat-stress category (NEA's Low, Moderate or High) for the last 30 completed days in Singapore time; today's readings are still coming in and are left out.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "observed-trend-chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_trend",
+                  "fields": [
+                    {
+                      "name": "daily(sgt_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `sgt_date`)"
+                    },
+                    {
+                      "name": "sum(stations)",
+                      "expression": "SUM(`stations`)"
+                    },
+                    {
+                      "name": "heat_category",
+                      "expression": "`heat_category`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(sgt_date)",
+                  "displayName": "Day (SGT)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(stations)",
+                  "displayName": "WBGT stations",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "heat_category",
+                  "displayName": "Observed heat (NEA)",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Low",
+                        "color": "#2f7fc1"
+                      },
+                      {
+                        "value": "Moderate",
+                        "color": "#fab219"
+                      },
+                      {
+                        "value": "High",
+                        "color": "#d03b3b"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Observed heat, last 30 completed days: WBGT stations by their daily NEA category"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "observed-area-filter",
+            "queries": [
+              {
+                "name": "ds_area_observed_area",
+                "query": {
+                  "datasetName": "ds_area_observed",
+                  "fields": [
+                    {
+                      "name": "planning_area",
+                      "expression": "`planning_area`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "planning_area",
+                    "displayName": "Planning area",
+                    "queryName": "ds_area_observed_area"
+                  }
+                ]
+              },
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "BEDOK"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Planning area"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "observed-area-guide",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Pick a planning area to see the WBGT station nearest to it each day, the day's highest reading and its category. Heat is measured at stations and shown per planning area, never per block.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 10,
+            "width": 8,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "area-observed-chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_area_observed",
+                  "fields": [
+                    {
+                      "name": "daily(sgt_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `sgt_date`)"
+                    },
+                    {
+                      "name": "max(max_wbgt)",
+                      "expression": "MAX(`max_wbgt`)"
+                    },
+                    {
+                      "name": "heat_category",
+                      "expression": "`heat_category`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(sgt_date)",
+                  "displayName": "Day (SGT)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "max(max_wbgt)",
+                  "displayName": "Peak WBGT (°C)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "heat_category",
+                  "displayName": "Observed heat (NEA)",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Low",
+                        "color": "#2f7fc1"
+                      },
+                      {
+                        "value": "Moderate",
+                        "color": "#fab219"
+                      },
+                      {
+                        "value": "High",
+                        "color": "#d03b3b"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "The area's nearest WBGT station: the day's peak WBGT, coloured by its NEA category"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 7,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "area-observed-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_area_observed",
+                  "fields": [
+                    {
+                      "name": "sgt_date",
+                      "expression": "`sgt_date`"
+                    },
+                    {
+                      "name": "station_name",
+                      "expression": "`station_name`"
+                    },
+                    {
+                      "name": "max_wbgt",
+                      "expression": "`max_wbgt`"
+                    },
+                    {
+                      "name": "heat_category",
+                      "expression": "`heat_category`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "sgt_date",
+                    "displayName": "Day (SGT)"
+                  },
+                  {
+                    "fieldName": "station_name",
+                    "displayName": "Station"
+                  },
+                  {
+                    "fieldName": "max_wbgt",
+                    "displayName": "Peak WBGT (°C)"
+                  },
+                  {
+                    "fieldName": "heat_category",
+                    "displayName": "Observed heat (NEA)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Day by day, latest first"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 12,
+            "width": 5,
+            "height": 7
           }
         }
       ]

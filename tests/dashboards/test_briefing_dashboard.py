@@ -3,12 +3,13 @@
 Structure (local): the file is exactly what the builder makes; every page is GRID_V1 with rows that fill 12 columns; field
 bindings match; widget versions; no dataset names P(High), the score, gold.heat_forecast, model_version or run_id (whole
 words, so gold.score_weights and scored_at are fine); the colours are coolcheck.briefing's checked set and the live page's
-heat categories; nothing calls a page "Tomorrow" and nothing reads as unfinished (no placeholder box); the Briefing page
-computes today in Singapore, not with current_date().
+heat categories; nothing calls a page "Tomorrow" and nothing reads as unfinished (no placeholder box); the Blocks page
+points to the App for the what-if; the Briefing page computes today in Singapore, not with current_date().
 SQL (Databricks Connect, temp views only): every dataset runs unchanged on temp views with the same bare names, built from
 the files the tables are loaded from (coolcheck-data/analysis and reference/) and a made-up forecast through
 coolcheck.risk.area_heat_risk_sql, with the expected rows; the Briefing page's headline, top 10 and the rest; the two
-wording fixes (the 75+ reasons as one phrase; "too few flats to measure" for areas held neutral).
+wording fixes (the 75+ reasons as one phrase; "too few flats to measure" for areas held neutral); the Observed heat page's
+rows per area and day.
 """
 import json
 import re
@@ -38,6 +39,7 @@ SCORED_AT = datetime(2026, 10, 23, 16, 49, 49)  # UTC: 24 Oct 2026 00:49:49 SGT
 OBSERVED = [(date(2026, 10, 1), "S1", "One", "Moderate", 2, 30.5, "BEDOK"), (date(2026, 10, 1), "S1", "One", "Moderate", 2, 30.5, "TAMPINES"),
             (date(2026, 10, 1), "S2", "Two", "High", 3, 33.1, None), (date(2026, 10, 2), "S1", "One", "Low", 1, 28.0, "BEDOK")]
 EXPECTED_ROWS = {"ds_briefing_lines": 5, "ds_area_map": 55, "ds_top_areas": 10, "ds_more_areas": None, "ds_trend": 3,
+                 "ds_area_observed": 3,
                  "ds_area_facts": 32, "ds_blocks": 10_817, "ds_points": 10_817 + 206, "ds_weights": 7, "ds_actions": 4}
 
 
@@ -64,7 +66,7 @@ def test_file_is_what_the_builder_makes():
 
 
 def test_pages_and_grid_rows_fill_twelve_columns():
-    assert [p["displayName"] for p in DASH["pages"]] == ["Briefing", "Blocks", "About"]
+    assert [p["displayName"] for p in DASH["pages"]] == ["Briefing", "Blocks", "Observed heat", "About"]
     for p in DASH["pages"]:
         assert p["pageType"] == "PAGE_TYPE_CANVAS" and p["layoutVersion"] == "GRID_V1"
         rows, y = {}, 0
@@ -130,7 +132,8 @@ def test_colours_are_the_checked_set_and_no_page_says_tomorrow():
     assert mappings("points-map") == B.POINT_COLOURS
     live = {m["value"]: m["color"] for p in LIVE["pages"] for i in p["layout"]
             for m in i["widget"].get("spec", {}).get("encodings", {}).get("color", {}).get("scale", {}).get("mappings", [])}
-    assert mappings("trend-chart") == BB.HEAT_COLOURS == {k: live[k] for k in ("Low", "Moderate", "High")}
+    for name in ("trend-chart", "observed-trend-chart", "area-observed-chart"):
+        assert mappings(name) == BB.HEAT_COLOURS == {k: live[k] for k in ("Low", "Moderate", "High")}, name
     assert not any(w.get("spec", {}).get("widgetType") == "choropleth-map" for _, w, _ in widgets())
     assert "tomorrow" not in json.dumps(DASH).lower()
 
@@ -138,6 +141,13 @@ def test_colours_are_the_checked_set_and_no_page_says_tomorrow():
 def test_nothing_reads_as_unfinished():
     unfinished = r"not built|reserved for|placeholder|\btbd\b|\btodo\b|coming soon|\bwindow [a-e]\b|what_if"
     assert not re.findall(unfinished, json.dumps(DASH, ensure_ascii=False), re.I)
+
+
+def test_blocks_page_points_to_the_app_for_the_what_if():
+    lines = [w["multilineTextboxSpec"]["lines"] for page, w, _ in widgets() if w["name"] == "app-pointer"]
+    assert len(lines) == 1 and re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", "".join(lines[0])).strip() == (
+        "To test a new refuge near a block, open the CoolCheck App (https://coolcheck-7474646896364032.aws.databricksapps.com) "
+        "and use 'What if a refuge opened here?'")
 
 
 def test_about_carries_every_notice():
@@ -306,3 +316,10 @@ def test_areas_held_neutral_show_too_few_flats_not_a_share(views):
 def test_trend_counts_each_station_once_per_day_and_category(views):
     got = {(str(r["sgt_date"]), r["heat_category"]): r["stations"] for r in rows_of(views, "ds_trend")}
     assert got == {("2026-10-01", "Moderate"): 1, ("2026-10-01", "High"): 1, ("2026-10-02", "Low"): 1}
+
+
+def test_area_observed_is_one_row_per_area_and_day_latest_first(views):
+    got = [(r["planning_area"], str(r["sgt_date"]), r["station_name"], r["max_wbgt"], r["heat_category"])
+           for r in rows_of(views, "ds_area_observed")]
+    assert got == [("BEDOK", "2026-10-02", "One", 28.0, "Low"), ("BEDOK", "2026-10-01", "One", 30.5, "Moderate"),
+                   ("TAMPINES", "2026-10-01", "One", 30.5, "Moderate")]  # station S2 served no area that day

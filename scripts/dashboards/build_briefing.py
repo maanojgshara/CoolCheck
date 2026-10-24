@@ -3,7 +3,9 @@
 Run from the repo root:
     .venv\\Scripts\\python scripts/dashboards/build_briefing.py
 
-Pages: Briefing, Blocks, About. The Briefing page reads gold.area_heat_risk for its latest target_date only: a headline
+Pages: Briefing, Blocks, Observed heat, About. The Blocks page points to the CoolCheck App for the what-if refuge. The
+Observed heat page shows observed values only: the stations by daily NEA category, and for a chosen planning area its
+nearest station's daily peak WBGT and category. The Briefing page reads gold.area_heat_risk for its latest target_date only: a headline
 table ("Heat risk for <weekday, date>, prepared <scored_at> SGT", times converted to SGT in the SQL; a notice when that
 date is before today in Singapore; the tier counts; what Medium means; how many areas are High or Medium beyond the top 10;
 Not-rated areas with High heat), the planning-area point map (one dot per area at its polygon's centroid, coloured by
@@ -32,6 +34,7 @@ DEFAULT_AREA = "BEDOK"  # the area the Blocks page opens on (rank 1 for V on 23 
 HEAT_COLOURS = {"Low": "#2f7fc1", "Moderate": "#fab219", "High": "#d03b3b"}
 TIER_MAP_COLOURS = {**B.TIER_COLOURS, "Not rated": B.NEUTRAL, "No forecast": B.NEUTRAL}
 TOP = 10
+APP_URL = "https://coolcheck-7474646896364032.aws.databricksapps.com"  # window B's approval App (dev), for the what-if
 _PHRASES = {r["component"]: r["reason_phrase"] for r in csv.DictReader(open(REPO / "reference/score_weights.csv", encoding="utf-8"))}
 # the two 75+ components read as one thing when they are an area's two reasons, so they show as one phrase
 MERGED_75 = "many residents aged 75+, who are a high share of its residents"
@@ -139,6 +142,12 @@ FROM observed_heat_daily
 GROUP BY sgt_date, heat_category, heat_order
 ORDER BY sgt_date, heat_order
 """),
+    "ds_area_observed": ("Observed heat per planning area", """
+SELECT planning_area, sgt_date, station_name, round(max_wbgt, 1) AS max_wbgt, heat_category, heat_order
+FROM observed_heat_daily
+WHERE planning_area IS NOT NULL
+ORDER BY planning_area, sgt_date DESC
+"""),
     "ds_area_facts": ("Area facts", f"""
 SELECT planning_area, initcap(third) AS third, {reason_sql('reason')} AS reason, aged_75_plus, rental_1_2_room,
   hdb_dwelling_units_confirmed, {share_sql('refuge_beyond_400m')} AS refuge_beyond,
@@ -217,8 +226,8 @@ def point_map(name, ds, colour_field, colour_display, colours, size_display, ext
                      "frame": {"showTitle": True, "title": title}}}
 
 
-def trend_chart():
-    return {"name": "trend-chart",
+def trend_chart(name):
+    return {"name": name,
             "queries": [{"name": "main_query", "query": {"datasetName": "ds_trend", "fields": [
                 {"name": "daily(sgt_date)", "expression": 'DATE_TRUNC("DAY", `sgt_date`)'},
                 {"name": "sum(stations)", "expression": "SUM(`stations`)"},
@@ -232,6 +241,23 @@ def trend_chart():
                                                        "mappings": [{"value": v, "color": c} for v, c in HEAT_COLOURS.items()]}}},
                      "frame": {"showTitle": True,
                                "title": "Observed heat, last 30 completed days: WBGT stations by their daily NEA category"}}}
+
+
+def area_observed_chart():
+    return {"name": "area-observed-chart",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_area_observed", "fields": [
+                {"name": "daily(sgt_date)", "expression": 'DATE_TRUNC("DAY", `sgt_date`)'},
+                {"name": "max(max_wbgt)", "expression": "MAX(`max_wbgt`)"},
+                field("heat_category")], "disaggregated": False}}],
+            "spec": {"version": 3, "widgetType": "bar",
+                     "encodings": {"x": {"fieldName": "daily(sgt_date)", "displayName": "Day (SGT)", "scale": {"type": "temporal"}},
+                                   "y": {"fieldName": "max(max_wbgt)", "displayName": "Peak WBGT (°C)",
+                                         "scale": {"type": "quantitative"}},
+                                   "color": {"fieldName": "heat_category", "displayName": "Observed heat (NEA)",
+                                             "scale": {"type": "categorical",
+                                                       "mappings": [{"value": v, "color": c} for v, c in HEAT_COLOURS.items()]}}},
+                     "frame": {"showTitle": True,
+                               "title": "The area's nearest WBGT station: the day's peak WBGT, coloured by its NEA category"}}}
 
 
 def at(widget, x, y, w, h):
@@ -265,7 +291,7 @@ def build():
                0, 15, 12, 9),
             at(table("more-areas", "ds_more_areas", AREA_TABLE, f"Every other High or Medium area, after the top {TOP}"),
                0, 24, 12, 8),
-            at(trend_chart(), 0, 32, 12, 6),
+            at(trend_chart("trend-chart"), 0, 32, 12, 6),
         ]}
     area_filter = {
         "name": "area-filter",
@@ -288,20 +314,49 @@ def build():
                 "Blocks rank vulnerability only, never heat: heat is forecast per planning area. Pick an area; the list puts "
                 "the blocks with the most 1-2 room rental flats first, then those farthest from a refuge. CoolCheck holds no "
                 "personal data: match the blocks against your own client list.\n"]), 0, 1, 12, 2),
-            at(area_filter, 0, 3, 4, 3),
+            at(text("app-pointer", [f"To test a new refuge near a block, open the CoolCheck App ([{APP_URL}]({APP_URL})) "
+                                    "and use 'What if a refuge opened here?'\n"]), 0, 3, 12, 1),
+            at(area_filter, 0, 4, 4, 3),
             at(table("area-facts", "ds_area_facts", [
                 ("planning_area", "Planning area"), ("third", "Vulnerability third"), ("reason", "Why"),
                 ("aged_75_plus", "Residents 75+"), ("rental_1_2_room", "1-2 room rental flats"),
                 ("hdb_dwelling_units_confirmed", "HDB flats"), ("refuge_beyond", "Flats beyond 400 m of a refuge"),
                 ("park_beyond", "Flats beyond 400 m of a park"), ("held_neutral", "Held at the middle (0.5)")],
-                "The area"), 4, 3, 8, 3),
-            at(points, 0, 6, 12, 9),
+                "The area"), 4, 4, 8, 3),
+            at(points, 0, 7, 12, 9),
             at(table("blocks-table", "ds_blocks", [
                 ("priority", "Priority"), ("block", "Block"), ("rental_1_2_room", "1-2 room rental flats"),
                 ("total_dwelling_units", "Flats"), ("refuge_main_name", "Nearest refuge"), ("refuge_m", "Refuge (m)"),
                 ("refuge_400m", "Refuge within 400 m"), ("park_main_name", "Nearest park"), ("park_m", "Park (m)"),
                 ("park_400m", "Park within 400 m"), ("note", "Note")],
-                "Blocks in priority order (straight-line distances)"), 0, 15, 12, 9),
+                "Blocks in priority order (straight-line distances)"), 0, 16, 12, 9),
+        ]}
+    observed_filter = {
+        "name": "observed-area-filter",
+        "queries": [{"name": "ds_area_observed_area", "query": {"datasetName": "ds_area_observed",
+                                                                "fields": [field("planning_area")], "disaggregated": False}}],
+        "spec": {"version": 2, "widgetType": "filter-single-select",
+                 "encodings": {"fields": [{"fieldName": "planning_area", "displayName": "Planning area",
+                                           "queryName": "ds_area_observed_area"}]},
+                 "selection": {"defaultSelection": {"values": {"dataType": "STRING", "values": [{"value": DEFAULT_AREA}]}}},
+                 "frame": {"showTitle": True, "title": "Planning area"}}}
+    observed_page = {
+        "name": "observed", "displayName": "Observed heat", "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1",
+        "layout": [
+            at(text("observed-title", ["## Observed heat: the last 30 completed days\n"]), 0, 0, 12, 1),
+            at(text("observed-subtitle", [
+                "Observed values only, never forecasts; the forecast is on the Briefing page. Each WBGT station's observed "
+                "daily heat-stress category (NEA's Low, Moderate or High) for the last 30 completed days in Singapore time; "
+                "today's readings are still coming in and are left out.\n"]), 0, 1, 12, 2),
+            at(trend_chart("observed-trend-chart"), 0, 3, 12, 7),
+            at(observed_filter, 0, 10, 4, 2),
+            at(text("observed-area-guide", [
+                "Pick a planning area to see the WBGT station nearest to it each day, the day's highest reading and its "
+                "category. Heat is measured at stations and shown per planning area, never per block.\n"]), 4, 10, 8, 2),
+            at(area_observed_chart(), 0, 12, 7, 7),
+            at(table("area-observed-table", "ds_area_observed", [
+                ("sgt_date", "Day (SGT)"), ("station_name", "Station"), ("max_wbgt", "Peak WBGT (°C)"),
+                ("heat_category", "Observed heat (NEA)")], "Day by day, latest first"), 7, 12, 5, 7),
         ]}
     matrix = ["| Forecast heat (NEA) / vulnerability | Lower third | Middle third | Upper third |\n", "|---|---|---|---|\n",
               "| Low | Low | Low | Low |\n", "| Moderate | Low | Medium | Medium |\n", "| High | Medium | High | High |\n"]
@@ -337,7 +392,7 @@ def build():
         ]}
     return {
         "datasets": [dataset(n) for n in DATASETS],
-        "pages": [briefing_page, blocks_page, about_page],
+        "pages": [briefing_page, blocks_page, observed_page, about_page],
         "uiSettings": {"theme": {
             "canvasBackgroundColor": {"light": "#FCFCFC", "dark": "#1F272D"},
             "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#11171C"},
