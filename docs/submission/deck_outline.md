@@ -1,6 +1,6 @@
 # Deck outline: CoolCheck (10 slides)
 
-> **Draft, 23 Oct 2026.** Each slide has one line of message and the evidence behind it. Every number names the repository file it comes from; paths are relative to `docs/`. `[TBD: …]` marks what is not built yet. The wording follows the write-up (`submission/writeup.md`).
+> **Draft, 24 Oct 2026.** Each slide has one line of message and the evidence behind it. Every number names the repository file it comes from; paths are relative to `docs/`. `[TBD: …]` marks what is not built yet. The wording follows the write-up (`submission/writeup.md`).
 
 ## 1. The problem and who CoolCheck is for
 
@@ -13,11 +13,12 @@
 
 ## 2. What a care team gets
 
-**Message:** Overnight, every planning area gets the coming day's heat level and a Low, Medium or High risk tier, with its HDB blocks in the order to check them.
+**Message:** Overnight, each of the 41 planning areas with residents aged 65+ gets the coming day's heat level, and the 32 with HDB blocks get a Low, Medium or High risk tier and their blocks in the order to check them.
 
 **Evidence:**
 - The tier crosses NEA's heat level with the area's vulnerability third in a 3×3 rule (`design/risk_score.md`, §6).
 - Blocks are ordered by 1–2 room rental flats, then by distance to the nearest refuge; blocks rank vulnerability, never heat (`design/risk_score.md`).
+- A job at 00:45 SGT scores the next day and writes `gold.heat_forecast`; the view `gold.area_heat_risk` gives the tiers, with no probability or score column. Its first scheduled night was 24 Oct (`checks/heat_forecast_first_night.md`); one night, not a track record.
 - The live heat-stress page is built and published (`README.md`). [TBD: the briefing dashboard and its screenshot.]
 
 ## 3. Open data in, governed tables out
@@ -38,6 +39,7 @@
 - LightGBM on 11 features, logged in MLflow (`checks/final_check.md`, settings); every feature is known by 00:15 SGT on the day (`design/backtest.md`).
 - A rolling monthly back-test over 14 months, July 2025 to August 2026: 17,438 area-days, 710 High, against three baselines (`checks/backtest.md`).
 - The final check was specified before any of its data was read and scored once behind a lock (`design/backtest.md`, §15).
+- The live model is the same configuration refit on target dates to 22 Oct 2026: 10,861 station-days, 538 High. It is a different fitted model from the one the final check scored, and no result is reported for it yet (`checks/live_model.md`).
 
 ## 5. Back-test: a better ranking, the same catch at equal alerts
 
@@ -75,7 +77,8 @@
 **Evidence:**
 - Tool calling works: Llama 3.3 70B returned a well-formed tool call on the trial (`checks/tool_calling_model_test.md`) and on Free Edition (`checks/free_edition_tool_calling.md`).
 - The endpoint's own description says the model "is not intended for use in languages other than English", so the four languages need checking (`checks/free_edition_tool_calling.md`).
-- [TBD: the agent, the advisories in four languages and the evaluation scenarios.]
+- The agent's three tools exist as Unity Catalog SQL functions, and the first fills the call capacity in code (`design/agent_tools.md`).
+- [TBD: the agent loop, the approval App, the advisories in four languages and the evaluation scenarios.]
 
 ## 9. Impact: reach, lead time and recall
 
@@ -95,5 +98,5 @@
 - It is late into hot spells: it missed 315 of 465 first days and all 22 High area-days of March 2026 (`checks/error_analysis.md`).
 - Its edge rests on three hot stations: 0.179 against 0.160 without them in the back-test (`checks/backtest.md`).
 - The refuge layer is partial: 93 of about 223 Active Ageing Centres (`checks/refuge_park_access.md`).
-- Cost at list price: US$0.142 per hourly refresh of the live page, US$3.40 a day (`checks/latest_readings_cost.md`); US$12.95 for 19 to 21 Oct (`checks/cost_since_19_oct.md`).
-- No personal data. Next: a one-season trial with one AAC cluster, and a practitioner's review of the tiers. [TBD: the Free Edition redeploy and the nightly job's cost.]
+- Cost at list price: US$0.142 per hourly refresh of the live page, US$3.40 a day (`checks/latest_readings_cost.md`); US$12.95 for 19 to 21 Oct (`checks/cost_since_19_oct.md`). The nightly job cost US$0.358 on its first scheduled night and US$0.447 for the manual run of 23 Oct; two runs, no daily total (`checks/heat_forecast_first_night.md`). Not counted yet: the App and the SQL warehouse behind the dashboard and the App. [TBD: the App's cost from billing.]
+- No personal data. Next: a one-season trial with one AAC cluster, and a practitioner's review of the tiers. [TBD: the Free Edition redeploy.]

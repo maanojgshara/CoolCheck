@@ -4,9 +4,9 @@
 
 ## Summary
 
-CoolCheck is a next-day heat briefing for Active Ageing Centre teams and care coordinators. Each night it forecasts the coming day's heat stress for every planning area, crosses it with the area's vulnerability (seniors aged 75+, rental flats, distance to cooling refuges) into a Low, Medium or High tier, and lists the HDB blocks to check first. On held-out weeks scored once, the pre-declared test passed: area-day PR-AUC 0.489 against 0.360 for "same as today". At the cut-off it caught 61 of 77 High area-days, about one alert in three correct; at equal alert load, 35 against 32. Without S142, S137 and S135 the edge is small; no difference is claimed from these weeks alone (`checks/final_check.md`). Still to build: the agent, its four-language advisories and its evaluations; the briefing dashboard is in progress.
+CoolCheck is a next-day heat briefing for Active Ageing Centre teams and care coordinators. Each night it forecasts the coming day's heat stress for 41 planning areas, crosses it with the area's vulnerability (seniors aged 75+, rental flats, distance to cooling refuges) into a Low, Medium or High tier, and lists the HDB blocks to check first. On held-out weeks scored once, the pre-declared test passed: area-day PR-AUC 0.489 against 0.360 for "same as today". At the cut-off it caught 61 of 77 High area-days, about one alert in three correct; at equal alert load, 35 against 32. Without S142, S137 and S135 the edge is small; no difference is claimed from these weeks alone (`checks/final_check.md`). Still to build: the agent, its four-language advisories and its evaluations; the briefing dashboard is in progress.
 
-> **Draft of the Devpost project description, 23 Oct 2026.** Every number names the repository file it comes from; paths are relative to `docs/` unless they start with another folder. `[TBD: …]` marks what is not built yet. Weak results are reported as they are.
+> **Draft of the Devpost project description, 24 Oct 2026.** Every number names the repository file it comes from; paths are relative to `docs/` unless they start with another folder. `[TBD: …]` marks what is not built yet. Weak results are reported as they are.
 
 ## The problem, who uses CoolCheck and the decision it informs
 
@@ -14,7 +14,7 @@ CoolCheck is a next-day heat briefing for Active Ageing Centre teams and care co
 
 NEA measures heat stress at its weather stations as the Wet Bulb Globe Temperature (WBGT), in its own categories Low, Moderate and High, and publishes a 24-hour weather forecast. What we did not find in open data is a view of the coming day that puts the heat forecast together with where vulnerable seniors live and how far they are from a place to cool down.
 
-CoolCheck is for the people who check on seniors: Active Ageing Centre (AAC) teams and care coordinators. It informs one decision, made each morning: where to put a limited number of calls and visits. Overnight, CoolCheck is designed to give every planning area the coming day's heat level, to give the 32 areas with HDB blocks a risk tier, and to list within each the HDB blocks to check first (`design/risk_score.md`). The AAC matches that list against its own client list, so CoolCheck holds no personal data. [TBD: the nightly run that publishes this.]
+CoolCheck is for the people who check on seniors: Active Ageing Centre (AAC) teams and care coordinators. It informs one decision, made each morning: where to put a limited number of calls and visits. Overnight, CoolCheck gives each of the 41 planning areas with residents aged 65+ the coming day's heat level, gives the 32 of them with HDB blocks a risk tier, and lists within each the HDB blocks to check first (`design/risk_score.md`). A scheduled job at 00:45 SGT does this; its first scheduled night was 24 Oct (`checks/heat_forecast_first_night.md`). The AAC matches the block list against its own client list, so CoolCheck holds no personal data.
 
 [TBD: a practitioner's confirmation of the need, the tiers and the actions; none has been obtained yet.]
 
@@ -31,11 +31,18 @@ Bronze (Auto Loader) -> Silver (parsed, rule flags, deduplicated) -> daily stati
   |                                       |
   | hourly job                            | features known by 00:15 SGT
   v                                       v
-gold.latest_readings -> live page      LightGBM in MLflow: 14-month back-test, final check
+gold.latest_readings -> live page      LightGBM in MLflow: 14-month back-test, final check;
+                                       live model refit to 22 Oct, registered as champion
+                                          |  nightly job, 00:45 SGT (refresh, then score)
+                                          v
+                                       gold.heat_forecast: 41 areas
                                           |
 static open data -> Silver layers -> Gold vulnerability views
+                                          |  (heat level x vulnerability third)
+                                          v
+                                       gold.area_heat_risk: the tier view
                                           |
-            [TBD: nightly scoring job -> tiers -> briefing dashboard and agent]
+                    [TBD: briefing dashboard, approval App and agent]
 ```
 
 The diagram's numbers are cited in the steps below.
@@ -51,14 +58,15 @@ The diagram's numbers are cited in the steps below.
    - can't cool down: 1–2 room rental flats, and a weak electricity term;
    - the cooling-access gap: flats beyond 400 m of a refuge, refuges per 1,000 residents aged 65+, and flats beyond 400 m of a park.
 
-   Each component becomes a percentile among the 32 areas, and the weighted sum splits the areas into thirds. The coming day's heat level is High when the model's probability of High reaches the cut-off, 0.110 (`checks/backtest_review.md`), and otherwise the more likely of Moderate and Low. A 3×3 rule crosses the heat level with the vulnerability third to give the area's risk tier: Low, Medium or High (`design/risk_score.md`, §6). Within an area, blocks are ordered by 1–2 room rental flats, then by distance to the nearest refuge: blocks rank vulnerability, never heat. The vulnerability views and the weight and action tables are in Unity Catalog. [TBD: the nightly scoring job and the view that gives the coming day's tiers.]
+   Each component becomes a percentile among the 32 areas, and the weighted sum splits the areas into thirds. The coming day's heat level is High when the model's probability of High reaches the cut-off, 0.110 (`checks/backtest_review.md`), and otherwise the more likely of Moderate and Low. A 3×3 rule crosses the heat level with the vulnerability third to give the area's risk tier: Low, Medium or High (`design/risk_score.md`, §6). Within an area, blocks are ordered by 1–2 room rental flats, then by distance to the nearest refuge: blocks rank vulnerability, never heat. The vulnerability views and the weight and action tables are in Unity Catalog. A scheduled job at 00:45 SGT refreshes the pipeline, scores the coming day with the live model and writes `gold.heat_forecast`; the view `gold.area_heat_risk` crosses that with the thirds to give the day's tiers, with no probability or score column (`checks/heat_forecast_first_night.md`). Its first scheduled night was 24 Oct: one night, not a track record.
 8. **What people see.** A live heat-stress page, an AI/BI dashboard, shows the newest WBGT by station on a map in NEA's categories, rain in the last hour and air temperature, from a table an hourly job refreshes. When the table is more than 90 minutes old, every station shows "no recent reading" (`README.md`).
    - [TBD: the briefing dashboard: the planning-area map by tier, the areas with plain reasons, and the block list.]
+   - The agent's three tools exist as Unity Catalog SQL functions, `get_priority_areas`, `find_refuges` and `what_if_add_refuge`. The first fills the AAC's call capacity in code, in tier order, and none returns a probability or a score. 35 local tests and 16 through Databricks Connect passed (`design/agent_tools.md`).
    - [TBD: the agent. It drafts the day's outreach plan from the tiers and the block list. Allocation to the AAC's call capacity is done in code, a person approves, and nothing is sent automatically.]
    - [TBD: advisories in four languages.]
    - [TBD: the agent's evaluation scenarios.]
 
-**Built with:** Unity Catalog (catalog, Volume, tables, views, comments, tags), Lakeflow Spark Declarative Pipelines (Auto Loader, expectations, Auto CDC), Lakeflow Jobs on serverless, MLflow, AI/BI dashboards, Declarative Automation Bundles, and Databricks Connect for the tests; GitHub Actions and cron-job.org for collection.
+**Built with:** Unity Catalog (catalog, Volume, tables, views, SQL functions, a model registry, comments, tags), Lakeflow Spark Declarative Pipelines (Auto Loader, expectations, Auto CDC), Lakeflow Jobs on serverless, MLflow, AI/BI dashboards, Declarative Automation Bundles, and Databricks Connect for the tests; GitHub Actions and cron-job.org for collection.
 
 ## The datasets
 
@@ -115,11 +123,11 @@ Source of the table: `checks/backtest.md`.
 - Without S142, S137 and S135 the edge is small: on station-days, PR-AUC 0.279 against 0.244, and 11 of 31 each at the same load.
 - No difference between the model and a baseline is claimed from the final check alone: its 49 days are too few for the block bootstrap.
 
-The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days with 465 High (`checks/final_check.md`). [TBD: the live model, the same configuration refit on more days.]
+The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days with 465 High (`checks/final_check.md`). The live model is the same configuration refit on target dates to 22 Oct 2026, on 10,861 station-days with 538 High. It is a different fitted model, and no result is reported for it yet (`checks/live_model.md`).
 
 **The tiers in the back-test months** (`checks/risk_score.md`).
-- The High tier fired on 566 area-days: 1.33 areas a day on average, on 168 of 427 days, and at most 14 in one day.
-- The Medium tier fired on 4,773 area-days, 11.18 areas a day on average. It means heightened care on Moderate days, not an alert.
+- The High tier fired on 566 area-days: about 1.3 areas a day on average, on 168 of 427 days, and at most 14 in one day.
+- The Medium tier fired on 4,773 area-days, about 11 areas a day on average. Medium is not an alert: heightened care where heat is Moderate in an upper- or middle-third area, or High in a lower-third one.
 - Low covered 8,263 area-days (`checks/risk_score.md`). The 9 areas without HDB blocks show only their heat level (`design/risk_score.md`).
 - The weights are a stated judgement, tested by sensitivity runs and not yet reviewed by a practitioner. Equal weights keep the ranking close (Spearman's rho 0.900, 10 areas change third); refuges from the clubs only give 0.888; the URA park layer gives 0.915 and changes no tier; dropping the electricity term gives 0.990 and changes nothing.
 
@@ -139,7 +147,7 @@ The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days wi
 
 - **The final check is small:** 77 High area-days over 49 days, so no difference is claimed from it alone (`checks/final_check.md`).
 - **The edge rests on three hot stations.** Without S142, S137 and S135 the edge over "same as today" is not clear in the back-test (0.179 against 0.160, `checks/backtest.md`) and small in the final check (`checks/final_check.md`).
-- **The model is late into hot spells.** It missed 315 of 465 first days of a hot spell, against 40 of 245 later days, and all 22 High area-days of March 2026, the start of a hot season (`checks/error_analysis.md`). In April 2026 its probabilities of High summed to 81.672 against 184 observed High area-days (`checks/backtest_review.md`).
+- **The model is late into hot spells.** It missed 315 of 465 first days of a hot spell, against 40 of 245 later days, and all 22 High area-days of March 2026, the start of a hot season (`checks/error_analysis.md`). In April 2026 its probabilities of High summed to about 82 against 184 observed High area-days (`checks/backtest_review.md`).
 - **The probability is not shown.** Over its alerts it is about right on average, 0.275 against 0.301 observed, but too spread out: its highest fifth predicts 0.478 against 0.420 observed (`checks/error_analysis.md`). The briefing shows tiers, never the probability.
 - **The alert load varies.** At the cut-off the final check gave 3.59 alerts a day against the back-test's 2.76, and in October only 13 of 76 alerts were High days (`checks/final_check.md`).
 - **The label is fragile.** 260 of 465 High station-days rest on one or two 15-minute readings (`checks/eda.md`). Where two stations are almost equally near an area, their daily categories differed on about 22% of days in the two areas checked (`checks/backtest.md`).
@@ -149,7 +157,8 @@ The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days wi
 - **The electricity term is weak.** The April-to-June over November-to-February ratio of 1–2 room electricity use averages 1.0995 over 280 area-years, 2015 to 2024, about a 10% rise. A smaller rise only "may indicate" less air-con use, and 4 of the 32 rated areas have no value (`checks/ema_electricity.md`).
 - **Air temperature is not tested as a model input.** WBGT is used because NEA's categories are defined on it; we make no claim that it predicts better than air temperature.
 - **Some areas are not rated.** 9 of the 41 areas with residents aged 65+ have no HDB blocks and show their heat level only; they hold 4,730 residents aged 65+ (`design/risk_score.md`).
-- **Not built yet:** the nightly scoring job, the briefing dashboard, the agent, the four languages and the evaluations, all marked [TBD] above.
+- **One night so far.** The nightly job has one scheduled night behind it, 24 Oct, and the live model has no held-out result (`checks/heat_forecast_first_night.md`, `checks/live_model.md`).
+- **Not built yet:** the briefing dashboard, the agent, the four languages and the evaluations, all marked [TBD] above.
 
 ## What's next
 
@@ -158,20 +167,20 @@ The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days wi
   - The live page's hourly refresh costs US$0.142 a run, US$3.40 a day (`checks/latest_readings_cost.md`). Every 15 minutes would cost about US$13.59 a day, an estimate, so it stays hourly.
   - The trial workspace used US$12.95 from 19 to 21 Oct, the days the pipeline was built and the history loaded (`checks/cost_since_19_oct.md`).
   - Each collector run on GitHub Actions is billed as one minute (`build-log.md`).
-  - [TBD: the cost of the nightly scoring job.]
+  - The nightly job, a pipeline refresh and then scoring, cost US$0.358 on its first scheduled night, 24 Oct, and US$0.447 for the manual run of 23 Oct. Two runs, so no daily or monthly total is claimed (`checks/heat_forecast_first_night.md`). Not counted yet: the App, which bills while it runs, and the SQL warehouse behind the dashboard and the App. [TBD: the App's cost, read from billing after it has run a day.]
 - **No personal data.** CoolCheck holds aggregates and public places only: residents by age per planning area, flats per block, refuges and parks. Names, addresses and health data stay with the AAC, which matches the block list against its own clients.
 - **How it fits AACs' welfare calls.** The tier table proposes actions, each marked "proposal, not yet reviewed by a practitioner" (`design/risk_score.md`, §7):
   - High: phone checks before noon on flagged seniors in the priority blocks; AACs and community clubs extend hours as cooling spaces; the town council is told.
   - Medium: the AAC broadcasts a hydration and heat advisory in four languages; volunteers flag seniors living alone in the priority blocks.
   - Low: routine.
 
-  In the back-test months that meant 1.33 High areas and 11.18 Medium areas a day (`checks/risk_score.md`). Whether 11 Medium areas a day is useful is a question for the practitioner review. [TBD: the agent drafts the day's call plan within the AAC's stated capacity, and a person approves it.]
+  In the back-test months that meant about 1.3 High areas and about 11 Medium areas a day (`checks/risk_score.md`). Whether about 11 Medium areas a day is useful is a question for the practitioner review. [TBD: the agent drafts the day's call plan within the AAC's stated capacity, and a person approves it.]
 - **Then:**
   - a practitioner's review of the tiers, weights and actions;
   - the full list of Active Ageing Centres from MOH or AIC;
   - air temperature as a model input, if a permitted source of its history exists;
   - recalibrating the probability before it is ever shown;
-  - the live model refit on all completed days.
+  - refitting the live model as days complete; it was fitted once, to 22 Oct.
 
 ## Data sources and attribution
 
