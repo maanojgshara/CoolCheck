@@ -1,15 +1,18 @@
 """The briefing dashboard (src/dashboards/briefing.lvdash.json, built by scripts/dashboards/build_briefing.py).
 
 Structure (local): the file is exactly what the builder makes; every page is GRID_V1 with rows that fill 12 columns; field
-bindings match; widget versions; no dataset names P(High), the score or gold.heat_forecast (whole words, so
-gold.score_weights is fine); the colours are coolcheck.briefing's checked set; nothing calls a page "Tomorrow".
+bindings match; widget versions; no dataset names P(High), the score, gold.heat_forecast, model_version or run_id (whole
+words, so gold.score_weights and scored_at are fine); the colours are coolcheck.briefing's checked set and the live page's
+heat categories; nothing calls a page "Tomorrow"; the Briefing page computes today in Singapore, not with current_date().
 SQL (Databricks Connect, temp views only): every dataset runs unchanged on temp views with the same bare names, built from
-the files the tables are loaded from (coolcheck-data/analysis and reference/), with the expected rows; the maps'
-geometry measure (ST_ASGEOJSON(FIRST(geometry)) per key) gives one polygon per key.
+the files the tables are loaded from (coolcheck-data/analysis and reference/) and a made-up forecast through
+coolcheck.risk.area_heat_risk_sql, with the expected rows; the Briefing page's headline, top 10 and the rest; the two
+wording fixes (the 75+ reasons as one phrase; "too few flats to measure" for areas held neutral).
 """
 import json
 import re
 import sys
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -20,13 +23,21 @@ for p in (ROOT / "scripts" / "dashboards", ROOT / "scripts" / "static"):
 
 import build_briefing as BB  # noqa: E402
 from coolcheck import briefing as B  # noqa: E402
+from coolcheck import palette as P  # noqa: E402
 from coolcheck import risk as R  # noqa: E402
 
 DASH = json.loads((ROOT / "src/dashboards/briefing.lvdash.json").read_text(encoding="utf-8"))
+LIVE = json.loads((ROOT / "src/dashboards/live_heat_stress.lvdash.json").read_text(encoding="utf-8"))
 ANALYSIS = ROOT.parent / "coolcheck-data" / "analysis"
-VERSIONS = {"table": 2, "symbol-map": 2, "choropleth-map": 1, "filter-single-select": 2}
-EXPECTED_ROWS = {"ds_thirds_map": 32, "ds_area_facts": 32, "ds_blocks": 10_817, "ds_points": 10_817 + 206,
-                 "ds_parks": 471, "ds_weights": 7, "ds_actions": 4}
+VERSIONS = {"table": 2, "symbol-map": 2, "bar": 3, "filter-single-select": 2}
+NEVER_SHOWN = (*B.FORBIDDEN, "model_version", "run_id")
+# the made-up forecast: High heat in three areas (one rated, two not), Moderate elsewhere; the latest date and one before
+HIGH_AREAS = {"TOA PAYOH", "SOUTHERN ISLANDS", "SUNGEI KADUT"}
+SCORED_AT = datetime(2026, 10, 23, 16, 49, 49)  # UTC: 24 Oct 2026 00:49:49 SGT
+OBSERVED = [(date(2026, 10, 1), "S1", "One", "Moderate", 2, 30.5, "BEDOK"), (date(2026, 10, 1), "S1", "One", "Moderate", 2, 30.5, "TAMPINES"),
+            (date(2026, 10, 1), "S2", "Two", "High", 3, 33.1, None), (date(2026, 10, 2), "S1", "One", "Low", 1, 28.0, "BEDOK")]
+EXPECTED_ROWS = {"ds_briefing_lines": 5, "ds_area_map": 55, "ds_top_areas": 10, "ds_more_areas": None, "ds_trend": 3,
+                 "ds_area_facts": 32, "ds_blocks": 10_817, "ds_points": 10_817 + 206, "ds_weights": 7, "ds_actions": 4}
 
 
 def widgets():
@@ -52,7 +63,7 @@ def test_file_is_what_the_builder_makes():
 
 
 def test_pages_and_grid_rows_fill_twelve_columns():
-    assert [p["displayName"] for p in DASH["pages"]] == ["Blocks", "About"]
+    assert [p["displayName"] for p in DASH["pages"]] == ["Briefing", "Blocks", "About"]
     for p in DASH["pages"]:
         assert p["pageType"] == "PAGE_TYPE_CANVAS" and p["layoutVersion"] == "GRID_V1"
         rows, y = {}, 0
@@ -88,22 +99,38 @@ def test_widget_names_versions_and_bindings():
             assert q["query"]["datasetName"] in {d["name"] for d in DASH["datasets"]}
 
 
-def test_no_dataset_names_the_probability_the_score_or_the_forecast_table():
+def test_no_dataset_names_the_probability_the_score_the_forecast_table_or_the_run():
     for d in DASH["datasets"]:
         sql = sql_of(d)
-        for word in B.FORBIDDEN:
+        for word in NEVER_SHOWN:
             assert not re.search(rf"\b{word}\b", sql, re.I), (d["name"], word)
+        assert "select *" not in sql.lower(), d["name"]
         assert all(line.endswith("\n") for line in d["queryLines"])
-    assert re.search(r"\bscore\b", "SELECT * FROM score_weights") is None  # whole words: score_weights is allowed
+    assert re.search(r"\bscore\b", "SELECT * FROM score_weights, scored_at") is None  # whole words only
+    shown = {f for _, w, _ in widgets() for f in field_names(w.get("spec", {}).get("encodings", {}))}
+    assert not shown & {"tier_rank", "heat_level", "v", "third_code"}
+
+
+def test_briefing_page_reads_the_latest_date_and_today_in_singapore():
+    sql = {d["name"]: sql_of(d) for d in DASH["datasets"]}
+    for name in ("ds_briefing_lines", "ds_area_map", "ds_top_areas", "ds_more_areas"):
+        assert "target_date = (SELECT max(target_date) FROM area_heat_risk)" in sql[name], name
+        assert "current_date" not in sql[name].lower(), name
+    assert "to_date(from_utc_timestamp(current_timestamp(), 'Asia/Singapore'))" in sql["ds_briefing_lines"]
+    assert "from_utc_timestamp(scored_at, 'Asia/Singapore')" in sql["ds_briefing_lines"]
+    assert "ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2" in sql["ds_top_areas"] and "r.tier_rank)" in sql["ds_top_areas"]
 
 
 def test_colours_are_the_checked_set_and_no_page_says_tomorrow():
     by = {w["name"]: w for _, w, _ in widgets()}
-    ramp = by["thirds-map"]["spec"]["encodings"]["color"]["scale"]["colorRamp"]["colors"]
-    assert ramp == {"start": B.THIRD_COLOURS["lower"], "end": B.THIRD_COLOURS["upper"]}
-    maps = by["points-map"]["spec"]["encodings"]["color"]["scale"]["mappings"]
-    assert {m["value"]: m["color"] for m in maps} == B.POINT_COLOURS
-    assert by["parks-map"]["spec"]["encodings"]["color"]["scale"]["colorRamp"]["colors"] == {"start": B.PARK_COLOUR, "end": B.PARK_COLOUR}
+    mappings = lambda name: {m["value"]: m["color"] for m in by[name]["spec"]["encodings"]["color"]["scale"]["mappings"]}  # noqa: E731
+    assert mappings("area-map") == {**B.TIER_COLOURS, "Not rated": B.NEUTRAL, "No forecast": B.NEUTRAL}
+    assert P.categorical_ok([*B.TIER_COLOURS.values(), B.NEUTRAL])
+    assert mappings("points-map") == B.POINT_COLOURS
+    live = {m["value"]: m["color"] for p in LIVE["pages"] for i in p["layout"]
+            for m in i["widget"].get("spec", {}).get("encodings", {}).get("color", {}).get("scale", {}).get("mappings", [])}
+    assert mappings("trend-chart") == BB.HEAT_COLOURS == {k: live[k] for k in ("Low", "Moderate", "High")}
+    assert not any(w.get("spec", {}).get("widgetType") == "choropleth-map" for _, w, _ in widgets())
     assert "tomorrow" not in json.dumps(DASH).lower()
     assert "what_if_add_refuge" in json.dumps(by["what-if"])
 
@@ -142,14 +169,49 @@ def views(spark):
     spark.sql(R.block_vulnerability_sql("t_block_access", "area_vulnerability")).createOrReplaceTempView("block_vulnerability")
     spark.sql(B.planning_area_map_sql("t_planning_area_boundary")).createOrReplaceTempView("planning_area_map")
     spark.sql(B.refuge_layer_sql("t_refuge_points")).createOrReplaceTempView("refuge_layer")
-    spark.sql(B.park_layer_sql("t_park_polygons", "t_park_planning_area")).createOrReplaceTempView("park_layer")
+    spark.createDataFrame(OBSERVED, ", ".join(f"{c} {t}" for c, t in zip(
+        [c for c, _ in B.OBSERVED_COLUMNS], ["DATE", "STRING", "STRING", "STRING", "INT", "DOUBLE", "STRING"]))) \
+        .createOrReplaceTempView("observed_heat_daily")
+    heat_risk_view(spark, LATEST)
     return spark
 
 
+LATEST = date(2999, 12, 31)  # after any real today, so no "no forecast for today" notice unless a test asks for one
+
+
+def heat_risk_view(spark, latest):
+    """area_heat_risk over a made-up forecast for every planning area: on `latest`, High heat in HIGH_AREAS and in the
+    first lower-third area (a Medium with High heat), Moderate elsewhere; the day before, High heat everywhere (so a
+    dataset that missed the latest-date filter would count differently)."""
+    from datetime import timedelta, timezone
+    areas = sorted(r["planning_area"] for r in spark.table("t_exposure").select("planning_area").collect())
+    lower = min(r["planning_area"] for r in spark.sql("SELECT planning_area FROM area_vulnerability WHERE third = 'lower'").collect())
+    at = SCORED_AT.replace(tzinfo=timezone.utc)
+    rows = [(d, a, "S00", *((0.1, 0.4, 0.5) if a in hi else (0.2, 0.7, 0.1)), "m", "r", at, at, False)
+            for d, hi in ((latest, HIGH_AREAS | {lower}), (latest - timedelta(days=1), set(areas))) for a in areas]
+    spark.createDataFrame(rows, "target_date DATE, planning_area STRING, station_id STRING, p_low DOUBLE, p_moderate DOUBLE, "
+                                "p_high DOUBLE, model_version STRING, run_id STRING, cutoff_ts TIMESTAMP, scored_at TIMESTAMP, "
+                                "forecast_missing BOOLEAN").createOrReplaceTempView("t_forecast")
+    spark.sql(R.area_heat_risk_sql("t_forecast", "area_vulnerability", "t_exposure", "tier_actions")) \
+        .createOrReplaceTempView("area_heat_risk")
+    return lower
+
+
+def rows_of(spark, name):
+    return [r.asDict() for r in spark.sql(sql_of(next(d for d in DASH["datasets"] if d["name"] == name))).collect()]
+
+
+def tier_counts(spark):
+    return {r["tier"]: r["n"] for r in spark.sql(
+        f"SELECT tier, count(*) AS n FROM area_heat_risk WHERE target_date = DATE'{LATEST}' GROUP BY tier").collect()}
+
+
 def test_every_dataset_runs_unchanged_with_the_expected_rows(views):
+    n = tier_counts(views)
+    expected = {**EXPECTED_ROWS, "ds_more_areas": n.get("High", 0) + n.get("Medium", 0) - 10}
     for d in DASH["datasets"]:
         df = views.sql(sql_of(d))
-        assert df.count() == EXPECTED_ROWS[d["name"]], d["name"]
+        assert df.count() == expected[d["name"]], d["name"]
         cols = set(df.columns)
         for _, w, _ in widgets():
             for q in w.get("queries", []):
@@ -165,12 +227,77 @@ def test_default_area_exists(views):
     assert BB.DEFAULT_AREA in areas and len(areas) == 32
 
 
-@pytest.mark.parametrize("ds,key,colour,n", [("ds_thirds_map", "area_name", "third_code", 32), ("ds_parks", "park_name", "park", None)])
-def test_geometry_measure_gives_one_polygon_per_key(views, ds, key, colour, n):
-    sql = sql_of(next(d for d in DASH["datasets"] if d["name"] == ds))
-    got = views.sql(f"SELECT {key}, ST_ASGEOJSON(FIRST(geometry)) AS gj, MAX({colour}) AS c FROM ({sql}) GROUP BY {key}").collect()
-    assert all(json.loads(r["gj"])["type"] in ("Polygon", "MultiPolygon") for r in got)
-    if n:
-        assert len(got) == n
-        from collections import Counter
-        assert Counter(r["c"] for r in got) == {3: 11, 2: 11, 1: 10}
+def test_headline_lines_in_order(views):
+    n = tier_counts(views)
+    lines = [r["line"] for r in rows_of(views, "ds_briefing_lines")]
+    assert lines == [
+        f"Heat risk for {LATEST.strftime('%A')}, 31 December 2999, prepared 24 Oct 2026 00:49 SGT",
+        f"Tiers: High {n['High']}, Medium {n['Medium']}, Low {n['Low']}, Not rated {n['Not rated']}.",
+        "Medium means heightened care on a Moderate-heat day, not an alert. One Medium area has High heat and is in the "
+        "lower third for vulnerability.",
+        f"{n['High'] + n['Medium']} areas are High or Medium: the top 10 are in the first table, the other "
+        f"{n['High'] + n['Medium'] - 10} in the table under it.",
+        "Southern Islands and Sungei Kadut have High heat but are Not rated: no HDB blocks to rate, so only the heat level is shown."]
+
+
+def test_notice_when_the_latest_date_is_before_today_in_singapore(views):
+    try:
+        heat_risk_view(views, date(2026, 10, 1))
+        lines = [r["line"] for r in rows_of(views, "ds_briefing_lines")]
+        assert lines[1] == "No forecast for today yet; this is the plan for Thursday, 1 October 2026."
+    finally:
+        heat_risk_view(views, LATEST)
+
+
+def test_top_ten_then_every_other_high_or_medium_area_in_tier_then_tier_rank_order(views):
+    lower = min(r["planning_area"] for r in views.sql("SELECT planning_area FROM area_vulnerability WHERE third = 'lower'").collect())
+    want = [r.asDict() for r in views.sql(f"""
+        SELECT initcap(planning_area) AS area, tier FROM area_heat_risk WHERE target_date = DATE'{LATEST}'
+        ORDER BY CASE tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, tier_rank""").collect()]
+    top, more = rows_of(views, "ds_top_areas"), rows_of(views, "ds_more_areas")
+    assert [r["briefing_order"] for r in top + more] == list(range(1, len(top) + len(more) + 1))
+    assert [(r["area"], r["tier"]) for r in top + more] == [(w["area"], w["tier"]) for w in want[:len(top) + len(more)]]
+    assert {r["tier"] for r in more} <= {"High", "Medium"} and want[len(top) + len(more)]["tier"] not in ("High", "Medium")
+    assert top[0]["area"] == "Toa Payoh" and lower.title() in [r["area"] for r in top + more]
+    assert all(r["actions"] for r in top + more)
+
+
+def test_no_more_areas_says_so(views):
+    """With 10 or fewer High or Medium areas, the second table shows one plain row instead of an empty table."""
+    sql = sql_of(next(d for d in DASH["datasets"] if d["name"] == "ds_more_areas")).replace("> 10 AND", "> 100 AND")
+    assert [r["area"] for r in views.sql(sql).collect()] == ["None: every High or Medium area is in the top 10"]
+
+
+def test_area_map_one_dot_per_area_inside_singapore_coloured_by_tier(views):
+    rows = rows_of(views, "ds_area_map")
+    assert len({r["area"] for r in rows}) == len(rows) == 55
+    assert all(1.15 < r["lat"] < 1.48 and 103.6 < r["lon"] < 104.1 for r in rows)
+    assert {r["tier"] for r in rows} <= set(BB.TIER_MAP_COLOURS)
+    assert all(r["marker_size"] == max(r["rental_1_2_room"], 1) for r in rows)
+
+
+def test_the_two_75_plus_reasons_read_as_one_phrase(views):
+    a, b = BB._PHRASES["aged_75_plus"], BB._PHRASES["share_75_plus"]
+    raw = {r["planning_area"]: r["reason"] for r in views.sql("SELECT planning_area, reason FROM area_vulnerability").collect()}
+    both = {k for k, v in raw.items() if v in (f"{a}; {b}", f"{b}; {a}")}
+    assert {"SERANGOON", "CLEMENTI"} <= both  # one order each in the fixture
+    facts = {r["planning_area"]: r["reason"] for r in rows_of(views, "ds_area_facts")}
+    shown = [r["reason"] for name in ("ds_top_areas", "ds_more_areas") for r in rows_of(views, name)] + list(facts.values())
+    assert all(facts[k] == BB.MERGED_75 for k in both)
+    assert not any(a in s and b in s for s in shown if s)
+    assert all(facts[k] == v for k, v in raw.items() if k not in both)  # every other reason unchanged
+
+
+def test_areas_held_neutral_show_too_few_flats_not_a_share(views):
+    small = {r["planning_area"] for r in views.sql("SELECT planning_area FROM area_vulnerability WHERE small_hdb").collect()}
+    assert small == {"TANGLIN", "CHANGI", "DOWNTOWN CORE"}
+    for r in rows_of(views, "ds_area_facts"):
+        if r["planning_area"] in small:
+            assert r["refuge_beyond"] == r["park_beyond"] == "too few flats to measure", r
+        else:
+            assert re.fullmatch(r"\d{1,3}%", r["refuge_beyond"]) and re.fullmatch(r"\d{1,3}%", r["park_beyond"]), r
+
+
+def test_trend_counts_each_station_once_per_day_and_category(views):
+    got = {(str(r["sgt_date"]), r["heat_category"]): r["stations"] for r in rows_of(views, "ds_trend")}
+    assert got == {("2026-10-01", "Moderate"): 1, ("2026-10-01", "High"): 1, ("2026-10-02", "Low"): 1}

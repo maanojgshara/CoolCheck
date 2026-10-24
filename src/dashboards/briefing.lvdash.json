@@ -1,22 +1,123 @@
 {
   "datasets": [
     {
-      "name": "ds_thirds_map",
-      "displayName": "Vulnerability third map",
+      "name": "ds_briefing_lines",
+      "displayName": "Briefing headline",
       "queryLines": [
-        "SELECT m.planning_area AS area_name, m.geometry, v.third,\n",
-        "  CASE v.third WHEN 'lower' THEN 1 WHEN 'middle' THEN 2 WHEN 'upper' THEN 3 END AS third_code\n",
-        "FROM planning_area_map m JOIN area_vulnerability v ON v.planning_area = m.planning_area\n"
+        "WITH latest AS (\n",
+        "  SELECT target_date, planning_area, heat_level, tier, tier_rank, tier_sentence, reason, actions, scored_at\n",
+        "  FROM area_heat_risk WHERE target_date = (SELECT max(target_date) FROM area_heat_risk)\n",
+        "),\n",
+        "d AS (\n",
+        "  SELECT max(target_date) AS target_date, max(scored_at) AS scored_at,\n",
+        "    count_if(tier = 'High') AS n_high, count_if(tier = 'Medium') AS n_medium, count_if(tier = 'Low') AS n_low,\n",
+        "    count_if(tier = 'Not rated') AS n_not_rated, count_if(tier = 'No forecast') AS n_no_forecast,\n",
+        "    count_if(tier = 'Medium' AND heat_level = 'High') AS n_medium_high_heat,\n",
+        "    array_sort(collect_list(CASE WHEN tier = 'Not rated' AND heat_level = 'High' THEN initcap(planning_area) END)) AS nr\n",
+        "  FROM latest\n",
+        "),\n",
+        "today AS (SELECT to_date(from_utc_timestamp(current_timestamp(), 'Asia/Singapore')) AS sgt_today)\n",
+        "SELECT line FROM (\n",
+        "  SELECT 1 AS k, concat('Heat risk for ', date_format(target_date, 'EEEE, d MMMM yyyy'), ', prepared ',\n",
+        "    date_format(from_utc_timestamp(scored_at, 'Asia/Singapore'), 'd MMM yyyy HH:mm'), ' SGT') AS line FROM d\n",
+        "  UNION ALL\n",
+        "  SELECT 2, concat('No forecast for today yet; this is the plan for ', date_format(target_date, 'EEEE, d MMMM yyyy'), '.')\n",
+        "  FROM d CROSS JOIN today WHERE d.target_date < today.sgt_today\n",
+        "  UNION ALL\n",
+        "  SELECT 3, concat('Tiers: High ', n_high, ', Medium ', n_medium, ', Low ', n_low, ', Not rated ', n_not_rated,\n",
+        "    CASE WHEN n_no_forecast > 0 THEN concat(', No forecast ', n_no_forecast) ELSE '' END, '.') FROM d\n",
+        "  UNION ALL\n",
+        "  SELECT 4, concat('Medium means heightened care on a Moderate-heat day, not an alert.',\n",
+        "    CASE WHEN n_medium_high_heat = 1 THEN ' One Medium area has High heat and is in the lower third for vulnerability.'\n",
+        "         WHEN n_medium_high_heat > 1 THEN concat(' ', n_medium_high_heat, ' Medium areas have High heat and are in the lower third for vulnerability.')\n",
+        "         ELSE '' END) FROM d WHERE n_medium > 0\n",
+        "  UNION ALL\n",
+        "  SELECT 5, concat(n_high + n_medium, ' areas are High or Medium: the top 10 are in the first table, the other ',\n",
+        "    n_high + n_medium - 10, ' in the table under it.') FROM d WHERE n_high + n_medium > 10\n",
+        "  UNION ALL\n",
+        "  SELECT 6, concat(CASE WHEN size(nr) = 1 THEN nr[0] ELSE concat(array_join(slice(nr, 1, size(nr) - 1), ', '), ' and ', element_at(nr, -1)) END, CASE WHEN size(nr) = 1 THEN ' has High heat but is' ELSE ' have High heat but are' END,\n",
+        "    ' Not rated: no HDB blocks to rate, so only the heat level is shown.') FROM d WHERE size(nr) > 0\n",
+        ")\n",
+        "ORDER BY k\n"
+      ]
+    },
+    {
+      "name": "ds_area_map",
+      "displayName": "Planning areas by tier",
+      "queryLines": [
+        "WITH latest AS (\n",
+        "  SELECT target_date, planning_area, heat_level, tier, tier_rank, tier_sentence, reason, actions, scored_at\n",
+        "  FROM area_heat_risk WHERE target_date = (SELECT max(target_date) FROM area_heat_risk)\n",
+        "),\n",
+        "ordered AS (\n",
+        "  SELECT r.planning_area, initcap(r.planning_area) AS area, r.tier, r.heat_level, r.tier_sentence,\n",
+        "    coalesce(CASE WHEN r.reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE r.reason END, '') AS reason, coalesce(r.actions, '') AS actions,\n",
+        "    coalesce(v.rental_1_2_room, 0) AS rental_1_2_room,\n",
+        "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
+        "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
+        ")\n",
+        "SELECT o.area, o.tier, o.tier_sentence, o.rental_1_2_room, greatest(o.rental_1_2_room, 1) AS marker_size,\n",
+        "  st_y(st_centroid(m.geometry)) AS lat, st_x(st_centroid(m.geometry)) AS lon\n",
+        "FROM ordered o JOIN planning_area_map m ON m.planning_area = o.planning_area\n"
+      ]
+    },
+    {
+      "name": "ds_top_areas",
+      "displayName": "Top 10 areas",
+      "queryLines": [
+        "WITH latest AS (\n",
+        "  SELECT target_date, planning_area, heat_level, tier, tier_rank, tier_sentence, reason, actions, scored_at\n",
+        "  FROM area_heat_risk WHERE target_date = (SELECT max(target_date) FROM area_heat_risk)\n",
+        "),\n",
+        "ordered AS (\n",
+        "  SELECT r.planning_area, initcap(r.planning_area) AS area, r.tier, r.heat_level, r.tier_sentence,\n",
+        "    coalesce(CASE WHEN r.reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE r.reason END, '') AS reason, coalesce(r.actions, '') AS actions,\n",
+        "    coalesce(v.rental_1_2_room, 0) AS rental_1_2_room,\n",
+        "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
+        "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
+        ")\n",
+        "SELECT briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order <= 10 ORDER BY briefing_order\n"
+      ]
+    },
+    {
+      "name": "ds_more_areas",
+      "displayName": "Other High and Medium areas",
+      "queryLines": [
+        "WITH latest AS (\n",
+        "  SELECT target_date, planning_area, heat_level, tier, tier_rank, tier_sentence, reason, actions, scored_at\n",
+        "  FROM area_heat_risk WHERE target_date = (SELECT max(target_date) FROM area_heat_risk)\n",
+        "),\n",
+        "ordered AS (\n",
+        "  SELECT r.planning_area, initcap(r.planning_area) AS area, r.tier, r.heat_level, r.tier_sentence,\n",
+        "    coalesce(CASE WHEN r.reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE r.reason END, '') AS reason, coalesce(r.actions, '') AS actions,\n",
+        "    coalesce(v.rental_1_2_room, 0) AS rental_1_2_room,\n",
+        "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
+        "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
+        ")\n",
+        "SELECT briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium')\n",
+        "UNION ALL\n",
+        "SELECT NULL, 'None: every High or Medium area is in the top 10', NULL, NULL, NULL, NULL, NULL\n",
+        "WHERE NOT EXISTS (SELECT 1 FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium'))\n",
+        "ORDER BY briefing_order\n"
+      ]
+    },
+    {
+      "name": "ds_trend",
+      "displayName": "Observed heat, last 30 days",
+      "queryLines": [
+        "SELECT sgt_date, heat_category, heat_order, count(DISTINCT station_id) AS stations\n",
+        "FROM observed_heat_daily\n",
+        "GROUP BY sgt_date, heat_category, heat_order\n",
+        "ORDER BY sgt_date, heat_order\n"
       ]
     },
     {
       "name": "ds_area_facts",
       "displayName": "Area facts",
       "queryLines": [
-        "SELECT planning_area, initcap(third) AS third, reason, aged_75_plus, rental_1_2_room, hdb_dwelling_units_confirmed,\n",
-        "  concat(format_number(100 * refuge_beyond_400m, 0), '%') AS refuge_beyond,\n",
-        "  concat(format_number(100 * park_beyond_400m, 0), '%') AS park_beyond,\n",
-        "  coalesce(neutral_components, '') AS held_neutral\n",
+        "SELECT planning_area, initcap(third) AS third, CASE WHEN reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE reason END AS reason, aged_75_plus, rental_1_2_room,\n",
+        "  hdb_dwelling_units_confirmed, CASE WHEN small_hdb THEN 'too few flats to measure' ELSE concat(format_number(100 * refuge_beyond_400m, 0), '%') END AS refuge_beyond,\n",
+        "  CASE WHEN small_hdb THEN 'too few flats to measure' ELSE concat(format_number(100 * park_beyond_400m, 0), '%') END AS park_beyond, coalesce(neutral_components, '') AS held_neutral\n",
         "FROM area_vulnerability\n"
       ]
     },
@@ -49,14 +150,6 @@
       ]
     },
     {
-      "name": "ds_parks",
-      "displayName": "Parks",
-      "queryLines": [
-        "SELECT planning_area, park_name, geometry, 1 AS park\n",
-        "FROM park_layer\n"
-      ]
-    },
-    {
       "name": "ds_weights",
       "displayName": "Weights",
       "queryLines": [
@@ -76,6 +169,460 @@
     }
   ],
   "pages": [
+    {
+      "name": "briefing",
+      "displayName": "Briefing",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "briefing-lines",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_briefing_lines",
+                  "fields": [
+                    {
+                      "name": "line",
+                      "expression": "`line`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "line",
+                    "displayName": "Briefing"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Briefing"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "area-map",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_area_map",
+                  "fields": [
+                    {
+                      "name": "lat",
+                      "expression": "`lat`"
+                    },
+                    {
+                      "name": "lon",
+                      "expression": "`lon`"
+                    },
+                    {
+                      "name": "tier",
+                      "expression": "`tier`"
+                    },
+                    {
+                      "name": "marker_size",
+                      "expression": "`marker_size`"
+                    },
+                    {
+                      "name": "area",
+                      "expression": "`area`"
+                    },
+                    {
+                      "name": "tier_sentence",
+                      "expression": "`tier_sentence`"
+                    },
+                    {
+                      "name": "rental_1_2_room",
+                      "expression": "`rental_1_2_room`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "symbol-map",
+              "encodings": {
+                "coordinates": {
+                  "latitude": {
+                    "fieldName": "lat"
+                  },
+                  "longitude": {
+                    "fieldName": "lon"
+                  }
+                },
+                "color": {
+                  "fieldName": "tier",
+                  "displayName": "Tier",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "High",
+                        "color": "#9b2226"
+                      },
+                      {
+                        "value": "Medium",
+                        "color": "#ee9b00"
+                      },
+                      {
+                        "value": "Low",
+                        "color": "#3a8f8a"
+                      },
+                      {
+                        "value": "Not rated",
+                        "color": "#dcdcdc"
+                      },
+                      {
+                        "value": "No forecast",
+                        "color": "#dcdcdc"
+                      }
+                    ]
+                  }
+                },
+                "size": {
+                  "fieldName": "marker_size",
+                  "displayName": "1-2 room rental flats",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "extra": [
+                  {
+                    "fieldName": "area",
+                    "displayName": "Planning area"
+                  },
+                  {
+                    "fieldName": "tier_sentence",
+                    "displayName": "Tier"
+                  },
+                  {
+                    "fieldName": "rental_1_2_room",
+                    "displayName": "1-2 room rental flats"
+                  }
+                ]
+              },
+              "mark": {
+                "opacity": 0.85
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Planning areas by tier (dot size: 1-2 room rental flats; grey: not rated)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 7,
+            "height": 10
+          }
+        },
+        {
+          "widget": {
+            "name": "briefing-guide",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### How to read this\n",
+                "\n",
+                "Each dot is a planning area, coloured by its tier: the forecast heat level for the day (NEA's Low, Moderate or High) crossed with how vulnerable the area is. Grey areas have no HDB blocks to rate and show the heat level only. The About page has the full rule.\n",
+                "\n",
+                "Heat is forecast per planning area; blocks rank vulnerability only, never heat.\n",
+                "\n",
+                "**Blocks to call first.** Open the **Blocks** page and pick the area: it lists the blocks with the most 1-2 room rental flats first, then those farthest from a refuge, with the nearest refuge and park. CoolCheck holds no personal data: match the blocks against your own client list.\n",
+                "\n",
+                "Actions are a proposal, not yet reviewed by a practitioner. Not official advice.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 5,
+            "width": 5,
+            "height": 10
+          }
+        },
+        {
+          "widget": {
+            "name": "top-areas",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top_areas",
+                  "fields": [
+                    {
+                      "name": "briefing_order",
+                      "expression": "`briefing_order`"
+                    },
+                    {
+                      "name": "area",
+                      "expression": "`area`"
+                    },
+                    {
+                      "name": "tier",
+                      "expression": "`tier`"
+                    },
+                    {
+                      "name": "tier_sentence",
+                      "expression": "`tier_sentence`"
+                    },
+                    {
+                      "name": "reason",
+                      "expression": "`reason`"
+                    },
+                    {
+                      "name": "rental_1_2_room",
+                      "expression": "`rental_1_2_room`"
+                    },
+                    {
+                      "name": "actions",
+                      "expression": "`actions`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "briefing_order",
+                    "displayName": "#"
+                  },
+                  {
+                    "fieldName": "area",
+                    "displayName": "Planning area"
+                  },
+                  {
+                    "fieldName": "tier",
+                    "displayName": "Tier"
+                  },
+                  {
+                    "fieldName": "tier_sentence",
+                    "displayName": "Why this tier"
+                  },
+                  {
+                    "fieldName": "reason",
+                    "displayName": "Why vulnerable"
+                  },
+                  {
+                    "fieldName": "rental_1_2_room",
+                    "displayName": "1-2 room rental flats"
+                  },
+                  {
+                    "fieldName": "actions",
+                    "displayName": "Actions (a proposal)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 areas in briefing order (tier, then order within the tier)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 12,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "more-areas",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_more_areas",
+                  "fields": [
+                    {
+                      "name": "briefing_order",
+                      "expression": "`briefing_order`"
+                    },
+                    {
+                      "name": "area",
+                      "expression": "`area`"
+                    },
+                    {
+                      "name": "tier",
+                      "expression": "`tier`"
+                    },
+                    {
+                      "name": "tier_sentence",
+                      "expression": "`tier_sentence`"
+                    },
+                    {
+                      "name": "reason",
+                      "expression": "`reason`"
+                    },
+                    {
+                      "name": "rental_1_2_room",
+                      "expression": "`rental_1_2_room`"
+                    },
+                    {
+                      "name": "actions",
+                      "expression": "`actions`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "briefing_order",
+                    "displayName": "#"
+                  },
+                  {
+                    "fieldName": "area",
+                    "displayName": "Planning area"
+                  },
+                  {
+                    "fieldName": "tier",
+                    "displayName": "Tier"
+                  },
+                  {
+                    "fieldName": "tier_sentence",
+                    "displayName": "Why this tier"
+                  },
+                  {
+                    "fieldName": "reason",
+                    "displayName": "Why vulnerable"
+                  },
+                  {
+                    "fieldName": "rental_1_2_room",
+                    "displayName": "1-2 room rental flats"
+                  },
+                  {
+                    "fieldName": "actions",
+                    "displayName": "Actions (a proposal)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Every other High or Medium area, after the top 10"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 12,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "trend-chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_trend",
+                  "fields": [
+                    {
+                      "name": "daily(sgt_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `sgt_date`)"
+                    },
+                    {
+                      "name": "sum(stations)",
+                      "expression": "SUM(`stations`)"
+                    },
+                    {
+                      "name": "heat_category",
+                      "expression": "`heat_category`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(sgt_date)",
+                  "displayName": "Day (SGT)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(stations)",
+                  "displayName": "WBGT stations",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "heat_category",
+                  "displayName": "Observed heat (NEA)",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Low",
+                        "color": "#2f7fc1"
+                      },
+                      {
+                        "value": "Moderate",
+                        "color": "#fab219"
+                      },
+                      {
+                        "value": "High",
+                        "color": "#d03b3b"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Observed heat, last 30 completed days: WBGT stations by their daily NEA category"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 32,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ]
+    },
     {
       "name": "blocks",
       "displayName": "Blocks",
@@ -156,19 +703,6 @@
                   ],
                   "disaggregated": false
                 }
-              },
-              {
-                "name": "ds_parks_area",
-                "query": {
-                  "datasetName": "ds_parks",
-                  "fields": [
-                    {
-                      "name": "planning_area",
-                      "expression": "`planning_area`"
-                    }
-                  ],
-                  "disaggregated": false
-                }
               }
             ],
             "spec": {
@@ -190,11 +724,6 @@
                     "fieldName": "planning_area",
                     "displayName": "Planning area",
                     "queryName": "ds_points_area"
-                  },
-                  {
-                    "fieldName": "planning_area",
-                    "displayName": "Planning area",
-                    "queryName": "ds_parks_area"
                   }
                 ]
               },
@@ -331,74 +860,6 @@
         },
         {
           "widget": {
-            "name": "thirds-map",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ds_thirds_map",
-                  "fields": [
-                    {
-                      "name": "area_name",
-                      "expression": "`area_name`"
-                    },
-                    {
-                      "name": "geojson",
-                      "expression": "ST_ASGEOJSON(FIRST(`geometry`))"
-                    },
-                    {
-                      "name": "max(third_code)",
-                      "expression": "MAX(`third_code`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 1,
-              "widgetType": "choropleth-map",
-              "encodings": {
-                "region": {
-                  "regionType": "geometry",
-                  "fieldName": "geojson"
-                },
-                "color": {
-                  "fieldName": "max(third_code)",
-                  "displayName": "Vulnerability third (1 lower, 3 upper)",
-                  "scale": {
-                    "type": "quantitative",
-                    "colorRamp": {
-                      "mode": "custom-sequential",
-                      "colors": {
-                        "start": "#a9a3d6",
-                        "end": "#45207f"
-                      }
-                    }
-                  }
-                },
-                "extra": [
-                  {
-                    "fieldName": "area_name",
-                    "displayName": "Name"
-                  }
-                ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Vulnerability third by planning area (rated areas; the others have no HDB blocks)"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 6,
-            "width": 6,
-            "height": 9
-          }
-        },
-        {
-          "widget": {
             "name": "points-map",
             "queries": [
               {
@@ -496,9 +957,26 @@
             }
           },
           "position": {
-            "x": 6,
+            "x": 0,
             "y": 6,
-            "width": 6,
+            "width": 8,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "what-if",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### What if a refuge were added here?\n",
+                "Reserved for the what-if refuge result (window B's `what_if_add_refuge`, Saturday). Not built yet.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 6,
+            "width": 4,
             "height": 9
           }
         },
@@ -622,91 +1100,6 @@
             "y": 15,
             "width": 12,
             "height": 9
-          }
-        },
-        {
-          "widget": {
-            "name": "parks-map",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ds_parks",
-                  "fields": [
-                    {
-                      "name": "park_name",
-                      "expression": "`park_name`"
-                    },
-                    {
-                      "name": "geojson",
-                      "expression": "ST_ASGEOJSON(FIRST(`geometry`))"
-                    },
-                    {
-                      "name": "max(park)",
-                      "expression": "MAX(`park`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 1,
-              "widgetType": "choropleth-map",
-              "encodings": {
-                "region": {
-                  "regionType": "geometry",
-                  "fieldName": "geojson"
-                },
-                "color": {
-                  "fieldName": "max(park)",
-                  "displayName": "Park",
-                  "scale": {
-                    "type": "quantitative",
-                    "colorRamp": {
-                      "mode": "custom-sequential",
-                      "colors": {
-                        "start": "#5aa469",
-                        "end": "#5aa469"
-                      }
-                    }
-                  }
-                },
-                "extra": [
-                  {
-                    "fieldName": "park_name",
-                    "displayName": "Name"
-                  }
-                ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Parks in the area (NParks, without the nature reserves)"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 24,
-            "width": 6,
-            "height": 7
-          }
-        },
-        {
-          "widget": {
-            "name": "what-if",
-            "multilineTextboxSpec": {
-              "lines": [
-                "### What if a refuge were added here?\n",
-                "Reserved for the what-if refuge result (window B's `what_if_add_refuge`, Saturday). Not built yet.\n"
-              ]
-            }
-          },
-          "position": {
-            "x": 6,
-            "y": 24,
-            "width": 6,
-            "height": 7
           }
         }
       ]
@@ -980,10 +1373,9 @@
         "#ee9b00",
         "#3a8f8a",
         "#dcdcdc",
-        "#a9a3d6",
-        "#7262b8",
-        "#45207f",
-        "#5aa469"
+        "#2a78d6",
+        "#eb6834",
+        "#1baf7a"
       ],
       "widgetHeaderAlignment": "LEFT"
     }

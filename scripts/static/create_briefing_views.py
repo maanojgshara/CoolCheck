@@ -8,8 +8,8 @@ gold.planning_area_map over silver.planning_area_boundary; gold.refuge_layer ove
 over silver.park_polygons and silver.park_planning_area; gold.observed_heat_daily over silver.station_daily_label and
 gold.area_nearest_station_daily. Each view gets column comments, a comment and source and licence tags (the statement is
 create_risk_views.create_sql's). Read-back: the row counts of the first three (55, 206, and the park-area rows), the
-columns without a comment and the tags; for observed_heat_daily only rows dated after 2026-10-19, so nothing from the
-final check's window (1 Sep to 19 Oct 2026) is read until the user confirms it is scored. --print-sql touches nothing.
+columns without a comment and the tags; for observed_heat_daily the rows and their date range (the final check was scored
+on 23 Oct 2026, so its window is no longer held back). --print-sql touches nothing.
 """
 import argparse
 import re
@@ -84,8 +84,8 @@ def main(argv=None):
         tags = {r["tag_name"] for r in spark.sql(f"SELECT tag_name FROM {a.catalog}.information_schema.table_tags "
                                                 f"WHERE schema_name = 'gold' AND table_name = '{name}'").collect()}
         if name == "observed_heat_daily":
-            n = spark.sql(f"SELECT count(*) AS n FROM {v} WHERE sgt_date > DATE'2026-10-19'").first()["n"]
-            what = "rows dated after 2026-10-19 (the final check's window is not read)"
+            r = spark.sql(f"SELECT count(*) AS n, min(sgt_date) AS d0, max(sgt_date) AS d1 FROM {v}").first()
+            n, what = r["n"], f"rows, {r['d0']} to {r['d1']}"
         else:
             n = spark.table(v).count()
             what = f"rows (expected {EXPECT[name]:,})" if name in EXPECT else "rows"
