@@ -43,4 +43,4 @@ Window A's Free Edition run of 24 Oct refit it with the same code sha256, packag
 
 ## Corrected
 
-- 24 Oct, about 23:45 SGT: this note's first version gave the model sha256 with three characters missing (`715d887d…`). Read again from the MLflow run's `model_sha256` value, it is `715d7f88…`, as in the table above.
+- 24 Oct, about 23:45 SGT: this note's first version gave the model sha256 with two characters missing (`715d887d…`, 62 characters: the `7f` after `715d` was dropped). Read again from the MLflow run's `model_sha256` value, it is `715d7f88…`, as in the table above.
