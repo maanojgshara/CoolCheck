@@ -472,3 +472,12 @@ def test_3c_area_names_are_compared_with_hdb_abbreviations():
     assert A.unseen_areas("Blk 101 Bukit Batok West Ave 6, in Bukit Batok.", '{"street": "BT BATOK WEST AVE 6"}') == []
     assert A.unseen_areas("The North-Eastern Islands and the North-East region.", "") == ["North-Eastern Islands"]
     assert A.check_summary("Bedok is first.", set())[0]  # no seen_text (e.g. a translation): not checked
+
+
+def test_3d_the_prompt_gives_a_blocks_area_heat_level_and_never_says_it_is_unavailable():
+    # G04 refused with "Toa Payoh heat levels per block are not available" (24 Oct, twice)
+    assert ("When asked about a block's heat, give the heat level of its\n  planning area in a sentence about the area, not "
+            "the block. Never say heat levels are not available.") in A.SYSTEM
+    ok, checks = A.check_summary("Toa Payoh's forecast heat is High; heat is forecast per area. Call Blk 208A first.",
+                                 A.source_numbers(ROWS_24), seen_text="TOA PAYOH")
+    assert ok, checks  # the answer the line asks for passes the checks
