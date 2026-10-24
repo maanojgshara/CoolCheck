@@ -72,7 +72,7 @@ Before a request is stored or sent to the model, NRIC-like strings (S, T, F, G o
   - `3c32ef3`: a planning area named in the reply must be in a tool result the model saw, or in the request. The 55 Master Plan 2025 names are compared using HDB's abbreviations.
   - `6278b7b` and the next commit: the G04 line. A question about a block's heat is in scope; the reply gives the area's heat level, never "not available".
   - `4a3d38f`: anything under 10 m reads "at the block", and a 0 m distance in the summary fails the check. D01's "about 0 m" came from the model: Blk 5's refuge is 0.0 m, which already read "at the block".
-- Live spot-check of the second round (23:15 to 23:25 SGT), as the user, reads only, tracing off, one try each:
+- Live spot-check of the second round (23:13 to 23:16 SGT), as the user, reads only, tracing off, one try each:
   - Requests: A01, B01, B02, B03, C01, C03, D01, G01, G04, L01, R01, W01 and the North-East demo. All 13 were agent-written, with every number grounded and no unseen planning area.
   - R01 got the note "South is not one of the five regions; this plan covers the whole island." B01, B02 and W01 got their not-found notes; B03 got its unused-capacity note.
   - D01 said no area is High tier and named Southern Islands.
