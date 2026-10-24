@@ -33,6 +33,7 @@ Use the tools. Always call get_priority_areas once, with only the values the req
 volunteer, a number of calls, a region), a stated 0 included. Leave out every value the request does not state; the app
 then uses the form's values. Never compute a number of calls yourself; the app does the arithmetic. If the
 request names an HDB block and asks about refuges or a new refuge, call find_refuges or what_if_add_refuge with that block.
+For a what-if, copy the gain from the tool result's gain (dwelling_units_newly_within_400m); never compute it.
 Then write a short summary for the coordinator, at most 120 words, plain text:
 - Copy every number exactly from the tool results, written as digits, never as words. Use each block's
   refuge_distance as written and say distances are straight lines.
@@ -399,7 +400,9 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
             state.update(gpa=call, cap=form_cap, basis=form_basis, region=form_region)
         rows = state["gpa"].rows
         if not reason:  # the model's reply is kept if it passes the checks, whoever called get_priority_areas
-            sources = source_numbers([c.rows for c in seen], target_date.isoformat(), target_date.strftime("%d %m %Y"),
+            sources = source_numbers([c.rows for c in seen],
+                                     [P.whatif_gain(c.rows) for c in seen if c.name == "what_if_add_refuge"],
+                                     target_date.isoformat(), target_date.strftime("%d %m %Y"),
                                      state["cap"], state["basis"], default_capacity, calls_per_volunteer, masked,
                                      (forecast or {}).get("scored_at_sgt"), 400, EMERGENCY)
             seen_rows = json.dumps([c.rows for c in seen], default=str, ensure_ascii=False)
@@ -467,7 +470,13 @@ def _run_tool(c, tools, target_date, default_capacity, calls_per_volunteer, stat
             if not (args.get("blk_no") and args.get("street")):
                 return {"error": "blk_no and street are required"}
             call = getattr(tools, name)(args["blk_no"], args["street"], llm_arguments=args)
-            return {"error": call.error} if call.error else {"rows": call.rows or "no rows: block not found or not confirmed"}
+            if call.error:
+                return {"error": call.error}
+            if not call.rows:
+                return {"rows": "no rows: block not found or not confirmed"}
+            if name == "what_if_add_refuge":  # the gain, computed here, as calls_left_over is
+                return {"gain": P.whatif_gain(call.rows), "rows": call.rows}
+            return {"rows": call.rows}
         return {"error": f"unknown tool {name!r}"}
     except ValueError as e:
         return {"error": str(e)}

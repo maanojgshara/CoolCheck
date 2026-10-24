@@ -244,7 +244,8 @@ def test_fix1_request_numbers_digits_any_script_and_number_words():
 
 def test_fix1_the_prompt_has_no_example_numbers():
     # G04 attempt 2 used 8 volunteers and 312 calls: the digits of the old example "(8, 312)"
-    assert set(re.findall(r"\d+", A.SYSTEM)) == {"0", "120"}  # "a stated 0", "above 0", "at most 120 words"
+    # "a stated 0", "above 0", "at most 120 words", and the field name dwelling_units_newly_within_400m
+    assert set(re.findall(r"\d+", A.SYSTEM)) == {"0", "120", "400"}
 
 
 def test_fix2_reply_without_get_priority_areas_is_kept_and_the_plan_runs_in_code():
@@ -537,3 +538,33 @@ def test_g06_a_refusal_of_medical_advice_is_kept(reply):
 def test_g06_the_advice_itself_still_fails(reply):
     d, _ = run(Script(text_msg(reply)), request=G06)
     assert d.source == "template" and "medical advice" in d.fallback_reason, reply
+
+
+W01 = ("If we opened a cooling point at the void deck of Blk 333C Yishun Street 31, how many more homes would be within "
+       "400 m of a refuge?")
+WHATIF = [{"planning_area": "YISHUN", "is_site_area": True, "site_blk_no": "333C", "site_street": "YISHUN ST 31",
+           "hdb_dwelling_units": 70000, "du_within_400m_before": 39120, "du_within_400m_after": 47131,
+           "share_within_400m_before": 0.5589, "share_within_400m_after": 0.6733,
+           "rental_flats_beyond_400m_before": 410, "rental_flats_beyond_400m_after": 262, "blocks_newly_within": 19,
+           "newly_within": []}]  # a fixture: the gain 8011 is W01's on 24 Oct, the other values are made up
+WHATIF_NOTE = ("What if a refuge opened at Blk 333C YISHUN ST 31: Yishun: 8011 more HDB dwelling units within 400 m of a "
+               "refuge (39120 to 47131), 19 blocks newly within 400 m, 1-2 room rental flats beyond 400 m 410 to 262. "
+               "Straight-line distances, confirmed blocks only.")
+
+
+def test_w01_the_gain_is_computed_in_code_and_given_to_the_model():
+    s = Script(tool_msg(("what_if_add_refuge", {"blk_no": "333C", "street": "Yishun Street 31"})),
+               text_msg("A refuge at Blk 333C would bring 8011 more HDB dwelling units within 400 m of a refuge."))
+    d, _ = run(s, request=W01, wh=FakeWarehouse(what_if=WHATIF))
+    (gain,) = json.loads(s.seen[1][-1]["content"])["gain"]
+    assert gain["dwelling_units_newly_within_400m"] == 8011 and gain["blocks_newly_within_400m"] == 19
+    assert d.source == "agent" and WHATIF_NOTE in d.notices
+
+
+def test_w01_a_wrong_gain_still_fails_but_the_answer_reaches_the_coordinator():
+    # run 2: 8,021, 8,031 and 8,030 for 8,011, rightly rejected, and the template dropped the answer
+    s = Script(tool_msg(("what_if_add_refuge", {"blk_no": "333C", "street": "Yishun Street 31"})),
+               text_msg("A refuge at Blk 333C would bring 8,021 more homes within 400 m."))
+    d, _ = run(s, request=W01, wh=FakeWarehouse(what_if=WHATIF))
+    assert d.source == "template" and "8,021" in d.fallback_reason
+    assert WHATIF_NOTE in d.draft_text and "8011 more HDB dwelling units" in d.draft_text

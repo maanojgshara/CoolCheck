@@ -367,6 +367,36 @@ def lookup_notices(tool_calls):
     return out
 
 
+def whatif_gain(rows):
+    """A what_if_add_refuge result per area with the gain computed in code (24 Oct, run 2: the model wrote 8,021, 8,031
+    and 8,030 for W01's 8,011): HDB dwelling units newly within 400 m of a refuge, before and after, the blocks newly
+    within, the 1-2 room rental flats beyond 400 m before and after."""
+    return [{"planning_area": area_name(r["planning_area"]), "is_site_area": r["is_site_area"],
+             "dwelling_units_newly_within_400m": r["du_within_400m_after"] - r["du_within_400m_before"],
+             "dwelling_units_within_400m_before": r["du_within_400m_before"],
+             "dwelling_units_within_400m_after": r["du_within_400m_after"],
+             "blocks_newly_within_400m": r["blocks_newly_within"],
+             "rental_flats_beyond_400m_before": r["rental_flats_beyond_400m_before"],
+             "rental_flats_beyond_400m_after": r["rental_flats_beyond_400m_after"]} for r in rows]
+
+
+def whatif_notices(tool_calls):
+    """The result of each what-if that found its block, in the function's own terms, whoever writes the summary."""
+    out = []
+    for c in (c for c in tool_calls if c.name == "what_if_add_refuge" and not c.error and c.rows):
+        parts = [f"{g['planning_area']}: {g['dwelling_units_newly_within_400m']} more HDB dwelling units within 400 m of a "
+                 f"refuge ({g['dwelling_units_within_400m_before']} to {g['dwelling_units_within_400m_after']}), "
+                 f"{g['blocks_newly_within_400m']} block{'' if g['blocks_newly_within_400m'] == 1 else 's'} newly within "
+                 f"400 m, 1-2 room rental flats beyond 400 m {g['rental_flats_beyond_400m_before']} to "
+                 f"{g['rental_flats_beyond_400m_after']}" for g in whatif_gain(c.rows)]
+        site = c.rows[0]  # the site's area first (the function's order, kept by Tools)
+        n = (f"What if a refuge opened at Blk {site['site_blk_no']} {site['site_street']}: {'; '.join(parts)}. "
+             f"Straight-line distances, confirmed blocks only.")
+        if n not in out:
+            out.append(n)
+    return out
+
+
 def leftover_notice(rows, capacity, summary=""):
     """The calls left over once every High- and Medium-tier block has its calls; None when there are none or the
     summary already gives the number (the template does)."""
@@ -464,7 +494,7 @@ class Draft:
         """Every note on the draft, all written by code: the loop's, the areas', the block lookups' and the calls left."""
         left = leftover_notice(self.rows, self.call_capacity, self.summary_text)
         out = (list(self.notes) + notices(self.rows, self.target_date, self.forecast, self.region)
-               + lookup_notices(self.tool_calls) + ([left] if left else []))
+               + lookup_notices(self.tool_calls) + whatif_notices(self.tool_calls) + ([left] if left else []))
         return [n for n in out if n not in (self.summary_text or "")]  # a sentence the summary already has, once
 
     @property
