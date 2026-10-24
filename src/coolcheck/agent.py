@@ -34,6 +34,8 @@ volunteer, a number of calls, a region), a stated 0 included. Leave out every va
 then uses the form's values. Never compute a number of calls yourself; the app does the arithmetic. If the
 request names an HDB block and asks about refuges or a new refuge, call find_refuges or what_if_add_refuge with that block.
 For a what-if, copy the gain from the tool result's gain (dwelling_units_newly_within_400m); never compute it.
+If the block comes from the plan (such as tomorrow's top-priority block), call get_priority_areas first, then look up a
+block it returned, with its blk_no and street as written.
 Then write a short summary for the coordinator, at most 120 words, plain text:
 - Copy every number exactly from the tool results, written as digits, never as words. Use each block's
   refuge_distance as written and say distances are straight lines.
@@ -469,6 +471,9 @@ def _run_tool(c, tools, target_date, default_capacity, calls_per_volunteer, stat
         if name in ("find_refuges", "what_if_add_refuge"):
             if not (args.get("blk_no") and args.get("street")):
                 return {"error": "blk_no and street are required"}
+            if not re.search(r"\d", str(args["blk_no"])):  # B03, 24 Oct: "to be determined by get_priority_areas"
+                return {"error": f"blk_no {args['blk_no']!r} is not a block number (it has no digit), so nothing was "
+                                 f"looked up; if the block comes from the plan, call get_priority_areas first"}
             call = getattr(tools, name)(args["blk_no"], args["street"], llm_arguments=args)
             if call.error:
                 return {"error": call.error}

@@ -568,3 +568,21 @@ def test_w01_a_wrong_gain_still_fails_but_the_answer_reaches_the_coordinator():
     d, _ = run(s, request=W01, wh=FakeWarehouse(what_if=WHATIF))
     assert d.source == "template" and "8,021" in d.fallback_reason
     assert WHATIF_NOTE in d.draft_text and "8011 more HDB dwelling units" in d.draft_text
+
+
+def test_b03_a_block_with_no_digit_is_refused_without_a_query():
+    # run 1 and 2: find_refuges on "to be determined by get_priority_areas", then all 4 rounds used
+    s = Script(tool_msg(("find_refuges", {"blk_no": "to be determined by get_priority_areas", "street": "to be determined"})),
+               tool_msg(("get_priority_areas", {})),
+               tool_msg(("find_refuges", {"blk_no": "208A", "street": "WOODLEIGH LINK"})),
+               text_msg("The top-priority block is Blk 208A Woodleigh Link in Toa Payoh; the nearest refuge is A."))
+    d, wh = run(s, request="For tomorrow's top-priority block, which cooling refuges are nearest?")
+    err = json.loads(s.seen[1][-1]["content"])["error"]
+    assert err.startswith("blk_no 'to be determined by get_priority_areas' is not a block number") and \
+        "call get_priority_areas first" in err
+    assert [c.name for c in d.tool_calls] == ["get_priority_areas", "find_refuges"] and len(wh.statements) == 2
+    assert d.source == "agent" and not any("was not found" in n for n in d.notices)
+
+
+def test_b03_the_prompt_asks_for_get_priority_areas_before_a_lookup_that_depends_on_it():
+    assert "If the block comes from the plan (such as tomorrow's top-priority block), call get_priority_areas first" in A.SYSTEM
