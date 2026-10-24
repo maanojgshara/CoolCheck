@@ -578,3 +578,7 @@ Written by window E on 23 Oct from the project notes kept outside the repo (`Coo
 - **Decisions and why:** The user's: the name stays in `887d0a6`'s patch, accepted on purpose, since the same name is in every commit's author line, including the 107 on GitHub, so the pattern exposes nothing new; a rewrite would change every hash after `887d0a6` that the docs cite. Mine: the variable replaces git's name rather than adding to it, so the scan also runs where git has no user; names under three characters are skipped, since an initial would match almost every line; with no name to look for, the scan prints a note rather than passing silently.
 - **Stuck:** Correction to my Day 5 entry (24 Oct): the model sha256 had two characters missing, not three (`715d887d…` for `715d7f88…`, 62 characters). Correction to my second entry: when I wrote it (02:00 SGT), `main` was 51 ahead, not 50; window C's `ca9881e` had landed at 01:56, after my check of `f8a81e5`. `TZ=Asia/Singapore date` in Git Bash prints GMT (no zone data); `TZ=UTC-8 date` gives SGT.
 - **Challenges and questions:** The push check over `origin/main..HEAD` and the push come after this entry's commit, so their result is not in it. For the mentor: none new; my second entry's question is settled by the user's choice.
+
+## 2026-10-25: Window E, fourth entry: the push (25 Oct, 03:29 and 03:30 SGT; commit `c956b83`)
+
+- The push is done: `dbe5f93..9f21229`, then `9f21229..c956b83`, both normal pushes; `origin/main` = `c956b83`.
