@@ -58,7 +58,6 @@ NUMBER_WORDS = re.compile(r"\b(" + "|".join([*ADD, *TIMES]) + r")\b", re.I)
 TIER = r"(?:low|medium|high)[- ](?:tier|risk)"
 BANNED = [("P(High), probability or score", re.compile(r"p\s*\(\s*high\s*\)|probabilit|\bscore|percent chance|% chance", re.I)),
           ("claims something was sent", re.compile(r"\b(has|have|was|were) been sent\b|\bwe (have )?sent\b|\b(sms|e-?mails?|messages?) (were |was )?sent\b", re.I)),
-          ("medical advice", re.compile(r"medic|\bdos(e|age)|diagnos|symptom|prescri|\bpill|tablet|paracetamol|\bdrug", re.I)),
           # tiers belong to areas (24 Oct, live: "a High-tier block"): "High-tier block", "Blk 208A ... is High tier",
           # "the block's tier"; "Blk 208A is in the High-tier area" passes
           ("a tier given to a block", re.compile(
@@ -69,6 +68,26 @@ BANNED = [("P(High), probability or score", re.compile(r"p\s*\(\s*high\s*\)|prob
           # D01 on 24 Oct, twice: "a refuge about 0 m away" for a refuge the tool result gave as "at the block" (0.0 m)
           ("a distance of 0 m (the tool says at the block)",
            re.compile(r"(?<![\d.,])0(?:\.0+)?\s*(?:m|metres?|meters?)\b", re.I))]
+# Medical advice fails, declining it does not (G06 on 24 Oct, run 2: "I'm not able to provide medical advice ... consult a
+# medical professional" was thrown away 3 times): a medicine or a dose fails anywhere; other medical words fail only in a
+# sentence that neither declines nor sends the person to medical help
+MEDICINE = re.compile(r"paracetamol|panadol|acetaminophen|ibuprofen|aspirin|\bnsaids?\b|antihistamine|"
+                      r"oral rehydration salts?|electrolyte tablets?|\b\d+(?:\.\d+)?\s*(?:mg|mcg|ml)\b|"
+                      r"\b\d+\s*(?:tablets?|pills?|capsules?|doses?|teaspoons?)\b", re.I)
+MEDICAL_WORDS = re.compile(r"medic|\bdos(?:e|es|age|ing)\b|diagnos|symptom|prescri|\bpills?\b|tablets?|capsules?|"
+                           r"\bdrugs?\b|\btreat(?:ment|ed|s|ing)?\b", re.I)
+EMERGENCY = (995, 1777)  # Singapore's emergency and non-emergency ambulance numbers, allowed in a referral
+DECLINES = re.compile(r"\b(?:not|cannot|can't|unable|never|won't|don't|no)\b|n't\b|only draft|outside|consult|doctor|"
+                      r"\bgp\b|medical (?:professional|help|attention|care)|healthcare|\b995\b|clinic|hospital|"
+                      r"pharmacist", re.I)
+
+
+def medical_advice(text):
+    """The sentences of text that give medical advice (see MEDICINE, MEDICAL_WORDS, DECLINES)."""
+    return [s for s in re.split(r"(?<=[.!?;])\s+|\n", text)
+            if MEDICINE.search(s) or (MEDICAL_WORDS.search(s) and not DECLINES.search(s))]
+
+
 # "No area is in the High tier" when one is (24 Oct, spot-check of the D01 prompt line: C01, C03, R01, B03 said it), also
 # scoped ("No rated area in the North-East region is in the High tier"), which in a regional plan must name the region
 NO_HIGH_TIER = re.compile(r"\bno\s+(?:rated\s+)?areas?\s+(?:in\s+(?:the\s+)?[\w-]+(?:\s+(?:region|island))?\s+)?(?:is|are)\s+"
@@ -207,6 +226,8 @@ def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text=""
         if not grounded(m.group(1), sources, percent=bool(m.group(2))):
             checks["ungrounded_numbers"].append(m.group(0).strip())
     checks["banned"] = [name for name, rx in BANNED if rx.search(text)]
+    if medical_advice(text):
+        checks["banned"].append("medical advice")
     for sentence in (s for s in re.split(r"(?<=[.!?;])\s+|\n", text) if NO_HIGH_TIER.search(s)):
         if rated_high:
             checks["banned"].append("says no area is in the High tier, but one is")
@@ -380,7 +401,7 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
         if not reason:  # the model's reply is kept if it passes the checks, whoever called get_priority_areas
             sources = source_numbers([c.rows for c in seen], target_date.isoformat(), target_date.strftime("%d %m %Y"),
                                      state["cap"], state["basis"], default_capacity, calls_per_volunteer, masked,
-                                     (forecast or {}).get("scored_at_sgt"), 400)
+                                     (forecast or {}).get("scored_at_sgt"), 400, EMERGENCY)
             seen_rows = json.dumps([c.rows for c in seen], default=str, ensure_ascii=False)
             ok, checks = check_summary(summary, sources, _unrated_hot(rows), any(r["tier"] == "High" for r in rows),
                                        seen_rows, P.region_name(state["region"]) if state["region"] else None,
