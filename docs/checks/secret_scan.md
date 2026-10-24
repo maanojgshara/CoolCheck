@@ -84,3 +84,11 @@ Generic high-entropy rule, in text files: hex runs of 32 or more characters with
 - **Later commits:** other windows were committing during this session, so anything after `6ca1d98` is not covered. Rerun the scan before the repository is made public or shared with the judges.
 
 Earlier, narrower checks recorded in the project notes: 21 Oct, about 18:20 (the history searched for `dapi` and `eyJ`); 22 Oct, 01:25 (no secrets in the diff since `56d5425`); 23 Oct, 03:15 (no secret in the repository, file by file). This scan is the first to cover every commit with every rule above.
+
+## Accepted on purpose: the user's name as a search pattern in `887d0a6`
+
+The push check of 25 Oct 2026, 01:41 SGT, covered the 50 commits after `origin/main` (`dbe5f93`..`f8a81e5`): this scan in range mode (`--since origin/main --tip main`), its values compared with those of the scan to `dbe5f93`, and a search of every patch and commit message for the user's e-mail and user name. It found no credential and no credential-type file name. It found the user's first name once, in a line added by `887d0a6`: the personal-data rule of `scripts/checks/wording_scan.py` (line 42) spelled the name out as a search pattern. No other added line or commit message held it, and `origin/main` held none.
+
+- **Fixed forward** in `aebe170`: the scan reads the name at run time, from `WORDING_SCAN_NAMES` or `git config user.name`, and `tests/ops/test_wording_scan.py` checks that a file holding the name is still flagged.
+- **Accepted:** the line stays in `887d0a6`'s patch. The history was not rewritten and nothing was force-pushed. The same name is in the author line of every commit, including the 107 already on GitHub (`origin/main` at `dbe5f93`; all 107 checked on 25 Oct with `git log --format=%an`), so the pattern exposes nothing new. A rewrite would also have changed the hash of every commit after `887d0a6`, which the README, the write-up and the check notes cite.
+- **Later push checks** allow this one match and stop on any other.
