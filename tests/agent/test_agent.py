@@ -13,7 +13,7 @@ import pytest
 
 from coolcheck import agent as A
 from coolcheck import plan as P
-from plan_fixtures import D24, FORECAST, ROWS_23, ROWS_24, FakeWarehouse
+from plan_fixtures import D24, FORECAST, ROWS_23, ROWS_24, ROWS_NE, FakeWarehouse
 
 SPECS = [{"type": "function", "function": {"name": n, "description": "d", "parameters": {"type": "object", "properties": {}}}}
          for n in ("get_priority_areas", "find_refuges", "what_if_add_refuge")]
@@ -355,3 +355,34 @@ def test_fix6_the_tool_reply_names_unrated_high_heat_and_the_calls_left_over():
 def test_fix6_saying_no_high_tier_area_when_there_is_one_fails(rows, summary, agent):
     d, _ = run(Script(tool_msg(("get_priority_areas", {})), text_msg(summary)), rows=rows)
     assert (d.source == "agent") is agent, d.fallback_reason
+
+
+# --- second round (24 Oct, after deploy 3), for D's next run -----------------------------------------------------------
+
+CENTRAL = [r for r in ROWS_24 if r["region"] == "CENTRAL REGION"]  # Toa Payoh is High
+
+
+def test_3a_the_model_gets_the_no_high_tier_sentence_scoped_to_the_region():
+    s = Script(tool_msg(("get_priority_areas", {"region": "North-East"})),
+               text_msg("No rated area in the North-East region is in the High tier. Call Sengkang first."))
+    d, _ = run(s, request="Only 8 volunteers tomorrow, North-East only", rows=ROWS_NE)
+    reply = json.loads(s.seen[1][-1]["content"])
+    assert reply["no_high_tier_sentence"] == "No rated area in the North-East region is in the High tier."
+    assert d.source == "agent"
+    s = Script(tool_msg(("get_priority_areas", {})), text_msg("Toa Payoh is High."))
+    run(s)
+    assert "no_high_tier_sentence" not in json.loads(s.seen[1][-1]["content"])  # Toa Payoh is High on 24 Oct
+
+
+@pytest.mark.parametrize("rows,region,summary,agent", [
+    (ROWS_NE, "North-East", "No rated area is in the High tier. Call Sengkang first.", False),  # unscoped, regional plan
+    (ROWS_NE, "North-East", "No rated area in the North-East region is in the High tier.", True),
+    (ROWS_NE, "North-East", "No rated area in the East region is in the High tier.", False),    # not this plan's region
+    (CENTRAL, "Central", "No rated area in the Central region is in the High tier.", False),     # Toa Payoh is High
+])
+def test_3a_a_no_high_tier_claim_must_be_true_and_name_the_region(rows, region, summary, agent):
+    d, _ = run(Script(tool_msg(("get_priority_areas", {"region": region})), text_msg(summary)),
+               request=f"{region} only, please", rows=rows)
+    assert (d.source == "agent") is agent, d.fallback_reason
+    if not agent and rows is ROWS_NE:  # the template then writes the scoped sentence itself
+        assert d.summary_text.startswith("No rated area in the North-East region is in the High tier.")

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from coolcheck import plan as P
-from plan_fixtures import D24, FORECAST, ROWS_23, ROWS_24, FakeWarehouse
+from plan_fixtures import D24, FORECAST, ROWS_23, ROWS_24, ROWS_N, ROWS_NE, FakeWarehouse
 
 REPO = Path(__file__).resolve().parents[2]
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
@@ -68,6 +68,16 @@ def test_notice_when_no_rated_area_is_high():
 def test_notice_lists_unrated_high_heat_beside_a_high_area():
     (n,) = P.notices(ROWS_24, D24)
     assert n == "High heat but Not rated (no confirmed HDB blocks, so no blocks or calls): Southern Islands and Sungei Kadut."
+
+
+def test_no_rated_area_sentences_name_the_plans_region():
+    # the demo request "Only 8 volunteers tomorrow, North-East only": no High tier there, while Toa Payoh is High
+    assert P.template_summary(ROWS_NE, 200, "NORTH-EAST").startswith(
+        "No rated area in the North-East region is in the High tier. Medium tier: Sengkang.")
+    assert P.template_summary(ROWS_23, 500).startswith("No rated area is in the High tier.")  # the whole island
+    (n,) = P.notices(ROWS_N, D24, region="NORTH")
+    assert n.startswith("No rated area in the North region is High on 24 Oct. Sungei Kadut has High heat but is Not rated")
+    assert P.where_in("ALL") == "" and P.region_name("NORTH-EAST REGION") == "North-East"
 
 
 def test_notices_missing_forecast_and_empty():

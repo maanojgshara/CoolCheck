@@ -275,11 +275,22 @@ def capacity_from(default_capacity, calls_per_volunteer, volunteers=None, reques
 # --- the text ------------------------------------------------------------------------------------------------------
 
 def area_name(name):
-    return " ".join(w if w.isupper() and len(w) <= 2 else w.capitalize() for w in (name or "").split())
+    return " ".join(w if w.isupper() and len(w) <= 2 else "-".join(p.capitalize() for p in w.split("-"))
+                    for w in (name or "").split())
 
 
 def region_name(region):
     return area_name((region or "").replace(" REGION", ""))
+
+
+def where_in(region):
+    """' in the North-East region' for a region, '' for the whole island: the scope of a "no rated area" sentence."""
+    r = region_param(region)
+    return f" in the {region_name(r)} region" if r else ""
+
+
+def no_tier_sentence(tier, region=None):
+    return f"No rated area{where_in(region)} is in the {tier} tier."
 
 
 def metres(m):
@@ -310,8 +321,8 @@ def stale_notice(latest_date, today=None):
     return f"No forecast for today yet; this is the plan for {_day(latest_date)}." if latest_date < today else None
 
 
-def notices(rows, target_date, forecast=None):
-    """Notices that are always shown, whatever wrote the summary."""
+def notices(rows, target_date, forecast=None, region=None):
+    """Notices that are always shown, whatever wrote the summary; a "no rated area" sentence names the plan's region."""
     out = []
     if forecast and forecast.get("forecast_missing"):
         out.append("The NEA forecast issue was missing for this date; heat levels were scored without it.")
@@ -323,7 +334,7 @@ def notices(rows, target_date, forecast=None):
                    if r["heat_level"] == "High" and r["tier"] in ("Not rated", "No forecast")]
     day = _day(target_date)
     if unrated_hot and not rated_high:
-        out.append(f"No rated area is High on {day}. {_join(unrated_hot)} "
+        out.append(f"No rated area{where_in(region)} is High on {day}. {_join(unrated_hot)} "
                    f"{'has' if len(unrated_hot) == 1 else 'have'} High heat but "
                    f"{'is' if len(unrated_hot) == 1 else 'are'} Not rated (no confirmed HDB blocks), so CoolCheck has no "
                    f"blocks or calls there; check with the local team.")
@@ -340,14 +351,14 @@ def _day(d):
     return f"{d.day} {d:%b}"
 
 
-def template_summary(rows, capacity):
+def template_summary(rows, capacity, region=None):
     """The per-tier template (decision 4): names and numbers from get_priority_areas only."""
     by_tier = {t: [r for r in rows if r["tier"] == t] for t in TIER_ORDER}
     parts = []
     for tier in ("High", "Medium"):
         areas = by_tier[tier]
         if not areas:
-            parts.append(f"No area is in the {tier} tier.")
+            parts.append(no_tier_sentence(tier, region))
             continue
         names = [area_name(r["planning_area"]) for r in areas]
         lead = _join(names) if len(names) <= 3 else f"{len(names)} areas, led by {_join(names[:3])}"
@@ -417,7 +428,7 @@ class Draft:
 
     @property
     def notices(self):
-        return notices(self.rows, self.target_date, self.forecast)
+        return notices(self.rows, self.target_date, self.forecast, self.region)
 
     @property
     def calls_allocated(self):
@@ -443,7 +454,7 @@ def draft_direct(tools, target_date, call_capacity, capacity_basis, region=None,
             raise ToolError(f"get_priority_areas failed: {call.error}")
         d = Draft(target_date=target_date, region=region_param(region), call_capacity=int(call_capacity),
                   capacity_basis=capacity_basis, rows=call.rows, tool_calls=list(tools.calls), forecast=forecast or {},
-                  summary_text=template_summary(call.rows, int(call_capacity)), fallback_reason=reason)
+                  summary_text=template_summary(call.rows, int(call_capacity), region), fallback_reason=reason)
         s.set_outputs({"draft_text": d.draft_text})
         d.trace_id = trace_id_of(s)
     return d

@@ -39,8 +39,8 @@ Then write a short summary for the coordinator, at most 120 words, plain text:
   (upper, middle, lower) is separate from the tier; never call a tier a vulnerability rank.
 - Tiers and heat belong to planning areas. Blocks rank vulnerability; never give a block a tier or a heat level.
 - Never mention probabilities, percent chances or scores.
-- If high_tier_areas is empty, say that no rated area is in the High tier. Name every area in not_rated_high_heat: it
-  has High heat but is Not rated, so it has no blocks or calls.
+- If the tool result has no_high_tier_sentence, include it as written. Name every area in not_rated_high_heat: it has
+  High heat but is Not rated, so it has no blocks or calls.
 - If calls_left_over is above 0, say how many calls are left over.
 - This is a draft for a person to approve. Never say anything was sent, and send nothing.
 - No medical advice beyond the tier actions in the tool results.
@@ -62,8 +62,10 @@ BANNED = [("P(High), probability or score", re.compile(r"p\s*\(\s*high\s*\)|prob
               rf"|\b(?:blk|block)\s+\d+[a-z]?(?:\s+[a-z0-9]+){{0,5}}\s+(?:is|are)\s+(?:a\s+|in\s+the\s+)?{TIER}\b"
               r"(?![- ](?:planning\s+)?areas?)"
               r"|\b(?:blocks?|blks?)(?:['’]s?)?\s+tiers?\b", re.I))]
-# "No area is in the High tier" when one is (24 Oct, spot-check of the D01 prompt line: C01, C03, R01, B03 said it)
-NO_HIGH_TIER = re.compile(r"\bno\s+(?:rated\s+)?areas?\s+(?:is|are)\s+(?:in\s+the\s+)?high\b(?![- ]?\s*heat)"
+# "No area is in the High tier" when one is (24 Oct, spot-check of the D01 prompt line: C01, C03, R01, B03 said it), also
+# scoped ("No rated area in the North-East region is in the High tier"), which in a regional plan must name the region
+NO_HIGH_TIER = re.compile(r"\bno\s+(?:rated\s+)?areas?\s+(?:in\s+(?:the\s+)?[\w-]+(?:\s+(?:region|island))?\s+)?(?:is|are)\s+"
+                          r"(?:in\s+the\s+)?high\b(?![- ]?\s*heat)"
                           r"|\bno\s+(?:rated\s+)?areas?\s+in\s+the\s+high\s+tier|\bno\s+high[- ]tier\s+areas?", re.I)
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
@@ -158,10 +160,17 @@ def grounded(token, sources, percent=False):
     return any(abs(v - s) <= tol for s in cands)
 
 
-def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text=""):
+def _names(text, name):
+    """Whether text names name as a whole, ignoring case, spaces and hyphens: 'East' is not named in 'North-East'."""
+    pat = r"[\s-]*".join(map(re.escape, re.split(r"[\s-]+", name.strip())))
+    return re.search(rf"(?<![\w-]){pat}(?![\w-])", text, re.I) is not None
+
+
+def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text="", region=None):
     """(passed, checks): digits only (a number word passes only if a tool result uses it, e.g. "four languages" in the
-    tier actions), every number grounded, no banned content. Records whether Not-rated High heat is named when no rated
-    area is High (the code notice is shown either way)."""
+    tier actions), every number grounded, no banned content, no "no area is in the High tier" when one is or, in a plan
+    for a region (its display name), without naming it. Records whether Not-rated High heat is named when no rated area
+    is High (the code notice is shown either way)."""
     used = {w.lower() for w in NUMBER_WORDS.findall(source_text or "")}
     checks = {"ungrounded_numbers": [], "number_words": [w for w in NUMBER_WORDS.findall(text) if w.lower() not in used],
               "banned": []}
@@ -169,8 +178,12 @@ def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text=""
         if not grounded(m.group(1), sources, percent=bool(m.group(2))):
             checks["ungrounded_numbers"].append(m.group(0).strip())
     checks["banned"] = [name for name, rx in BANNED if rx.search(text)]
-    if rated_high and NO_HIGH_TIER.search(text):
-        checks["banned"].append("says no area is in the High tier, but one is")
+    for sentence in (s for s in re.split(r"(?<=[.!?;])\s+|\n", text) if NO_HIGH_TIER.search(s)):
+        if rated_high:
+            checks["banned"].append("says no area is in the High tier, but one is")
+        elif region and not _names(sentence, region):  # the dashboard shows the whole island (24 Oct: Toa Payoh is High)
+            checks["banned"].append(f"says no area is in the High tier without naming the region ({region})")
+        break
     if unrated_hot and not rated_high:
         checks["names_unrated_high_heat"] = all(a.lower() in text.lower() for a in unrated_hot)
     ok = not (checks["ungrounded_numbers"] or checks["number_words"] or checks["banned"]) and bool(text.strip())
@@ -313,7 +326,8 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
                                      state["cap"], state["basis"], default_capacity, calls_per_volunteer, masked,
                                      (forecast or {}).get("scored_at_sgt"), 400)
             ok, checks = check_summary(summary, sources, _unrated_hot(rows), any(r["tier"] == "High" for r in rows),
-                                       json.dumps([c.rows for c in seen], default=str, ensure_ascii=False))
+                                       json.dumps([c.rows for c in seen], default=str, ensure_ascii=False),
+                                       P.region_name(state["region"]) if state["region"] else None)
             if not ok:
                 reason = "the model's summary failed the checks: " + ("; ".join(
                     f"{k}: {v}" for k, v in checks.items() if v and k != "names_unrated_high_heat") or "empty")
@@ -325,7 +339,7 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
                       elapsed_s=round(time.monotonic() - t0, 1))
         d = P.Draft(target_date=target_date, region=state["region"], call_capacity=state["cap"], capacity_basis=state["basis"],
                     rows=rows, tool_calls=list(tools.calls), forecast=forecast or {},
-                    summary_text=summary or P.template_summary(rows, state["cap"]),
+                    summary_text=summary or P.template_summary(rows, state["cap"], state["region"]),
                     source=P.AGENT if summary else P.TEMPLATE, fallback_reason=reason, request_text=masked or None,
                     llm_model=model if summary else None, checks=checks)
         root.set_outputs({"draft_text": d.draft_text, "source": d.source, "fallback_reason": reason, "checks": d.checks})
@@ -360,10 +374,12 @@ def _run_tool(c, tools, target_date, default_capacity, calls_per_volunteer, stat
                 return {"error": call.error}
             state.update(gpa=call, cap=cap, basis=basis, region=region)
             rows = call.rows
-            return {"call_capacity": cap, "capacity_basis": basis, "region": region or "whole island",
-                    "calls_left_over": rows[-1]["calls_left"] if rows else None,
-                    "high_tier_areas": [P.area_name(r["planning_area"]) for r in rows if r["tier"] == "High"],
-                    "not_rated_high_heat": _unrated_hot(rows), "areas": _compact(rows)}
+            high = [P.area_name(r["planning_area"]) for r in rows if r["tier"] == "High"]
+            reply = {"call_capacity": cap, "capacity_basis": basis, "region": region or "whole island",
+                     "calls_left_over": rows[-1]["calls_left"] if rows else None, "high_tier_areas": high}
+            if rows and not high:  # the sentence the template writes, scoped to the region, for the model to copy
+                reply["no_high_tier_sentence"] = P.no_tier_sentence("High", region)
+            return dict(reply, not_rated_high_heat=_unrated_hot(rows), areas=_compact(rows))
         if name in ("find_refuges", "what_if_add_refuge"):
             if not (args.get("blk_no") and args.get("street")):
                 return {"error": "blk_no and street are required"}

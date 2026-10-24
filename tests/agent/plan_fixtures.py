@@ -41,6 +41,19 @@ ROWS_23 = [
     area(3, "SOUTHERN ISLANDS", "Not rated", "High", None),
 ]
 
+# the North-East on 24 Oct (the demo request "Only 8 volunteers tomorrow, North-East only"): no High tier there, while
+# Toa Payoh (Central) is High on the dashboard
+ROWS_NE = [
+    area(1, "SENGKANG", "Medium", "Moderate", "upper", 1687, 200, 0,
+         [block(1, "182", "RIVERVALE CRES", 438, 200, partial=True, refuge="Rivervale CC", m=120.0, within=True)],
+         region="NORTH-EAST REGION"),
+    area(2, "PUNGGOL", "Low", "Moderate", "lower", 900, 0, 0, region="NORTH-EAST REGION"),
+]
+
+# the North: no High tier, and Sungei Kadut has High heat but is Not rated
+ROWS_N = [area(1, "WOODLANDS", "Medium", "Moderate", "middle", 2000, 0, 0, region="NORTH REGION"),
+          area(2, "SUNGEI KADUT", "Not rated", "High", None, region="NORTH REGION")]
+
 FORECAST = {"run_id": "647995027381846", "n_runs": 1, "scored_at": "2026-10-23T16:49:49.473Z",
             "scored_at_sgt": "24 Oct 2026, 00:49", "forecast_missing": False, "n_areas": 41}
 
