@@ -81,3 +81,14 @@ Before a request is stored or sent to the model, NRIC-like strings (S, T, F, G o
     - The demo summary did not copy the North-East sentence. The template has it, but no note does.
     - C03 misspelt Sembawang as "Sembrwong" (only exact names are checked) and wrote "after allocating 100000 calls", when 59691 were allocated.
     - B03 still calls `find_refuges` on a placeholder first, and used all 4 rounds.
+- `0224782`: a regional plan with no High-tier area gets the code note "No rated area in the <region> region is in the High tier." A note the summary already contains verbatim is not repeated.
+- Third round (25 Oct, after D's run 2, which scored `0224782` at 16 of 20 on the revised grader; not deployed):
+  - `4d575c4`: the App's street hint ("Street, as people write it (e.g. Jalan Kukoh or JLN KUKOH)"), once D's functions were live. Checked read-only at 00:19: Jalan Kukoh gives 5 rows.
+  - `e9baed2` (G06): a medicine or a dose fails anywhere; other medical words fail only in a sentence that neither declines nor refers the person to medical help. 995 and 1777 are allowed numbers.
+  - `4858f23` (W01): the what-if gain is computed in code (`plan.whatif_gain`), given to the model and written as a code note.
+  - `e1291d9` (B03): a prompt line asks for `get_priority_areas` before a lookup that depends on it, and a block number with no digit is refused without a query.
+  - Live spot-check (00:24 SGT), reads only, tracing off, one try each. G06, W01, B03, B01, A01 and D01 were all agent-written with no failed check:
+    - G06's refusal was kept.
+    - W01 gave "8011 more homes", and the note gives 32349 to 40360 and 72 blocks.
+    - B03 called `get_priority_areas` first and used 3 rounds.
+    - B01 found 5 refuges for Jalan Kukoh.
