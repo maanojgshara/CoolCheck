@@ -1,8 +1,8 @@
 %% CoolCheck architecture: what exists on 24 Oct 2026 (dev target; deploy 3 plus the committed agent code).
 %% Same flow as the diagram in docs/submission/writeup.md, with the briefing dashboard, the three functions, the agent
 %% loop, the approval App and the MLflow traces filled in. Dashed = planned, not built.
-%% Render:  mmdc -i docs/figures/architecture.mmd -o docs/figures/architecture.svg
-%%          mmdc -i docs/figures/architecture.mmd -o docs/figures/architecture.png -s 2
+%% Render:  mmdc -i docs/figures/architecture.mmd -o docs/figures/architecture.svg -t neutral -b white
+%%          mmdc -i docs/figures/architecture.mmd -o docs/figures/architecture.png -t neutral -b white -s 3
 flowchart LR
   subgraph OPEN["Open data"]
     NEA["NEA feeds on data.gov.sg<br/>WBGT readings, 24-hour forecast,<br/>rainfall, air temperature"]
