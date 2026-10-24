@@ -15,6 +15,9 @@ Read-back for each function: its comment and any parameter or result column with
 metadata, through the SDK with --profile); then one call: find_refuges and what_if_add_refuge on --block, and
 get_priority_areas on --date with --capacity. --date must be after 2026-10-19, so nothing from the final check's window
 (1 Sep to 19 Oct 2026) is read; without --date that call is skipped. --print-sql prints the statements and touches nothing.
+Grants: CREATE OR REPLACE drops a function's grants (24 Oct: the App's EXECUTE on find_refuges and what_if_add_refuge, put
+back by hand). So each function's grants are read before it is replaced and exactly those are re-applied after; the run
+stops unless they read back the same.
 """
 import argparse
 import datetime as dt
@@ -40,6 +43,47 @@ def tables(cat):
 
 def create_sql(name, cat):
     return T.function_sql(name, f"{cat}.gold.{name}", tables(cat)[name])
+
+
+def function_grants(ws, full_name):
+    """{principal: sorted privileges} on a function, every page; {} when it does not exist yet."""
+    from databricks.sdk.errors import NotFound
+    out, token = {}, None
+    try:
+        while True:
+            r = ws.grants.get("function", full_name, page_token=token)
+            for a in r.privilege_assignments or []:
+                out.setdefault(a.principal, set()).update(getattr(p, "value", p) for p in a.privileges or [])
+            token = r.next_page_token
+            if not token:
+                break
+    except NotFound:
+        return {}
+    return {k: sorted(v) for k, v in out.items() if v}
+
+
+def restore_grants(ws, full_name, before):
+    """Re-apply exactly the grants read before CREATE OR REPLACE; stop unless they read back the same."""
+    from databricks.sdk.service.catalog import PermissionsChange, Privilege
+    now = function_grants(ws, full_name)
+    changes = [PermissionsChange(principal=p, add=[Privilege(x) for x in privs if x not in now.get(p, [])])
+               for p, privs in sorted(before.items())]
+    changes = [c for c in changes if c.add]
+    if changes:
+        ws.grants.update("function", full_name, changes=changes)
+    after = function_grants(ws, full_name)
+    print(f"{full_name}: grants before {before or 'none'}; re-applied {sum(len(c.add) for c in changes)}; "
+          f"after {after or 'none'}")
+    if after != before:
+        raise SystemExit(f"STOP: {full_name} grants read back {after}, not {before}")
+    return after
+
+
+def replace_function(spark, ws, full_name, sql):
+    """CREATE OR REPLACE with the function's grants kept: read before, re-applied after."""
+    before = function_grants(ws, full_name)
+    spark.sql(sql)
+    return restore_grants(ws, full_name, before)
 
 
 def check_comments(ws, full_name):
@@ -130,7 +174,7 @@ def main():
         if name == "get_priority_areas" and not spark.catalog.tableExists(f"{a.catalog}.gold.area_heat_risk"):
             print(f"{a.catalog}.gold.area_heat_risk does not exist yet: get_priority_areas not created")
             continue
-        spark.sql(create_sql(name, a.catalog))
+        replace_function(spark, ws, f"{a.catalog}.gold.{name}", create_sql(name, a.catalog))
         check_comments(ws, f"{a.catalog}.gold.{name}")
         read_back(spark, a.catalog, name, a)
 
