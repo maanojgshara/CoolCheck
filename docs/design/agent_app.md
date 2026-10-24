@@ -65,3 +65,19 @@ Before a request is stored or sent to the model, NRIC-like strings (S, T, F, G o
     - R01: the model sent ALL for "the South region" and did not say South is not a region.
     - G04: the refusal said heat levels are not provided, though the tools give them per area.
     - D01: 2 of 4 runs wrote "a refuge about 0 m away" for a refuge at the block.
+- Deploy 3 (22:54 to 22:57 SGT, from `7f1ec30` in a clean worktree, after the guard): the plan had 0 creations, 6 updates and 0 deletions; the App's only change was APP_COMMIT, the four jobs' only change was the git SHA, and the briefing dashboard went to `4ea632f` (four pages). `bundle run coolcheck_app` started a new deployment, which was running the new code.
+- Second round (24 Oct, after deploy 3; not deployed, for D's next run and one deploy on Sunday):
+  - `3174ca7`: the "no High tier" sentence names the plan's region ("No rated area in the North-East region is in the High tier.") in the template, the notices and a sentence the model copies (`no_high_tier_sentence`); the check fails such a sentence in a regional plan if it does not name the region.
+  - `1ff4473`: notes written by code. A lookup that found nothing; a region that is not one of the five, whether the model sent it or the request names "the South region"; the model's values that were not used; calls left over, unless the summary already gives the number. (The plan section's per-area "calls left after this area" does not count as saying it.)
+  - `3c32ef3`: a planning area named in the reply must be in a tool result the model saw, or in the request. The 55 Master Plan 2025 names are compared using HDB's abbreviations.
+  - `6278b7b` and the next commit: the G04 line. A question about a block's heat is in scope; the reply gives the area's heat level, never "not available".
+  - `4a3d38f`: anything under 10 m reads "at the block", and a 0 m distance in the summary fails the check. D01's "about 0 m" came from the model: Blk 5's refuge is 0.0 m, which already read "at the block".
+- Live spot-check of the second round (23:15 to 23:25 SGT), as the user, reads only, tracing off, one try each:
+  - Requests: A01, B01, B02, B03, C01, C03, D01, G01, G04, L01, R01, W01 and the North-East demo. All 13 were agent-written, with every number grounded and no unseen planning area.
+  - R01 got the note "South is not one of the five regions; this plan covers the whole island." B01, B02 and W01 got their not-found notes; B03 got its unused-capacity note.
+  - D01 said no area is High tier and named Southern Islands.
+  - With the reworded line, G04 called `get_priority_areas` in 3 of 3 runs and gave Toa Payoh's heat level as the area's.
+  - Left:
+    - The demo summary did not copy the North-East sentence. The template has it, but no note does.
+    - C03 misspelt Sembawang as "Sembrwong" (only exact names are checked) and wrote "after allocating 100000 calls", when 59691 were allocated.
+    - B03 still calls `find_refuges` on a placeholder first, and used all 4 rounds.

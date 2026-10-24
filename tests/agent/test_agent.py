@@ -430,9 +430,12 @@ def test_3b_a_region_that_is_not_one_of_the_five_gets_a_note():
 def test_3b_values_not_in_the_request_get_a_note():
     d, _ = run(Script(tool_msg(("get_priority_areas", L_ARGS)), text_msg("Toa Payoh is High.")),
                request="Esok hanya ada 8 sukarelawan di kawasan timur.")
-    assert "Not in the request, so not used: the model's 0 calls per volunteer and a capacity of 0 calls." in d.notices
+    assert ("From the model but not in the request, so not used: 0 calls per volunteer and a capacity of 0 calls."
+            in d.notices)
+    d, _ = run(Script(tool_msg(("get_priority_areas", {"call_capacity": 0})), text_msg("Toa Payoh is High.")))
+    assert "From the model but not in the request, so not used: a capacity of 0 calls." in d.notices  # B03, 24 Oct
     d, _ = run(Script(tool_msg(("get_priority_areas", {"volunteers": 8})), text_msg("Toa Payoh is High.")))
-    assert not any(n.startswith("Not in the request") for n in d.notices)
+    assert not any(n.startswith("From the model") for n in d.notices)
 
 
 def test_3b_calls_left_over_get_a_note_unless_the_summary_says_it():
@@ -476,8 +479,8 @@ def test_3c_area_names_are_compared_with_hdb_abbreviations():
 
 def test_3d_the_prompt_gives_a_blocks_area_heat_level_and_never_says_it_is_unavailable():
     # G04 refused with "Toa Payoh heat levels per block are not available" (24 Oct, twice)
-    assert ("When asked about a block's heat, give the heat level of its\n  planning area in a sentence about the area, not "
-            "the block. Never say heat levels are not available.") in A.SYSTEM
+    assert ("A question about a block's heat is in scope: call\n  get_priority_areas and give the heat level of its planning "
+            "area in a sentence about the area, not the block. Never\n  say heat levels are not available.") in A.SYSTEM
     ok, checks = A.check_summary("Toa Payoh's forecast heat is High; heat is forecast per area. Call Blk 208A first.",
                                  A.source_numbers(ROWS_24), seen_text="TOA PAYOH")
     assert ok, checks  # the answer the line asks for passes the checks

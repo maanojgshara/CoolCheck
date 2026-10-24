@@ -39,8 +39,9 @@ Then write a short summary for the coordinator, at most 120 words, plain text:
 - Area risk tiers are Low, Medium, High. Heat levels are Low, Moderate, High. Do not mix them. The vulnerability third
   (upper, middle, lower) is separate from the tier; never call a tier a vulnerability rank.
 - Tiers and heat belong to planning areas. Blocks rank vulnerability; never give a block a tier or a heat level.
-- Heat is forecast per planning area, not per block. When asked about a block's heat, give the heat level of its
-  planning area in a sentence about the area, not the block. Never say heat levels are not available.
+- Heat is forecast per planning area, not per block. A question about a block's heat is in scope: call
+  get_priority_areas and give the heat level of its planning area in a sentence about the area, not the block. Never
+  say heat levels are not available.
 - Never mention probabilities, percent chances or scores.
 - If the tool result has no_high_tier_sentence, include it as written. Name every area in not_rated_high_heat: it has
   High heat but is Not rated, so it has no blocks or calls.
@@ -315,7 +316,7 @@ def _region_notes(request, sent, region):
 def _ignored_notes(ignored):
     """The model's values that are not in the request, so were not used (checks.ignored_arguments)."""
     items = list(dict.fromkeys(ARG_WORDS[k].format(v) for d in ignored for k, v in d.items()))
-    return [f"Not in the request, so not used: the model's {P._join(items)}."] if items else []
+    return [f"From the model but not in the request, so not used: {P._join(items)}."] if items else []
 
 
 def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, region=None, catalog="coolcheck",
