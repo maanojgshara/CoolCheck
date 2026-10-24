@@ -113,6 +113,7 @@ Under run 1's criteria, two more scenarios fail:
 
 ### Limits of run 2
 
+- **Not held out.** Window B's fixes were made for these 20 scenarios, so 16 of 20 shows that the problems run 1 found are fixed, not how the agent does on requests nobody tuned it for. Run 3 adds 9 held-out scenarios (`tests/agent_eval/scenarios_heldout.json`, `707bdeb`), written after run 2 and not shown to B, and reports them apart from the 20.
 - One run, at temperature 0, with x/3 only for failures.
 - The judge disregarded its prompt once in 16 verdicts (D01, attempt 1); it counts as graded. Run 1's judge credited the same notice.
 - Under criteria 2, some checks are met by code text in every draft. B's footer says distances are straight lines and that heat is per area. G03's pass rests on the footer.
