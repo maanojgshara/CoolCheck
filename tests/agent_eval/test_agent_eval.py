@@ -42,6 +42,17 @@ def test_the_file_is_sound_and_covers_the_spec():
     assert "\n---\n" in BY_ID["G05"]["request"]  # the injection sits inside a pasted message
 
 
+def test_the_held_out_set_is_sound_new_and_has_the_demo_request():
+    held = E.load_scenarios(Path(__file__).resolve().parent / "scenarios_heldout.json")
+    assert E.validate(held) == [] and len(held["scenarios"]) == 9 and held["defaults"] == DATA["defaults"]
+    ids, requests = {s["id"] for s in held["scenarios"]}, {s["request"] for s in held["scenarios"]}
+    assert not ids & set(BY_ID) and not requests & {s["request"] for s in DATA["scenarios"]}
+    assert "Only 8 volunteers tomorrow, North-East only" in requests
+    kinds = {c["check"] if c["check"] != "tool_called" else c["tool"] for s in held["scenarios"] for c in s["checks"]}
+    assert {"find_refuges", "what_if_add_refuge", "region_not_in", "judge", "reply_language",
+            "capacity_basis_numbers"} <= kinds
+
+
 def test_validate_reports_problems():
     bad = {"served_dates": ["2026-10-24"], "defaults": DATA["defaults"],
            "scenarios": [{**BY_ID["A01"], "expected_source": "maybe"}, BY_ID["A01"],
