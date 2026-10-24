@@ -4,6 +4,18 @@
 # It refuses when the model already has a version.
 #   databricks bundle run live_model -t dev -p coolcheck
 # Written as live_model.job.yml.draft; renamed to live_model.job.yml for its first deploy.
+#
+# Recovery when the run registered a version but setting the alias (or a tag) then failed (review finding 3,
+# docs/checks/review_live_model_nightly.md). Symptoms: this job refuses to run again ("already has version(s)…") and the
+# nightly heat_forecast fails on the missing alias. Do not refit and do not delete the version. Set the alias by hand on
+# the version this run registered (its number is in the run's log and on the model's page), read it back, then rerun the
+# nightly job for each date it missed:
+#   databricks registered-models set-alias <catalog>.ml.heat_model champion <version> -p <profile>
+#   databricks registered-models get <catalog>.ml.heat_model --include-aliases -p <profile>
+#   databricks bundle run heat_forecast -t <target> -p <profile> --params target_date=<YYYY-MM-DD>
+# The version tags the run did not set (model_sha256, training_window, train_rows, ...) are also among its MLflow run's
+# parameters. The nightly job reads only training_window, and without it treats the model as trained to 2026-10-22, the
+# refit's last day; its log then shows "model sha256 ?".
 resources:
   jobs:
     live_model:
