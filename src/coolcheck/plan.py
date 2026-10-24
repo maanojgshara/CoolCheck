@@ -294,6 +294,22 @@ def _join(names):
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
+SGT = dt.timezone(dt.timedelta(hours=8), "Asia/Singapore")  # Singapore has no daylight saving; no tz database needed
+
+
+def sgt_today(now=None):
+    """Today's date on the Singapore clock (not the warehouse's current_date(), which may run in UTC)."""
+    return (now or dt.datetime.now(dt.timezone.utc)).astimezone(SGT).date()
+
+
+def stale_notice(latest_date, today=None):
+    """The top-of-page notice when the newest forecast is for a date before today in Singapore; else None."""
+    if latest_date is None:
+        return "No forecast is available yet."
+    today = today or sgt_today()
+    return f"No forecast for today yet; this is the plan for {_day(latest_date)}." if latest_date < today else None
+
+
 def notices(rows, target_date, forecast=None):
     """Notices that are always shown, whatever wrote the summary."""
     out = []

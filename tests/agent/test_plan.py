@@ -203,7 +203,7 @@ SENDERS = {"smtplib", "email", "twilio", "sendgrid", "slack_sdk", "telegram", "r
            "boto3", "http"}
 
 
-@pytest.mark.parametrize("path", ["src/app.py", "src/coolcheck/plan.py"])
+@pytest.mark.parametrize("path", ["src/app.py", "src/coolcheck/plan.py", "src/coolcheck/agent.py"])
 def test_no_messaging_or_raw_network_imports(path):
     tree = ast.parse((REPO / path).read_text(encoding="utf-8"))
     names = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}

@@ -4,7 +4,8 @@
 # the resources below are the grants the deploy gives it: CAN_USE on the existing warehouse (looked up by name in
 # live_heat_stress.dashboard.yml, never created), EXECUTE on the three functions (SQL SECURITY DEFINER, so no SELECT on the
 # tables they read), SELECT on the gold.area_heat_risk view (default date, scored_at, run ID), SELECT and MODIFY on
-# gold.pending_approval (the Approve MERGE), CAN_EDIT on the experiment (traces). No access to gold.heat_forecast or silver.
+# gold.pending_approval (the Approve MERGE), CAN_EDIT on the experiment (traces), EXECUTE on the Llama 3.3 70B model
+# service (the agent loop, deploy 2). No access to gold.heat_forecast or silver.
 # Defined for dev only: the free target gets the App and the experiment once its functions and pending_approval exist.
 # Nothing is sent by the App. 800 calls and 25 calls per volunteer are placeholders until the user decides.
 # Written as coolcheck_app.app.yml.draft; renamed to coolcheck_app.app.yml for its first deploy.
@@ -36,6 +37,8 @@ targets:
                 value: "800"
               - name: CALLS_PER_VOLUNTEER
                 value: "25"
+              - name: LLM_MODEL
+                value_from: model
           resources:
             - name: sql-warehouse
               sql_warehouse:
@@ -75,3 +78,8 @@ targets:
                 securable_full_name: ${var.catalog}.gold.pending_approval
                 securable_type: TABLE
                 permission: MODIFY
+            - name: model
+              uc_securable:
+                securable_full_name: system.ai.meta-llama-3-3-70b-instruct
+                securable_type: MODEL_SERVICE
+                permission: EXECUTE

@@ -20,6 +20,7 @@ EXPERIMENT_ID = os.environ.get("MLFLOW_EXPERIMENT_ID")
 APP_COMMIT = os.environ.get("APP_COMMIT")
 DEFAULT_CAPACITY = int(os.environ.get("DEFAULT_CALL_CAPACITY", "800"))
 CALLS_PER_VOLUNTEER = int(os.environ.get("CALLS_PER_VOLUNTEER", "25"))
+LLM_MODEL = os.environ.get("LLM_MODEL", "system.ai.meta-llama-3-3-70b-instruct")
 REGION_CHOICES = ["Whole island", "Central", "East", "North", "North-East", "West"]
 
 
@@ -57,7 +58,9 @@ def approver():
 
 def show_draft(d):
     st.subheader(f"Draft plan for {d.target_date:%d %b %Y}")
-    if d.source != P.AGENT and d.fallback_reason:
+    if d.source == P.AGENT:
+        st.caption(f"Summary written by {d.llm_model}; every number in it was found in a tool result.")
+    elif d.fallback_reason:
         st.info(f"Template version (decision 4): {d.fallback_reason}")
     for n in d.notices:
         st.warning(n)
@@ -69,8 +72,11 @@ def show_draft(d):
                       for r in others], hide_index=True, width="stretch")
     with st.expander(f"Tool calls ({len(d.tool_calls)})"):
         for c in d.tool_calls:
-            st.markdown(f"**{c.name}** `{c.arguments}`: {len(c.rows)} rows in {c.elapsed_ms} ms"
+            asked = f" (the model asked for `{c.llm_arguments}`)" if c.llm_arguments is not None else ""
+            st.markdown(f"**{c.name}** `{c.arguments}`{asked}: {len(c.rows)} rows in {c.elapsed_ms} ms"
                         f"{'; error: ' + c.error if c.error else ''}")
+        if d.checks:
+            st.write("Checks:", d.checks)
             st.json(c.rows, expanded=False)
     st.caption(f"MLflow trace: {d.trace_id or 'none'} · approval id {d.approval_id}")
 
@@ -182,7 +188,13 @@ if not WAREHOUSE_ID:
 
 tracing_ready()
 available = dates()
+stale = P.stale_notice(available[0] if available else None)
+if stale:
+    st.warning(stale)
 with st.form("inputs"):
+    request = st.text_area("Request (optional), e.g. \"Only 8 volunteers tomorrow, North-East only\"", max_chars=500,
+                           help="Do not enter names or personal details.")
+    st.caption("Do not enter names or personal details. " + P.MASK_NOTE)
     c1, c2, c3, c4 = st.columns(4)
     target_date = c1.selectbox("Briefing date", available, format_func=lambda d: f"{d:%a %d %b %Y}")
     capacity = c2.number_input("Call capacity (placeholder: replace with your team's figure)", min_value=0,
@@ -190,15 +202,26 @@ with st.form("inputs"):
     cpv = c3.number_input("Calls per volunteer (assumption: replace with your team's figure)", min_value=1,
                           max_value=500, value=CALLS_PER_VOLUNTEER)
     region = c4.selectbox("Region", REGION_CHOICES)
-    submitted = st.form_submit_button("Draft plan")
+    b1, b2 = st.columns(2)
+    with_agent = b1.form_submit_button("Draft with the agent", type="primary")
+    tools_only = b2.form_submit_button("Draft from the tools only")
 
-if submitted and target_date:
+if (with_agent or tools_only) and target_date:
     region_value = None if region == "Whole island" else region.upper()
-    _, basis = P.capacity_from(int(capacity), int(cpv))
     try:
         forecast = P.forecast_info(warehouse(), target_date, CATALOG)
-        st.session_state["draft"] = P.draft_direct(P.Tools(warehouse(), CATALOG), target_date, int(capacity), basis,
-                                                   region_value, forecast, reason="direct tool calls, no model")
+        if with_agent:
+            from databricks.sdk import WorkspaceClient
+            from coolcheck import agent as A
+            with st.spinner("The agent is drafting (up to 90 s)..."):
+                st.session_state["draft"] = A.draft_plan(
+                    request, target_date=target_date, default_capacity=int(capacity), calls_per_volunteer=int(cpv),
+                    region=region_value, catalog=CATALOG, runner=warehouse(), workspace_client=WorkspaceClient(),
+                    model=LLM_MODEL, forecast=forecast)
+        else:
+            _, basis = P.capacity_from(int(capacity), int(cpv))
+            st.session_state["draft"] = P.draft_direct(P.Tools(warehouse(), CATALOG), target_date, int(capacity), basis,
+                                                       region_value, forecast, reason="direct tool calls, no model")
     except Exception as e:
         st.error(f"The tools could not be called: {type(e).__name__}: {e}")
 
