@@ -14,7 +14,8 @@ the Python twin below, and the tests compare the two on the same rows.
 - what_if_add_refuge(blk_no, street): a refuge added at a confirmed block (the site). For the site's planning area, and
   any other area with a block newly within WALK_M, the confirmed blocks' dwelling units within WALK_M before and after.
 Distances are straight lines sqrt(dx^2 + dy^2) in SVY21 metres from the stored x_svy21 / y_svy21 (coolcheck.access),
-unrounded, and WALK_M counts as within. A block is found by blk_key and street_key, and only a confirmed block is used.
+unrounded, and WALK_M counts as within. A block is found by blk_key and street_key (so 'Jalan Kukoh' finds JLN KUKOH),
+and only a confirmed block is used.
 Nothing here reads gold.heat_forecast or returns a probability or the score.
 """
 import math
@@ -32,6 +33,13 @@ ALL_REGIONS = ("", "ALL")
 NEAREST = 5
 WALK_M = 400.0
 AAC_PARTIAL = "Active Ageing Centre (partial list)"
+# The long forms people write, read as HDB's abbreviations. Every abbreviation here occurs in block_access's streets, and
+# none of the long forms does (tested), so HDB's own spelling keys as before. The SQL files write the same map.
+STREET_WORDS = {"AVENUE": "AVE", "BUKIT": "BT", "CENTRAL": "CTRL", "CLOSE": "CL", "COMMONWEALTH": "CWEALTH",
+                "CRESCENT": "CRES", "DRIVE": "DR", "GARDEN": "GDN", "GARDENS": "GDNS", "HEIGHTS": "HTS", "JALAN": "JLN",
+                "KAMPONG": "KG", "KAMPUNG": "KG", "LORONG": "LOR", "MARKET": "MKT", "NORTH": "NTH", "PARK": "PK",
+                "PLACE": "PL", "ROAD": "RD", "SAINT": "ST", "SOUTH": "STH", "SQUARE": "SQ", "STREET": "ST",
+                "TANJONG": "TG", "TANJUNG": "TG", "TERRACE": "TER", "UPPER": "UPP"}
 
 _NAME = re.compile(r"^[A-Za-z0-9_`.]+$")
 
@@ -72,10 +80,12 @@ def blk_key(s):
 
 
 def street_key(s):
-    """Upper case, punctuation dropped, spaces collapsed: "St. George's  Lane" gives 'ST GEORGES LANE'."""
+    """Upper case, punctuation dropped, spaces collapsed, and each long form read as HDB's abbreviation (STREET_WORDS):
+    "St. George's  Lane" gives 'ST GEORGES LANE', 'Jalan Kukoh' gives 'JLN KUKOH'."""
     if s is None:
         return None
-    return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9\s]", "", s.upper(), flags=re.ASCII), flags=re.ASCII).strip(" ")
+    words = re.sub(r"[^A-Z0-9\s]", "", s.upper(), flags=re.ASCII).split()
+    return " ".join(STREET_WORDS.get(w, w) for w in words)
 
 
 def lookup(blocks, blk_no, street):

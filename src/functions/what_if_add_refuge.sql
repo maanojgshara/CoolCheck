@@ -4,12 +4,14 @@
 -- flats beyond 400 m before and after, and the blocks newly within 400 m. Before: each block's distance to the nearest
 -- refuge of the main set, recomputed from the stored x_svy21 / y_svy21 with sqrt(dx^2 + dy^2), unrounded, as
 -- silver.area_access was built (coolcheck.access); after: the lesser of that and the distance to the site. 400 m counts
--- as within. An unknown or unconfirmed block gives no rows.
+-- as within. The site is looked up as in find_refuges: case, spaces, punctuation and a leading Blk or Block ignored, and on
+-- both sides the street's long forms read as HDB's abbreviations (the map in words, = coolcheck.agent_tools.STREET_WORDS),
+-- so Yishun Street 31 finds YISHUN ST 31. An unknown or unconfirmed block gives no rows.
 -- Placeholders, filled by coolcheck.agent_tools.function_sql: function, block_access, refuge_points, and temporary
 -- (empty, or TEMPORARY in the tests). Python twin: coolcheck.agent_tools.what_if_add_refuge.
 CREATE OR REPLACE ${temporary}FUNCTION ${function}(
   blk_no STRING COMMENT 'Block number of the site, an existing HDB block, e.g. 52 or 101A; case, spaces and a leading Blk or Block are ignored.',
-  street STRING COMMENT 'Street of the site as HDB writes it, with its abbreviations (AVE, ST, RD, DR, CRES, CTRL, CL, NTH, STH, BT, JLN, LOR, UPP), e.g. ANG MO KIO AVE 10; case, extra spaces and punctuation are ignored.'
+  street STRING COMMENT 'Street of the site as people write it or as HDB abbreviates it, e.g. Yishun Street 31 or YISHUN ST 31, Ang Mo Kio Avenue 10 or ANG MO KIO AVE 10; case, extra spaces and punctuation are ignored, and long forms such as Street, Road, Avenue, Drive, Jalan, Lorong, Bukit, Upper, North and Central are read as HDB''s abbreviations.'
 )
 RETURNS TABLE (
   planning_area STRING COMMENT 'Master Plan 2025 planning area: the area of the site first, then any other area with a block newly within 400 m.',
@@ -28,16 +30,27 @@ RETURNS TABLE (
 )
 COMMENT 'What if a cooling refuge opened at an existing HDB block (for example at its void deck): for the planning area of the block, and any other area that gains, the HDB dwelling units within 400 m of a refuge and their share before and after, the 1-2 room rental flats beyond 400 m before and after, and the blocks newly within 400 m. Straight-line distances in metres from the stored SVY21 coordinates, not walking distances; refuges are the main set (Community Clubs and the partial Active Ageing Centre list); confirmed blocks only, as in silver.area_access. No rows if the block is not found or its coordinate is not confirmed. No personal data.'
 RETURN
-WITH args AS (
-  SELECT regexp_replace(regexp_replace(upper(blk_no), '^\\s*(BLK|BLOCK)[.\\s]*', ''), '[^A-Z0-9]', '') AS bk,
-         trim(regexp_replace(regexp_replace(upper(street), '[^A-Z0-9\\s]', ''), '\\s+', ' ')) AS sk
+WITH words AS (
+  SELECT map('AVENUE', 'AVE', 'BUKIT', 'BT', 'CENTRAL', 'CTRL', 'CLOSE', 'CL', 'COMMONWEALTH', 'CWEALTH',
+             'CRESCENT', 'CRES', 'DRIVE', 'DR', 'GARDEN', 'GDN', 'GARDENS', 'GDNS', 'HEIGHTS', 'HTS', 'JALAN', 'JLN',
+             'KAMPONG', 'KG', 'KAMPUNG', 'KG', 'LORONG', 'LOR', 'MARKET', 'MKT', 'NORTH', 'NTH', 'PARK', 'PK',
+             'PLACE', 'PL', 'ROAD', 'RD', 'SAINT', 'ST', 'SOUTH', 'STH', 'SQUARE', 'SQ', 'STREET', 'ST',
+             'TANJONG', 'TG', 'TANJUNG', 'TG', 'TERRACE', 'TER', 'UPPER', 'UPP') AS m
+),
+args AS (
+  SELECT d.m,
+         regexp_replace(regexp_replace(upper(blk_no), '^\\s*(BLK|BLOCK)[.\\s]*', ''), '[^A-Z0-9]', '') AS bk,
+         array_join(transform(split(trim(regexp_replace(regexp_replace(upper(street), '[^A-Z0-9\\s]', ''), '\\s+', ' ')), ' '),
+                              w -> coalesce(try_element_at(d.m, w), w)), ' ') AS sk
+  FROM words d
 ),
 site AS (
   SELECT b.blk_no AS site_blk_no, b.street AS site_street, b.planning_area AS site_area, b.x_svy21 AS sx, b.y_svy21 AS sy
   FROM ${block_access} b CROSS JOIN args a
   WHERE b.confirmed
     AND regexp_replace(regexp_replace(upper(b.blk_no), '^\\s*(BLK|BLOCK)[.\\s]*', ''), '[^A-Z0-9]', '') = a.bk
-    AND trim(regexp_replace(regexp_replace(upper(b.street), '[^A-Z0-9\\s]', ''), '\\s+', ' ')) = a.sk
+    AND array_join(transform(split(trim(regexp_replace(regexp_replace(upper(b.street), '[^A-Z0-9\\s]', ''), '\\s+', ' ')), ' '),
+                             w -> coalesce(try_element_at(a.m, w), w)), ' ') = a.sk
 ),
 -- the areas that can change: the area of the site, and the areas of the confirmed blocks within 400 m of it
 areas AS (

@@ -36,7 +36,7 @@ FORECAST_SCHEMA = ("target_date DATE, planning_area STRING, station_id STRING, p
                    "model_version STRING, run_id STRING, cutoff_ts TIMESTAMP, scored_at TIMESTAMP, forecast_missing BOOLEAN")
 SITES = {"rental gain": ("3", "JLN KUKOH"), "two areas": ("106B", "PUNGGOL FIELD"), "largest gain": ("333C", "YISHUN ST 31"),
          "at a refuge": ("105", "JLN BT MERAH"), "other spelling": ("Blk 3", "jln  kukoh"),
-         "unconfirmed": ("4C", "ST. GEORGE'S LANE")}
+         "long form": ("333C", "Yishun Street 31"), "unconfirmed": ("4C", "ST. GEORGE'S LANE")}
 
 
 @pytest.fixture(scope="module")
@@ -204,13 +204,25 @@ def test_find_refuges_for_every_block(spark, silver):
 @pytest.mark.parametrize("blk,street,want", [("blk 7", "st george's lane", ("7", "ST. GEORGE'S LANE")),
                                              ("106 a", "canberra  st", ("106A", "CANBERRA ST")),
                                              ("1a", "Eunos Cres", ("1A", "EUNOS CRES")),
-                                             ("4C", "ST. GEORGE'S LANE", None), ("99999", "NOWHERE RD", None)])
+                                             ("Blk 3", "Jalan Kukoh", ("3", "JLN KUKOH")),
+                                             ("7", "Saint George's Lane", ("7", "ST. GEORGE'S LANE")),
+                                             ("4C", "ST. GEORGE'S LANE", None), ("99999", "NOWHERE RD", None),
+                                             ("9999", "Lorong 99 Toa Payoh", None)])
 def test_find_refuges_lookup(spark, silver, blk, street, want):
     blocks, refuges = silver
     got = sorted(collect(spark, "SELECT * FROM find_refuges(:blk, :street)", blk=blk, street=street),
                  key=lambda r: r["refuge_rank"])
     same(got, T.find_refuges(blocks, refuges, blk, street), f"{blk} {street}")
     assert {(r["blk_no"], r["street"]) for r in got} == ({want} if want else set())
+
+
+def test_find_refuges_reads_the_street_as_people_write_it(spark, silver):
+    blocks, refuges = silver
+    got = {s: sorted(collect(spark, "SELECT * FROM find_refuges('3', :street)", street=s), key=lambda r: r["refuge_rank"])
+           for s in ("Jalan Kukoh", "JLN KUKOH", "jln kukoh")}
+    assert len(got["JLN KUKOH"]) == T.NEAREST and got["Jalan Kukoh"] == got["JLN KUKOH"] == got["jln kukoh"]
+    assert {(r["blk_no"], r["street"]) for r in got["Jalan Kukoh"]} == {("3", "JLN KUKOH")}
+    same(got["Jalan Kukoh"], T.find_refuges(blocks, refuges, "3", "Jalan Kukoh"), "Jalan Kukoh")
 
 
 # --- what_if_add_refuge ------------------------------------------------------------------------------------------
@@ -232,8 +244,9 @@ def test_what_if_against_the_twin(spark, silver, label):
         assert got[0]["planning_area"] == "OUTRAM" and (gain["du_within_400m"], gain["rental_flats_beyond_400m"], new) == (3001, -2190, 16)
     elif label == "two areas":
         assert [r["planning_area"] for r in got] == ["PUNGGOL", "SENGKANG"] and all(r["blocks_newly_within"] for r in got)
-    elif label == "largest gain":
+    elif label in ("largest gain", "long form"):
         assert [r["planning_area"] for r in got] == ["YISHUN"] and gain["du_within_400m"] == 8011
+        assert (got[0]["site_blk_no"], got[0]["site_street"]) == ("333C", "YISHUN ST 31")
     elif label == "at a refuge":
         assert len(got) == 1 and new == 0 and got[0]["share_within_400m_after"] == got[0]["share_within_400m_before"]
     else:

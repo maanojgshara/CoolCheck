@@ -29,19 +29,43 @@ def test_blk_key(raw, want):
 
 
 @pytest.mark.parametrize("raw,want", [("ST. GEORGE'S LANE", "ST GEORGES LANE"), ("st george's  lane ", "ST GEORGES LANE"),
-                                      ("Ang Mo Kio\tAve 10", "ANG MO KIO AVE 10"), ("C'WEALTH CL", "CWEALTH CL"), (None, None)])
+                                      ("Ang Mo Kio\tAve 10", "ANG MO KIO AVE 10"), ("C'WEALTH CL", "CWEALTH CL"),
+                                      ("Jalan Kukoh", "JLN KUKOH"), ("JLN KUKOH", "JLN KUKOH"), ("jln kukoh", "JLN KUKOH"),
+                                      ("Yishun Street 31", "YISHUN ST 31"), ("Upper Boon Keng Road", "UPP BOON KENG RD"),
+                                      ("Commonwealth Close", "CWEALTH CL"), ("Saint George's Lane", "ST GEORGES LANE"),
+                                      ("Lorong 99 Toa Payoh", "LOR 99 TOA PAYOH"), ("Bukit Batok West Avenue 6", "BT BATOK WEST AVE 6"),
+                                      ("  ", ""), (None, None)])
 def test_street_key(raw, want):
     assert T.street_key(raw) == want
 
 
-def test_keys_are_unique_over_every_block():
+def block_rows():
     if not BLOCK_CSV.exists():
         pytest.skip("coolcheck-data/analysis not present")
     import load_refuge_park_access as L
     cols = [c for c, _, _ in L.TABLES["block_access"]["columns"]]
-    rows = [dict(zip(cols, r)) for r in L.read(BLOCK_CSV, L.TABLES["block_access"]["columns"])]
+    return [dict(zip(cols, r)) for r in L.read(BLOCK_CSV, L.TABLES["block_access"]["columns"])]
+
+
+def test_keys_are_unique_over_every_block():
+    rows = block_rows()
     keys = {(T.blk_key(b["blk_no"]), T.street_key(b["street"])) for b in rows}
     assert len(rows) == len(keys) == 10_817
+
+
+def test_street_words_are_hdbs_own_abbreviations():
+    """Every abbreviation occurs in HDB's streets and no long form does, so HDB's spelling keys as it did without the map."""
+    words = {w for b in block_rows() for w in re.sub(r"[^A-Z0-9\s]", "", b["street"].upper()).split()}
+    assert set(T.STREET_WORDS.values()) <= words and not set(T.STREET_WORDS) & words
+    assert len(set(T.STREET_WORDS.values())) == 24
+
+
+@pytest.mark.parametrize("name", ["find_refuges", "what_if_add_refuge"])
+def test_sql_street_map_is_the_twins(name):
+    text = (T.SQL_DIR / f"{name}.sql").read_text(encoding="utf-8")
+    body = re.search(r"SELECT map\((.*?)\) AS m", text, re.S).group(1)
+    pairs = re.findall(r"'([A-Z]+)'", body)
+    assert dict(zip(pairs[::2], pairs[1::2])) == T.STREET_WORDS and len(pairs) == 2 * len(T.STREET_WORDS)
 
 
 # --- get_priority_areas (the synthetic briefing in agent_fixtures) -------------------------------------------------

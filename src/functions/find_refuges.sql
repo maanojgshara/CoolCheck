@@ -2,12 +2,14 @@
 -- The 5 nearest refuges of the main set (silver.refuge_points.in_main: Community Clubs with their temporary offices, and
 -- the partial Active Ageing Centre list) to a confirmed HDB block, in any planning area, by the straight line
 -- sqrt(dx^2 + dy^2) in SVY21 metres from the stored x_svy21 / y_svy21 (coolcheck.access); ties by refuge_id. The block is
--- looked up ignoring case, spaces, punctuation and a leading Blk or Block; an unknown or unconfirmed block gives no rows.
+-- looked up ignoring case, spaces, punctuation and a leading Blk or Block, and on both sides the street's long forms are
+-- read as HDB's abbreviations (the map in words, = coolcheck.agent_tools.STREET_WORDS), so Jalan Kukoh finds JLN KUKOH;
+-- an unknown or unconfirmed block gives no rows.
 -- Placeholders, filled by coolcheck.agent_tools.function_sql: function, block_access, refuge_points, and temporary
 -- (empty, or TEMPORARY in the tests). Python twin: coolcheck.agent_tools.find_refuges.
 CREATE OR REPLACE ${temporary}FUNCTION ${function}(
   blk_no STRING COMMENT 'HDB block number, e.g. 52 or 101A; case, spaces and a leading Blk or Block are ignored.',
-  street STRING COMMENT 'Street name as HDB writes it, with its abbreviations (AVE, ST, RD, DR, CRES, CTRL, CL, NTH, STH, BT, JLN, LOR, UPP), e.g. ANG MO KIO AVE 10; case, extra spaces and punctuation are ignored.'
+  street STRING COMMENT 'Street name as people write it or as HDB abbreviates it, e.g. Jalan Kukoh or JLN KUKOH, Ang Mo Kio Avenue 10 or ANG MO KIO AVE 10; case, extra spaces and punctuation are ignored, and long forms such as Street, Road, Avenue, Drive, Jalan, Lorong, Bukit, Upper, North and Central are read as HDB''s abbreviations.'
 )
 RETURNS TABLE (
   refuge_rank INT COMMENT '1 = the nearest refuge.',
@@ -24,16 +26,27 @@ RETURNS TABLE (
 )
 COMMENT 'The 5 nearest cooling refuges to an HDB block: Community Clubs (temporary offices flagged) and Active Ageing Centres (a partial list, 93 of about 223), in any planning area, with the straight-line distance in metres from the stored SVY21 coordinates, not a walking distance. No rows if the block is not found or its coordinate is not confirmed. No personal data.'
 RETURN
-WITH args AS (
-  SELECT regexp_replace(regexp_replace(upper(blk_no), '^\\s*(BLK|BLOCK)[.\\s]*', ''), '[^A-Z0-9]', '') AS bk,
-         trim(regexp_replace(regexp_replace(upper(street), '[^A-Z0-9\\s]', ''), '\\s+', ' ')) AS sk
+WITH words AS (
+  SELECT map('AVENUE', 'AVE', 'BUKIT', 'BT', 'CENTRAL', 'CTRL', 'CLOSE', 'CL', 'COMMONWEALTH', 'CWEALTH',
+             'CRESCENT', 'CRES', 'DRIVE', 'DR', 'GARDEN', 'GDN', 'GARDENS', 'GDNS', 'HEIGHTS', 'HTS', 'JALAN', 'JLN',
+             'KAMPONG', 'KG', 'KAMPUNG', 'KG', 'LORONG', 'LOR', 'MARKET', 'MKT', 'NORTH', 'NTH', 'PARK', 'PK',
+             'PLACE', 'PL', 'ROAD', 'RD', 'SAINT', 'ST', 'SOUTH', 'STH', 'SQUARE', 'SQ', 'STREET', 'ST',
+             'TANJONG', 'TG', 'TANJUNG', 'TG', 'TERRACE', 'TER', 'UPPER', 'UPP') AS m
+),
+args AS (
+  SELECT d.m,
+         regexp_replace(regexp_replace(upper(blk_no), '^\\s*(BLK|BLOCK)[.\\s]*', ''), '[^A-Z0-9]', '') AS bk,
+         array_join(transform(split(trim(regexp_replace(regexp_replace(upper(street), '[^A-Z0-9\\s]', ''), '\\s+', ' ')), ' '),
+                              w -> coalesce(try_element_at(d.m, w), w)), ' ') AS sk
+  FROM words d
 ),
 blk AS (
   SELECT b.blk_no, b.street, b.planning_area, b.x_svy21, b.y_svy21
   FROM ${block_access} b CROSS JOIN args a
   WHERE b.confirmed
     AND regexp_replace(regexp_replace(upper(b.blk_no), '^\\s*(BLK|BLOCK)[.\\s]*', ''), '[^A-Z0-9]', '') = a.bk
-    AND trim(regexp_replace(regexp_replace(upper(b.street), '[^A-Z0-9\\s]', ''), '\\s+', ' ')) = a.sk
+    AND array_join(transform(split(trim(regexp_replace(regexp_replace(upper(b.street), '[^A-Z0-9\\s]', ''), '\\s+', ' ')), ' '),
+                             w -> coalesce(try_element_at(a.m, w), w)), ' ') = a.sk
 ),
 ranked AS (
   SELECT k.blk_no, k.street, k.planning_area, r.name AS refuge_name, r.layer, r.status, r.address, r.postal_code,
