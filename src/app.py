@@ -110,7 +110,7 @@ def refuge_tools():
         st.caption("A confirmed HDB block, e.g. 208A and WOODLEIGH LINK. Distances are straight lines, not walking distances.")
         c1, c2 = st.columns([1, 3])
         blk = c1.text_input("Block", key="blk")
-        street = c2.text_input("Street (HDB abbreviations: AVE, ST, RD, LOR, JLN, BT, ...)", key="street")
+        street = c2.text_input("Street, as people write it (e.g. Jalan Kukoh or JLN KUKOH)", key="street")
         b1, b2 = st.columns(2)
         tools = P.Tools(warehouse(), CATALOG)
         if b1.button("Find the 5 nearest refuges", disabled=not (blk and street)):
