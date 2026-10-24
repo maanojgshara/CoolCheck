@@ -41,8 +41,8 @@ class Script:
         return r
 
 
-def run(script, request="Only 8 volunteers tomorrow", rows=ROWS_24, **kw):
-    wh = FakeWarehouse(rows)
+def run(script, request="Only 8 volunteers tomorrow", rows=ROWS_24, wh=None, **kw):
+    wh = wh or FakeWarehouse(rows)
     d = A.draft_plan(request, target_date=D24, default_capacity=800, calls_per_volunteer=25, runner=wh, chat=script,
                      specs=SPECS, forecast=FORECAST, trace=False, **kw)
     return d, wh
@@ -386,3 +386,63 @@ def test_3a_a_no_high_tier_claim_must_be_true_and_name_the_region(rows, region, 
     assert (d.source == "agent") is agent, d.fallback_reason
     if not agent and rows is ROWS_NE:  # the template then writes the scoped sentence itself
         assert d.summary_text.startswith("No rated area in the North-East region is in the High tier.")
+
+
+NOT_FOUND = "was not found among CoolCheck's confirmed HDB blocks"
+
+
+def test_3b_a_lookup_that_found_nothing_gets_a_note():
+    # B01, W01: the model's "not found" was replaced by the template; now a note says it whatever the summary says
+    s = Script(tool_msg(("find_refuges", {"blk_no": "3", "street": "Jalan Kukoh"}),
+                        ("what_if_add_refuge", {"blk_no": "Blk 333C", "street": "Yishun Street 31"}),
+                        ("find_refuges", {"blk_no": "to be determined", "street": "by get_priority_areas"})),
+               text_msg("I could not find those blocks."))
+    d, _ = run(s, request="Refuges near Blk 3 Jalan Kukoh, and a refuge at Blk 333C Yishun Street 31?",
+               wh=FakeWarehouse(refuges=[]))
+    assert (f"Blk 3 Jalan Kukoh {NOT_FOUND}, so no refuges are listed for it; check the block number and street."
+            in d.notices)
+    assert (f"Blk 333C Yishun Street 31 {NOT_FOUND}, so the what-if for a refuge there did not run; check the block "
+            f"number and street." in d.notices)
+    assert d.draft_text.count(NOT_FOUND) == 2  # B03's placeholder is not a block number: no note
+    d, _ = run(Script(tool_msg(("find_refuges", {"blk_no": "208A", "street": "WOODLEIGH LINK"})), text_msg("Bidadari CC.")))
+    assert NOT_FOUND not in d.draft_text  # rows came back
+
+
+def test_3b_a_region_that_is_not_one_of_the_five_gets_a_note():
+    note = "South is not one of the five regions; this plan covers the whole island."
+    r01 = "Plan tomorrow's calls for the South region, 400 calls."
+    s = Script(tool_msg(("get_priority_areas", {"region": "SOUTH", "call_capacity": 400})),
+               tool_msg(("get_priority_areas", {"region": "ALL", "call_capacity": 400})), text_msg("Toa Payoh is High."))
+    d, _ = run(s, request=r01)  # D's run: SOUTH, then ALL
+    assert d.notices.count(note) == 1 and d.notices[0] == note
+    d, _ = run(Script(tool_msg(("get_priority_areas", {"region": "ALL", "call_capacity": 400})),
+                      text_msg("Toa Payoh is High.")), request=r01)  # the 24 Oct spot-check: ALL straight away
+    assert note in d.notices
+    s = Script(tool_msg(("get_priority_areas", {"region": "south-east"})), tool_msg(("get_priority_areas", {"region": "EAST"})),
+               text_msg("Toa Payoh is High."))
+    d, _ = run(s, request="Calls in the south-east, please")
+    assert "South-East is not one of the five regions; this plan covers the East region." in d.notices
+    d, _ = run(Script(tool_msg(("get_priority_areas", {})), text_msg("Toa Payoh is High.")),
+               request="Refuges near Blk 12 Bedok South Avenue 2?")
+    assert not any("regions" in n for n in d.notices)  # a street, not a region
+
+
+def test_3b_values_not_in_the_request_get_a_note():
+    d, _ = run(Script(tool_msg(("get_priority_areas", L_ARGS)), text_msg("Toa Payoh is High.")),
+               request="Esok hanya ada 8 sukarelawan di kawasan timur.")
+    assert "Not in the request, so not used: the model's 0 calls per volunteer and a capacity of 0 calls." in d.notices
+    d, _ = run(Script(tool_msg(("get_priority_areas", {"volunteers": 8})), text_msg("Toa Payoh is High.")))
+    assert not any(n.startswith("Not in the request") for n in d.notices)
+
+
+def test_3b_calls_left_over_get_a_note_unless_the_summary_says_it():
+    rows = copy.deepcopy(ROWS_24)
+    for r in rows:  # C03: 100,000 calls, more than the High and Medium blocks hold
+        r["calls_left"] = 40309
+    note = "40309 of the 100000 calls are left over: every High- and Medium-tier block in this plan has its calls."
+    req, args = "We can make 100,000 calls tomorrow.", {"call_capacity": 100000}
+    d, _ = run(Script(tool_msg(("get_priority_areas", args)), text_msg("Toa Payoh is High.")), request=req, rows=rows)
+    assert note in d.notices and note in d.draft_text
+    d, _ = run(Script(tool_msg(("get_priority_areas", args)), text_msg("Toa Payoh is High. 40,309 calls are left over.")),
+               request=req, rows=rows)
+    assert note not in d.notices

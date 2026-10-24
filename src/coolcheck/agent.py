@@ -263,6 +263,30 @@ def _region_arg(args, form_region):
     return REGION_KEYS[key]
 
 
+# --- notes on the draft, written by code (a prompt line got D01 right 3 times in 4) ------------------------------------
+
+NOT_A_REGION = re.compile(r"\b(south(?:[- ]?(?:east|west))?|north[- ]?west)\s+regions?\b", re.I)
+ARG_WORDS = {"volunteers": "{} volunteers", "calls_per_volunteer": "{} calls per volunteer",
+             "call_capacity": "a capacity of {} calls"}
+
+
+def _region_notes(request, sent, region):
+    """'South is not one of the five regions; this plan covers the whole island.' for a region the model sent that is not
+    one of the five, or one the request names ("the South region"; R01 on 24 Oct: the model sent ALL and said nothing)."""
+    found = {}
+    for raw in [m.group(1) for m in NOT_A_REGION.finditer(request or "")] + list(sent):
+        name = P.area_name(re.sub(r"[\s-]*regions?\s*$", "", str(raw).strip(), flags=re.I))
+        found.setdefault(re.sub(r"[^A-Z]", "", name.upper()), name)
+    where = f"the {P.region_name(region)} region" if region else "the whole island"
+    return [f"{n} is not one of the five regions; this plan covers {where}." for n in found.values() if n]
+
+
+def _ignored_notes(ignored):
+    """The model's values that are not in the request, so were not used (checks.ignored_arguments)."""
+    items = list(dict.fromkeys(ARG_WORDS[k].format(v) for d in ignored for k, v in d.items()))
+    return [f"Not in the request, so not used: the model's {P._join(items)}."] if items else []
+
+
 def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, region=None, catalog="coolcheck",
                runner=None, workspace_client=None, warehouse_id=None, chat=None, specs=None, model=MODEL, forecast=None,
                max_rounds=4, max_tool_calls=6, timeout_s=90.0, trace=True):
@@ -281,7 +305,7 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
                 trace) as root:
         tools = P.Tools(runner, catalog, trace)
         state = {"gpa": None, "cap": None, "basis": None, "region": form_region, "form_region": form_region,
-                 "stated": request_numbers(masked), "ignored": []}
+                 "stated": request_numbers(masked), "ignored": [], "unknown_regions": []}
         summary, reason, checks, rounds = None, None, {}, 0
         try:
             specs = specs or tool_specs(ws, catalog)
@@ -337,11 +361,12 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
                       "run in code with the form's values (the model did not call it)",
                       ignored_arguments=state["ignored"], rounds=rounds, masked=n_masked,
                       elapsed_s=round(time.monotonic() - t0, 1))
+        notes = _region_notes(masked, state["unknown_regions"], state["region"]) + _ignored_notes(state["ignored"])
         d = P.Draft(target_date=target_date, region=state["region"], call_capacity=state["cap"], capacity_basis=state["basis"],
                     rows=rows, tool_calls=list(tools.calls), forecast=forecast or {},
                     summary_text=summary or P.template_summary(rows, state["cap"], state["region"]),
                     source=P.AGENT if summary else P.TEMPLATE, fallback_reason=reason, request_text=masked or None,
-                    llm_model=model if summary else None, checks=checks)
+                    llm_model=model if summary else None, checks=checks, notes=notes)
         root.set_outputs({"draft_text": d.draft_text, "source": d.source, "fallback_reason": reason, "checks": d.checks})
         d.trace_id = P.trace_id_of(root)
     return d
@@ -363,7 +388,11 @@ def _run_tool(c, tools, target_date, default_capacity, calls_per_volunteer, stat
             if unknown:
                 return {"error": f"unknown arguments: {sorted(unknown)}"}
             vals = {k: _int_arg(args, k, state["stated"]) for k in ("volunteers", "calls_per_volunteer", "call_capacity")}
-            region = _region_arg(args, state["form_region"])
+            try:
+                region = _region_arg(args, state["form_region"])
+            except ValueError:  # back to the model as an error; the draft gets a note
+                state["unknown_regions"].append(args["region"])
+                raise
             ignored = {k: args[k] for k, v in vals.items() if v is None and args.get(k) not in (None, "")}
             if ignored:  # numbers not in the request: the form's values are used, and the trace shows what was dropped
                 state["ignored"].append(ignored)

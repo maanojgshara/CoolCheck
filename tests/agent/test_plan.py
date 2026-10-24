@@ -105,6 +105,26 @@ def test_template_numbers_come_from_the_tool_result(rows, capacity):
     assert _numbers(s) <= _source_numbers(rows, capacity, len(rows), 3)  # 3: the blocks counted from the rows
 
 
+def test_leftover_notice_unless_the_summary_gives_the_number():
+    rows = [dict(r, calls_left=40309) for r in ROWS_24]
+    assert P.leftover_notice(rows, 100000, "Toa Payoh is High.") == \
+        "40309 of the 100000 calls are left over: every High- and Medium-tier block in this plan has its calls."
+    assert P.leftover_notice(rows, 100000, P.template_summary(rows, 100000)) is None  # the template says "40309 left"
+    assert P.leftover_notice([dict(r, calls_left=800) for r in NO_CALLS], 800, "") == \
+        "All 800 calls are left over: no High- or Medium-tier block in this plan takes calls."
+    assert P.leftover_notice(ROWS_24, 800, "") is None and P.leftover_notice(NO_CALLS, 0, "") is None
+
+
+def test_lookup_notices_only_for_a_block_number_with_no_rows():
+    calls = [P.ToolCall("find_refuges", {"blk_no": "blk 5a", "street": "LOR 7 TOA PAYOH"}),
+             P.ToolCall("find_refuges", {"blk_no": "5A", "street": "LOR 7 TOA PAYOH"}),            # the same note once
+             P.ToolCall("find_refuges", {"blk_no": "170", "street": "X"}, rows=[{"refuge_rank": 1}]),
+             P.ToolCall("what_if_add_refuge", {"blk_no": "9", "street": "Y"}, error="RuntimeError: x"),
+             P.ToolCall("get_priority_areas", {"target_date": "2026-10-24", "call_capacity": 800, "region": None})]
+    assert P.lookup_notices(calls) == ["Blk 5A LOR 7 TOA PAYOH was not found among CoolCheck's confirmed HDB blocks, "
+                                       "so no refuges are listed for it; check the block number and street."]
+
+
 def test_template_summary_24_oct():
     s = P.template_summary(ROWS_24, 800)
     assert s == ("High tier: Toa Payoh. Medium tier: Bishan. 1 area is Low: routine, no calls. Of 800 calls, 800 go to "

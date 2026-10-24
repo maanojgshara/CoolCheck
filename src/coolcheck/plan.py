@@ -346,6 +346,35 @@ def notices(rows, target_date, forecast=None, region=None):
     return out
 
 
+BLOCK_NO = re.compile(r"\s*(?:blk|block)?[.\s]*(\d+[a-z]?)\s*", re.I)
+
+
+def lookup_notices(tool_calls):
+    """A block lookup that found no confirmed HDB block: find_refuges or what_if_add_refuge with no rows and no error."""
+    out = []
+    for c in tool_calls:
+        m = BLOCK_NO.fullmatch(str(c.arguments.get("blk_no") or ""))
+        if c.name not in ("find_refuges", "what_if_add_refuge") or c.error or c.rows or not m:
+            continue  # not a block number, nothing to correct (24 Oct, B03: "to be determined by get_priority_areas")
+        what = "no refuges are listed for it" if c.name == "find_refuges" else "the what-if for a refuge there did not run"
+        n = (f"Blk {m.group(1).upper()} {str(c.arguments.get('street') or '').strip()} was not found among CoolCheck's "
+             f"confirmed HDB blocks, so {what}; check the block number and street.")
+        if n not in out:
+            out.append(n)
+    return out
+
+
+def leftover_notice(rows, capacity, summary=""):
+    """The calls left over once every High- and Medium-tier block has its calls; None when there are none or the
+    summary already gives the number (the template does)."""
+    left = min((r["calls_left"] for r in rows), default=0)
+    if not capacity or left <= 0 or left in {int(n.replace(",", "")) for n in re.findall(r"\d[\d,]*", summary or "")}:
+        return None
+    if any(r["calls_allocated"] > 0 for r in rows):
+        return f"{left} of the {capacity} calls are left over: every High- and Medium-tier block in this plan has its calls."
+    return f"All {capacity} calls are left over: no High- or Medium-tier block in this plan takes calls."
+
+
 def _day(d):
     d = d if isinstance(d, dt.date) else dt.date.fromisoformat(str(d))
     return f"{d.day} {d:%b}"
@@ -425,10 +454,14 @@ class Draft:
     trace_id: str = None
     checks: dict = field(default_factory=dict)
     approval_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    notes: list = field(default_factory=list)  # the agent loop's: a region not among the five, values not used
 
     @property
     def notices(self):
-        return notices(self.rows, self.target_date, self.forecast, self.region)
+        """Every note on the draft, all written by code: the loop's, the areas', the block lookups' and the calls left."""
+        left = leftover_notice(self.rows, self.call_capacity, self.summary_text)
+        return (list(self.notes) + notices(self.rows, self.target_date, self.forecast, self.region)
+                + lookup_notices(self.tool_calls) + ([left] if left else []))
 
     @property
     def calls_allocated(self):

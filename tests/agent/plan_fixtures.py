@@ -61,8 +61,11 @@ FORECAST = {"run_id": "647995027381846", "n_runs": 1, "scored_at": "2026-10-23T1
 class FakeWarehouse:
     """Answers the plan's statements from fixtures and records every (sql, params)."""
 
-    def __init__(self, rows=ROWS_24, fail=None):
+    def __init__(self, rows=ROWS_24, fail=None, refuges=None, what_if=()):
         self.rows, self.fail, self.statements, self.approvals = rows, fail, [], {}
+        self.refuges = ([{"refuge_rank": 2, "refuge_name": "B"}, {"refuge_rank": 1, "refuge_name": "A"}]
+                        if refuges is None else refuges)
+        self.what_if = list(what_if)
 
     def query(self, sql, params=None, timeout_s=None):
         self.statements.append((sql, params))
@@ -71,7 +74,9 @@ class FakeWarehouse:
         if ".get_priority_areas(" in sql:
             return copy.deepcopy(self.rows)
         if ".find_refuges(" in sql:
-            return [{"refuge_rank": 2, "refuge_name": "B"}, {"refuge_rank": 1, "refuge_name": "A"}]
+            return copy.deepcopy(self.refuges)
+        if ".what_if_add_refuge(" in sql:
+            return copy.deepcopy(self.what_if)
         if sql.startswith("MERGE INTO"):
             aid = params["approval_id"][0]
             self.approvals.setdefault(aid, params)
