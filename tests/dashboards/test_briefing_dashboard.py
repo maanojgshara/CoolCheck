@@ -129,13 +129,41 @@ def test_colours_are_the_checked_set_and_no_page_says_tomorrow():
     mappings = lambda name: {m["value"]: m["color"] for m in by[name]["spec"]["encodings"]["color"]["scale"]["mappings"]}  # noqa: E731
     assert mappings("area-map") == {**B.TIER_COLOURS, "Not rated": B.NEUTRAL, "No forecast": B.NEUTRAL}
     assert P.categorical_ok([*B.TIER_COLOURS.values(), B.NEUTRAL])
-    assert mappings("points-map") == B.POINT_COLOURS
+    assert mappings("points-map") == {BB.POINT_LABELS[k]: c for k, c in B.POINT_COLOURS.items()}
+    assert all(len(label) <= 20 for label in BB.POINT_LABELS.values())  # short legend labels
     live = {m["value"]: m["color"] for p in LIVE["pages"] for i in p["layout"]
             for m in i["widget"].get("spec", {}).get("encodings", {}).get("color", {}).get("scale", {}).get("mappings", [])}
     for name in ("trend-chart", "observed-trend-chart", "area-observed-chart"):
         assert mappings(name) == BB.HEAT_COLOURS == {k: live[k] for k in ("Low", "Moderate", "High")}, name
     assert not any(w.get("spec", {}).get("widgetType") == "choropleth-map" for _, w, _ in widgets())
     assert "tomorrow" not in json.dumps(DASH).lower()
+
+
+def test_legends_in_a_logical_order():
+    want = {"area-map": ["High", "Medium", "Low", "Not rated", "No forecast"],
+            "points-map": ["Block within 400 m", "Block beyond 400 m", "Refuge"],
+            **{n: ["Low", "Moderate", "High"] for n in ("trend-chart", "observed-trend-chart", "area-observed-chart")}}
+    scales = {w["name"]: w["spec"]["encodings"]["color"]["scale"] for _, w, _ in widgets()
+              if "color" in w.get("spec", {}).get("encodings", {})}
+    assert set(scales) == set(want)
+    for name, order in want.items():
+        assert [m["value"] for m in scales[name]["mappings"]] == order, name
+        assert scales[name]["sort"] == {"by": "custom-order", "orderedValues": order}, name
+
+
+def test_more_areas_table_is_tall_enough_for_13_rows():
+    """Height 8 showed 12 of the 13 rows on 24 Oct 2026; the table is now 10 rows of the grid tall."""
+    pos = next(p for _, w, p in widgets() if w["name"] == "more-areas")
+    assert pos["height"] >= 10
+
+
+def test_within_tier_order_is_said_in_words_never_as_a_number():
+    by = {w["name"]: w for _, w, _ in widgets()}
+    title = by["top-areas"]["spec"]["frame"]["title"]
+    about = "".join(by["about-method"]["multilineTextboxSpec"]["lines"])
+    for text_ in (title, about):
+        assert "the chance of High heat times vulnerability" in text_ and "never shown" in text_
+    assert "probability" not in json.dumps(DASH["pages"]).lower()
 
 
 def test_nothing_reads_as_unfinished():
@@ -240,6 +268,34 @@ def test_every_dataset_runs_unchanged_with_the_expected_rows(views):
 def test_default_area_exists(views):
     areas = {r["planning_area"] for r in views.sql(sql_of(next(d for d in DASH["datasets"] if d["name"] == "ds_area_facts"))).collect()}
     assert BB.DEFAULT_AREA in areas and len(areas) == 32
+    assert BB.DEFAULT_AREA in {r["planning_area"] for r in rows_of(views, "ds_area_observed")}
+
+
+def test_area_names_are_title_case_on_the_blocks_and_observed_pages(views):
+    for name in ("ds_area_facts", "ds_blocks", "ds_points", "ds_area_observed"):
+        areas = {r["planning_area"] for r in rows_of(views, name)}
+        assert areas and all(a == a.title() for a in areas), name
+    assert "Downtown Core" in {r["planning_area"] for r in rows_of(views, "ds_area_facts")}
+
+
+def test_counts_and_distances_have_thousands_separators(views):
+    shown = {"ds_top_areas": ["rental_1_2_room"], "ds_area_map": ["rental_1_2_room"],
+             "ds_area_facts": ["aged_75_plus", "rental_1_2_room", "hdb_dwelling_units_confirmed"],
+             "ds_blocks": ["rental_1_2_room", "total_dwelling_units", "refuge_m", "park_m"]}
+    over_1000 = {("ds_top_areas", "rental_1_2_room"), ("ds_area_facts", "aged_75_plus"),
+                 ("ds_area_facts", "hdb_dwelling_units_confirmed"), ("ds_blocks", "refuge_m")}  # some value is 1,000 or more
+    for name, cols in shown.items():
+        rows = rows_of(views, name)
+        for col in cols:
+            values = [r[col] for r in rows if r[col] is not None]
+            assert values and all(re.fullmatch(r"\d{1,3}(,\d{3})*", v) for v in values), (name, col)
+            if (name, col) in over_1000:
+                assert any("," in v for v in values), (name, col)
+
+
+def test_weights_status_drops_the_guide_reference(views):
+    status = {r["review_status"] for r in rows_of(views, "ds_weights")}
+    assert status == {"judgement, not yet reviewed by a practitioner"}
 
 
 def test_headline_lines_in_order(views):
@@ -288,7 +344,9 @@ def test_area_map_one_dot_per_area_inside_singapore_coloured_by_tier(views):
     assert len({r["area"] for r in rows}) == len(rows) == 55
     assert all(1.15 < r["lat"] < 1.48 and 103.6 < r["lon"] < 104.1 for r in rows)
     assert {r["tier"] for r in rows} <= set(BB.TIER_MAP_COLOURS)
-    assert all(r["marker_size"] == max(r["rental_1_2_room"], 1) for r in rows)
+    order = list(BB.TIER_MAP_COLOURS)
+    assert [order.index(r["tier"]) for r in rows] == sorted(order.index(r["tier"]) for r in rows)  # legend order in the data too
+    assert all(r["marker_size"] == max(int(r["rental_1_2_room"].replace(",", "")), 1) for r in rows)
 
 
 def test_the_two_75_plus_reasons_read_as_one_phrase(views):
@@ -296,7 +354,7 @@ def test_the_two_75_plus_reasons_read_as_one_phrase(views):
     raw = {r["planning_area"]: r["reason"] for r in views.sql("SELECT planning_area, reason FROM area_vulnerability").collect()}
     both = {k for k, v in raw.items() if v in (f"{a}; {b}", f"{b}; {a}")}
     assert {"SERANGOON", "CLEMENTI"} <= both  # one order each in the fixture
-    facts = {r["planning_area"]: r["reason"] for r in rows_of(views, "ds_area_facts")}
+    facts = {r["planning_area"].upper(): r["reason"] for r in rows_of(views, "ds_area_facts")}
     shown = [r["reason"] for name in ("ds_top_areas", "ds_more_areas") for r in rows_of(views, name)] + list(facts.values())
     assert all(facts[k] == BB.MERGED_75 for k in both)
     assert not any(a in s and b in s for s in shown if s)
@@ -307,7 +365,7 @@ def test_areas_held_neutral_show_too_few_flats_not_a_share(views):
     small = {r["planning_area"] for r in views.sql("SELECT planning_area FROM area_vulnerability WHERE small_hdb").collect()}
     assert small == {"TANGLIN", "CHANGI", "DOWNTOWN CORE"}
     for r in rows_of(views, "ds_area_facts"):
-        if r["planning_area"] in small:
+        if r["planning_area"].upper() in small:
             assert r["refuge_beyond"] == r["park_beyond"] == "too few flats to measure", r
         else:
             assert re.fullmatch(r"\d{1,3}%", r["refuge_beyond"]) and re.fullmatch(r"\d{1,3}%", r["park_beyond"]), r
@@ -321,5 +379,5 @@ def test_trend_counts_each_station_once_per_day_and_category(views):
 def test_area_observed_is_one_row_per_area_and_day_latest_first(views):
     got = [(r["planning_area"], str(r["sgt_date"]), r["station_name"], r["max_wbgt"], r["heat_category"])
            for r in rows_of(views, "ds_area_observed")]
-    assert got == [("BEDOK", "2026-10-02", "One", 28.0, "Low"), ("BEDOK", "2026-10-01", "One", 30.5, "Moderate"),
-                   ("TAMPINES", "2026-10-01", "One", 30.5, "Moderate")]  # station S2 served no area that day
+    assert got == [("Bedok", "2026-10-02", "One", 28.0, "Low"), ("Bedok", "2026-10-01", "One", 30.5, "Moderate"),
+                   ("Tampines", "2026-10-01", "One", 30.5, "Moderate")]  # station S2 served no area that day

@@ -29,10 +29,15 @@ sys.path.insert(0, str(REPO / "src"))
 from coolcheck import briefing as B  # noqa: E402
 
 OUT = REPO / "src/dashboards/briefing.lvdash.json"
-DEFAULT_AREA = "BEDOK"  # the area the Blocks page opens on (rank 1 for V on 23 Oct 2026)
-# NEA heat-stress categories on the 30-day trend: the live page's colours (src/dashboards/live_heat_stress.lvdash.json)
+DEFAULT_AREA = "Bedok"  # the area the Blocks and Observed heat pages open on (rank 1 for V on 23 Oct 2026)
+# Colour scales in legend order. NEA heat-stress categories (Low to High): the live page's colours
+# (src/dashboards/live_heat_stress.lvdash.json); tiers High to Low, then the grey ones; block points near to far, then refuges.
 HEAT_COLOURS = {"Low": "#2f7fc1", "Moderate": "#fab219", "High": "#d03b3b"}
 TIER_MAP_COLOURS = {**B.TIER_COLOURS, "Not rated": B.NEUTRAL, "No forecast": B.NEUTRAL}
+POINT_LABELS = {"Block within 400 m of a refuge": "Block within 400 m", "Block beyond 400 m of a refuge": "Block beyond 400 m",
+                "Refuge": "Refuge"}  # short legend labels on the Blocks map
+POINT_MAP_COLOURS = {POINT_LABELS[k]: c for k, c in B.POINT_COLOURS.items()}
+WITHIN_TIER = "the chance of High heat times vulnerability"  # tier_rank's order, described in words; the number is never shown
 TOP = 10
 APP_URL = "https://coolcheck-7474646896364032.aws.databricksapps.com"  # window B's approval App (dev), for the what-if
 _PHRASES = {r["component"]: r["reason_phrase"] for r in csv.DictReader(open(REPO / "reference/score_weights.csv", encoding="utf-8"))}
@@ -67,7 +72,7 @@ ordered AS (
     row_number() OVER (ORDER BY {TIER_ORDER}, r.tier_rank) AS briefing_order
   FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area
 )"""
-AREA_COLUMNS = "briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions"
+AREA_COLUMNS = "briefing_order, area, tier, tier_sentence, reason, format_number(rental_1_2_room, 0) AS rental_1_2_room, actions"
 NAMES = "CASE WHEN size(nr) = 1 THEN nr[0] ELSE concat(array_join(slice(nr, 1, size(nr) - 1), ', '), ' and ', element_at(nr, -1)) END"
 LONG_DATE = "date_format(target_date, 'EEEE, d MMMM yyyy')"
 NOTICES = [  # copied exactly from docs/attribution.md (register notices 1, 3, 7, 9, 12, 14, 16, 19, 22, 23)
@@ -120,9 +125,11 @@ ORDER BY k
 """),
     "ds_area_map": ("Planning areas by tier", f"""
 {ORDERED}
-SELECT o.area, o.tier, o.tier_sentence, o.rental_1_2_room, greatest(o.rental_1_2_room, 1) AS marker_size,
+SELECT o.area, o.tier, o.tier_sentence, format_number(o.rental_1_2_room, 0) AS rental_1_2_room,
+  greatest(o.rental_1_2_room, 1) AS marker_size,
   st_y(st_centroid(m.geometry)) AS lat, st_x(st_centroid(m.geometry)) AS lon
 FROM ordered o JOIN planning_area_map m ON m.planning_area = o.planning_area
+ORDER BY o.briefing_order
 """),
     "ds_top_areas": (f"Top {TOP} areas", f"""
 {ORDERED}
@@ -143,39 +150,45 @@ GROUP BY sgt_date, heat_category, heat_order
 ORDER BY sgt_date, heat_order
 """),
     "ds_area_observed": ("Observed heat per planning area", """
-SELECT planning_area, sgt_date, station_name, round(max_wbgt, 1) AS max_wbgt, heat_category, heat_order
+SELECT initcap(planning_area) AS planning_area, sgt_date, station_name, round(max_wbgt, 1) AS max_wbgt, heat_category,
+  heat_order
 FROM observed_heat_daily
 WHERE planning_area IS NOT NULL
 ORDER BY planning_area, sgt_date DESC
 """),
     "ds_area_facts": ("Area facts", f"""
-SELECT planning_area, initcap(third) AS third, {reason_sql('reason')} AS reason, aged_75_plus, rental_1_2_room,
-  hdb_dwelling_units_confirmed, {share_sql('refuge_beyond_400m')} AS refuge_beyond,
+SELECT initcap(planning_area) AS planning_area, initcap(third) AS third, {reason_sql('reason')} AS reason,
+  format_number(aged_75_plus, 0) AS aged_75_plus, format_number(rental_1_2_room, 0) AS rental_1_2_room,
+  format_number(hdb_dwelling_units_confirmed, 0) AS hdb_dwelling_units_confirmed, {share_sql('refuge_beyond_400m')} AS refuge_beyond,
   {share_sql('park_beyond_400m')} AS park_beyond, coalesce(neutral_components, '') AS held_neutral
 FROM area_vulnerability
 """),
     "ds_blocks": ("Blocks in priority order", """
-SELECT planning_area, priority, concat(blk_no, ' ', street) AS block, rental_1_2_room, total_dwelling_units,
-  refuge_main_name, CAST(round(refuge_main_m) AS INT) AS refuge_m,
+SELECT initcap(planning_area) AS planning_area, priority, concat(blk_no, ' ', street) AS block,
+  format_number(rental_1_2_room, 0) AS rental_1_2_room, format_number(total_dwelling_units, 0) AS total_dwelling_units,
+  refuge_main_name, format_number(round(refuge_main_m), 0) AS refuge_m,
   CASE WHEN refuge_within_400m THEN 'yes' ELSE 'no' END AS refuge_400m,
-  park_main_name, CAST(round(park_main_m) AS INT) AS park_m,
+  park_main_name, format_number(round(park_main_m), 0) AS park_m,
   CASE WHEN park_within_400m THEN 'yes' ELSE 'no' END AS park_400m,
   CASE WHEN confirmed THEN '' ELSE 'coordinate from a tenant record' END AS note
 FROM block_vulnerability
 ORDER BY planning_area, priority
 """),
     "ds_points": ("Blocks and refuges", """
-SELECT planning_area, lat, lon,
-  CASE WHEN refuge_within_400m THEN 'Block within 400 m of a refuge' ELSE 'Block beyond 400 m of a refuge' END AS point_type,
+SELECT initcap(planning_area) AS planning_area, lat, lon,
+  CASE WHEN refuge_within_400m THEN 'Block within 400 m' ELSE 'Block beyond 400 m' END AS point_type,
+  CASE WHEN refuge_within_400m THEN 1 ELSE 2 END AS point_order,
   concat(blk_no, ' ', street) AS label, greatest(rental_1_2_room, 1) AS marker_size,
-  concat('priority ', CAST(priority AS STRING), '; 1-2 room rental flats ', CAST(rental_1_2_room AS STRING)) AS detail
+  concat('priority ', CAST(priority AS STRING), '; 1-2 room rental flats ', format_number(rental_1_2_room, 0)) AS detail
 FROM block_vulnerability
 UNION ALL
-SELECT planning_area, lat, lon, 'Refuge' AS point_type, name AS label, 30 AS marker_size, refuge_type AS detail
+SELECT initcap(planning_area), lat, lon, 'Refuge', 3, name, 30, refuge_type
 FROM refuge_layer
+ORDER BY point_order
 """),
     "ds_weights": ("Weights", """
-SELECT component, sub_index, weight, direction, small_area_rule, reason_phrase, review_status
+SELECT component, sub_index, weight, direction, small_area_rule, reason_phrase,
+  replace(review_status, ' (Guide decision 9)', '') AS review_status
 FROM score_weights
 ORDER BY sort_order
 """),
@@ -209,6 +222,12 @@ def table(name, ds, columns, title):
                      "frame": {"showTitle": True, "title": title}}}
 
 
+def colour_scale(colours):
+    """Fixed colours per category, with the legend in the dict's order (the datasets are ordered the same way too)."""
+    return {"type": "categorical", "mappings": [{"value": v, "color": c} for v, c in colours.items()],
+            "sort": {"by": "custom-order", "orderedValues": list(colours)}}
+
+
 def point_map(name, ds, colour_field, colour_display, colours, size_display, extra, title):
     """Symbol map over lat and lon, coloured by a category with fixed colours and sized by marker_size."""
     return {"name": name,
@@ -217,8 +236,7 @@ def point_map(name, ds, colour_field, colour_display, colours, size_display, ext
             "spec": {"version": 2, "widgetType": "symbol-map",
                      "encodings": {"coordinates": {"latitude": {"fieldName": "lat"}, "longitude": {"fieldName": "lon"}},
                                    "color": {"fieldName": colour_field, "displayName": colour_display,
-                                             "scale": {"type": "categorical",
-                                                       "mappings": [{"value": v, "color": c} for v, c in colours.items()]}},
+                                             "scale": colour_scale(colours)},
                                    "size": {"fieldName": "marker_size", "displayName": size_display,
                                             "scale": {"type": "quantitative"}},
                                    "extra": [{"fieldName": c, "displayName": d} for c, d in extra]},
@@ -237,8 +255,7 @@ def trend_chart(name):
                                    "y": {"fieldName": "sum(stations)", "displayName": "WBGT stations",
                                          "scale": {"type": "quantitative"}},
                                    "color": {"fieldName": "heat_category", "displayName": "Observed heat (NEA)",
-                                             "scale": {"type": "categorical",
-                                                       "mappings": [{"value": v, "color": c} for v, c in HEAT_COLOURS.items()]}}},
+                                             "scale": colour_scale(HEAT_COLOURS)}},
                      "frame": {"showTitle": True,
                                "title": "Observed heat, last 30 completed days: WBGT stations by their daily NEA category"}}}
 
@@ -254,8 +271,7 @@ def area_observed_chart():
                                    "y": {"fieldName": "max(max_wbgt)", "displayName": "Peak WBGT (°C)",
                                          "scale": {"type": "quantitative"}},
                                    "color": {"fieldName": "heat_category", "displayName": "Observed heat (NEA)",
-                                             "scale": {"type": "categorical",
-                                                       "mappings": [{"value": v, "color": c} for v, c in HEAT_COLOURS.items()]}}},
+                                             "scale": colour_scale(HEAT_COLOURS)}},
                      "frame": {"showTitle": True,
                                "title": "The area's nearest WBGT station: the day's peak WBGT, coloured by its NEA category"}}}
 
@@ -287,11 +303,13 @@ def build():
                 "room rental flats first, then those farthest from a refuge, with the nearest refuge and park. CoolCheck holds "
                 "no personal data: match the blocks against your own client list.\n", "\n",
                 "Actions are a proposal, not yet reviewed by a practitioner. Not official advice.\n"]), 7, 5, 5, 10),
-            at(table("top-areas", "ds_top_areas", AREA_TABLE, f"Top {TOP} areas in briefing order (tier, then order within the tier)"),
+            at(table("top-areas", "ds_top_areas", AREA_TABLE,
+                     f"Top {TOP} areas: by tier, then within a tier by {WITHIN_TIER} (the number is never shown)"),
                0, 15, 12, 9),
-            at(table("more-areas", "ds_more_areas", AREA_TABLE, f"Every other High or Medium area, after the top {TOP}"),
-               0, 24, 12, 8),
-            at(trend_chart("trend-chart"), 0, 32, 12, 6),
+            # height 8 showed 12 of the 13 rows on 24 Oct; 10 leaves room for a few more
+            at(table("more-areas", "ds_more_areas", AREA_TABLE, f"Every other High or Medium area, after the top {TOP}, in the same order"),
+               0, 24, 12, 10),
+            at(trend_chart("trend-chart"), 0, 34, 12, 6),
         ]}
     area_filter = {
         "name": "area-filter",
@@ -303,9 +321,9 @@ def build():
                                           for ds in ("ds_area_facts", "ds_blocks", "ds_points")]},
                  "selection": {"defaultSelection": {"values": {"dataType": "STRING", "values": [{"value": DEFAULT_AREA}]}}},
                  "frame": {"showTitle": True, "title": "Planning area"}}}
-    points = point_map("points-map", "ds_points", "point_type", "Point", B.POINT_COLOURS, "1-2 room rental flats (refuges fixed)",
-                       [("label", "Block or refuge"), ("detail", "Detail")],
-                       "Blocks (size: 1-2 room rental flats) and refuges in the area")
+    points = point_map("points-map", "ds_points", "point_type", "Distance to the nearest refuge", POINT_MAP_COLOURS,
+                       "1-2 room rental flats (refuges fixed)", [("label", "Block or refuge"), ("detail", "Detail")],
+                       "Blocks by distance to the nearest refuge (size: 1-2 room rental flats), and the refuges")
     blocks_page = {
         "name": "blocks", "displayName": "Blocks", "pageType": "PAGE_TYPE_CANVAS", "layoutVersion": "GRID_V1",
         "layout": [
@@ -369,7 +387,8 @@ def build():
                 "categories: Low, Moderate, High) with how vulnerable the area is, its third among the 32 rated areas:\n", "\n",
                 *matrix, "\n",
                 "Heat is forecast per planning area, from its nearest WBGT station; blocks rank vulnerability only, never heat. "
-                "The forecast's probability only orders areas inside a tier and is never shown.\n", "\n",
+                f"Within a tier, areas are ordered by {WITHIN_TIER}: the forecast's chance of High heat for the area times "
+                "its vulnerability index. That number only sets the order and is never shown.\n", "\n",
                 "**How vulnerability is measured.** Seven measures, each turned into a percentile among the rated areas (higher "
                 "means more vulnerable) and weighted as in the table below: residents aged 75+ and their share of residents; 1-2 "
                 "room rental flats; a small hot-month rise in 1-2 room electricity use (may indicate less air-con use); HDB flats "

@@ -56,9 +56,11 @@
         "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
         "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
         ")\n",
-        "SELECT o.area, o.tier, o.tier_sentence, o.rental_1_2_room, greatest(o.rental_1_2_room, 1) AS marker_size,\n",
+        "SELECT o.area, o.tier, o.tier_sentence, format_number(o.rental_1_2_room, 0) AS rental_1_2_room,\n",
+        "  greatest(o.rental_1_2_room, 1) AS marker_size,\n",
         "  st_y(st_centroid(m.geometry)) AS lat, st_x(st_centroid(m.geometry)) AS lon\n",
-        "FROM ordered o JOIN planning_area_map m ON m.planning_area = o.planning_area\n"
+        "FROM ordered o JOIN planning_area_map m ON m.planning_area = o.planning_area\n",
+        "ORDER BY o.briefing_order\n"
       ]
     },
     {
@@ -76,7 +78,7 @@
         "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
         "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
         ")\n",
-        "SELECT briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order <= 10 ORDER BY briefing_order\n"
+        "SELECT briefing_order, area, tier, tier_sentence, reason, format_number(rental_1_2_room, 0) AS rental_1_2_room, actions FROM ordered WHERE briefing_order <= 10 ORDER BY briefing_order\n"
       ]
     },
     {
@@ -94,7 +96,7 @@
         "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
         "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
         ")\n",
-        "SELECT briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium')\n",
+        "SELECT briefing_order, area, tier, tier_sentence, reason, format_number(rental_1_2_room, 0) AS rental_1_2_room, actions FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium')\n",
         "UNION ALL\n",
         "SELECT NULL, 'None: every High or Medium area is in the top 10', NULL, NULL, NULL, NULL, NULL\n",
         "WHERE NOT EXISTS (SELECT 1 FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium'))\n",
@@ -115,7 +117,8 @@
       "name": "ds_area_observed",
       "displayName": "Observed heat per planning area",
       "queryLines": [
-        "SELECT planning_area, sgt_date, station_name, round(max_wbgt, 1) AS max_wbgt, heat_category, heat_order\n",
+        "SELECT initcap(planning_area) AS planning_area, sgt_date, station_name, round(max_wbgt, 1) AS max_wbgt, heat_category,\n",
+        "  heat_order\n",
         "FROM observed_heat_daily\n",
         "WHERE planning_area IS NOT NULL\n",
         "ORDER BY planning_area, sgt_date DESC\n"
@@ -125,8 +128,9 @@
       "name": "ds_area_facts",
       "displayName": "Area facts",
       "queryLines": [
-        "SELECT planning_area, initcap(third) AS third, CASE WHEN reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE reason END AS reason, aged_75_plus, rental_1_2_room,\n",
-        "  hdb_dwelling_units_confirmed, CASE WHEN small_hdb THEN 'too few flats to measure' ELSE concat(format_number(100 * refuge_beyond_400m, 0), '%') END AS refuge_beyond,\n",
+        "SELECT initcap(planning_area) AS planning_area, initcap(third) AS third, CASE WHEN reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE reason END AS reason,\n",
+        "  format_number(aged_75_plus, 0) AS aged_75_plus, format_number(rental_1_2_room, 0) AS rental_1_2_room,\n",
+        "  format_number(hdb_dwelling_units_confirmed, 0) AS hdb_dwelling_units_confirmed, CASE WHEN small_hdb THEN 'too few flats to measure' ELSE concat(format_number(100 * refuge_beyond_400m, 0), '%') END AS refuge_beyond,\n",
         "  CASE WHEN small_hdb THEN 'too few flats to measure' ELSE concat(format_number(100 * park_beyond_400m, 0), '%') END AS park_beyond, coalesce(neutral_components, '') AS held_neutral\n",
         "FROM area_vulnerability\n"
       ]
@@ -135,10 +139,11 @@
       "name": "ds_blocks",
       "displayName": "Blocks in priority order",
       "queryLines": [
-        "SELECT planning_area, priority, concat(blk_no, ' ', street) AS block, rental_1_2_room, total_dwelling_units,\n",
-        "  refuge_main_name, CAST(round(refuge_main_m) AS INT) AS refuge_m,\n",
+        "SELECT initcap(planning_area) AS planning_area, priority, concat(blk_no, ' ', street) AS block,\n",
+        "  format_number(rental_1_2_room, 0) AS rental_1_2_room, format_number(total_dwelling_units, 0) AS total_dwelling_units,\n",
+        "  refuge_main_name, format_number(round(refuge_main_m), 0) AS refuge_m,\n",
         "  CASE WHEN refuge_within_400m THEN 'yes' ELSE 'no' END AS refuge_400m,\n",
-        "  park_main_name, CAST(round(park_main_m) AS INT) AS park_m,\n",
+        "  park_main_name, format_number(round(park_main_m), 0) AS park_m,\n",
         "  CASE WHEN park_within_400m THEN 'yes' ELSE 'no' END AS park_400m,\n",
         "  CASE WHEN confirmed THEN '' ELSE 'coordinate from a tenant record' END AS note\n",
         "FROM block_vulnerability\n",
@@ -149,21 +154,24 @@
       "name": "ds_points",
       "displayName": "Blocks and refuges",
       "queryLines": [
-        "SELECT planning_area, lat, lon,\n",
-        "  CASE WHEN refuge_within_400m THEN 'Block within 400 m of a refuge' ELSE 'Block beyond 400 m of a refuge' END AS point_type,\n",
+        "SELECT initcap(planning_area) AS planning_area, lat, lon,\n",
+        "  CASE WHEN refuge_within_400m THEN 'Block within 400 m' ELSE 'Block beyond 400 m' END AS point_type,\n",
+        "  CASE WHEN refuge_within_400m THEN 1 ELSE 2 END AS point_order,\n",
         "  concat(blk_no, ' ', street) AS label, greatest(rental_1_2_room, 1) AS marker_size,\n",
-        "  concat('priority ', CAST(priority AS STRING), '; 1-2 room rental flats ', CAST(rental_1_2_room AS STRING)) AS detail\n",
+        "  concat('priority ', CAST(priority AS STRING), '; 1-2 room rental flats ', format_number(rental_1_2_room, 0)) AS detail\n",
         "FROM block_vulnerability\n",
         "UNION ALL\n",
-        "SELECT planning_area, lat, lon, 'Refuge' AS point_type, name AS label, 30 AS marker_size, refuge_type AS detail\n",
-        "FROM refuge_layer\n"
+        "SELECT initcap(planning_area), lat, lon, 'Refuge', 3, name, 30, refuge_type\n",
+        "FROM refuge_layer\n",
+        "ORDER BY point_order\n"
       ]
     },
     {
       "name": "ds_weights",
       "displayName": "Weights",
       "queryLines": [
-        "SELECT component, sub_index, weight, direction, small_area_rule, reason_phrase, review_status\n",
+        "SELECT component, sub_index, weight, direction, small_area_rule, reason_phrase,\n",
+        "  replace(review_status, ' (Guide decision 9)', '') AS review_status\n",
         "FROM score_weights\n",
         "ORDER BY sort_order\n"
       ]
@@ -307,7 +315,17 @@
                         "value": "No forecast",
                         "color": "#dcdcdc"
                       }
-                    ]
+                    ],
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "High",
+                        "Medium",
+                        "Low",
+                        "Not rated",
+                        "No forecast"
+                      ]
+                    }
                   }
                 },
                 "size": {
@@ -451,7 +469,7 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Top 10 areas in briefing order (tier, then order within the tier)"
+                "title": "Top 10 areas: by tier, then within a tier by the chance of High heat times vulnerability (the number is never shown)"
               }
             }
           },
@@ -541,7 +559,7 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Every other High or Medium area, after the top 10"
+                "title": "Every other High or Medium area, after the top 10, in the same order"
               }
             }
           },
@@ -549,7 +567,7 @@
             "x": 0,
             "y": 24,
             "width": 12,
-            "height": 8
+            "height": 10
           }
         },
         {
@@ -614,7 +632,15 @@
                         "value": "High",
                         "color": "#d03b3b"
                       }
-                    ]
+                    ],
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "Low",
+                        "Moderate",
+                        "High"
+                      ]
+                    }
                   }
                 }
               },
@@ -626,7 +652,7 @@
           },
           "position": {
             "x": 0,
-            "y": 32,
+            "y": 34,
             "width": 12,
             "height": 6
           }
@@ -759,7 +785,7 @@
                     "dataType": "STRING",
                     "values": [
                       {
-                        "value": "BEDOK"
+                        "value": "Bedok"
                       }
                     ]
                   }
@@ -936,23 +962,31 @@
                 },
                 "color": {
                   "fieldName": "point_type",
-                  "displayName": "Point",
+                  "displayName": "Distance to the nearest refuge",
                   "scale": {
                     "type": "categorical",
                     "mappings": [
                       {
-                        "value": "Block within 400 m of a refuge",
+                        "value": "Block within 400 m",
                         "color": "#2a78d6"
                       },
                       {
-                        "value": "Block beyond 400 m of a refuge",
+                        "value": "Block beyond 400 m",
                         "color": "#eb6834"
                       },
                       {
                         "value": "Refuge",
                         "color": "#1baf7a"
                       }
-                    ]
+                    ],
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "Block within 400 m",
+                        "Block beyond 400 m",
+                        "Refuge"
+                      ]
+                    }
                   }
                 },
                 "size": {
@@ -978,7 +1012,7 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Blocks (size: 1-2 room rental flats) and refuges in the area"
+                "title": "Blocks by distance to the nearest refuge (size: 1-2 room rental flats), and the refuges"
               }
             }
           },
@@ -1213,7 +1247,15 @@
                         "value": "High",
                         "color": "#d03b3b"
                       }
-                    ]
+                    ],
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "Low",
+                        "Moderate",
+                        "High"
+                      ]
+                    }
                   }
                 }
               },
@@ -1266,7 +1308,7 @@
                     "dataType": "STRING",
                     "values": [
                       {
-                        "value": "BEDOK"
+                        "value": "Bedok"
                       }
                     ]
                   }
@@ -1363,7 +1405,15 @@
                         "value": "High",
                         "color": "#d03b3b"
                       }
-                    ]
+                    ],
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "Low",
+                        "Moderate",
+                        "High"
+                      ]
+                    }
                   }
                 }
               },
@@ -1483,7 +1533,7 @@
                 "| Moderate | Low | Medium | Medium |\n",
                 "| High | Medium | High | High |\n",
                 "\n",
-                "Heat is forecast per planning area, from its nearest WBGT station; blocks rank vulnerability only, never heat. The forecast's probability only orders areas inside a tier and is never shown.\n",
+                "Heat is forecast per planning area, from its nearest WBGT station; blocks rank vulnerability only, never heat. Within a tier, areas are ordered by the chance of High heat times vulnerability: the forecast's chance of High heat for the area times its vulnerability index. That number only sets the order and is never shown.\n",
                 "\n",
                 "**How vulnerability is measured.** Seven measures, each turned into a percentile among the rated areas (higher means more vulnerable) and weighted as in the table below: residents aged 75+ and their share of residents; 1-2 room rental flats; a small hot-month rise in 1-2 room electricity use (may indicate less air-con use); HDB flats beyond 400 m of a refuge; refuges per 1,000 residents aged 65+; HDB flats beyond 400 m of a park. A share or a rate over fewer than 1,000 people or flats is held at the middle (0.5); counts keep their value. The top 11 areas are the upper third, the next 11 the middle, the last 10 the lower. Areas without HDB blocks are not rated and show the heat level only.\n"
               ]
