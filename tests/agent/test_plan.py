@@ -115,10 +115,10 @@ def test_template_numbers_come_from_the_tool_result(rows, capacity):
 def test_leftover_notice_unless_the_summary_gives_the_number():
     rows = [dict(r, calls_left=40309) for r in ROWS_24]
     assert P.leftover_notice(rows, 100000, "Toa Payoh is High.") == \
-        "40309 of the 100000 calls are left over: every High- and Medium-tier block in this plan has its calls."
+        "40,309 of the 100,000 calls are left over: every block in this plan's High- and Medium-tier areas has its calls."
     assert P.leftover_notice(rows, 100000, P.template_summary(rows, 100000)) is None  # the template says "40309 left"
     assert P.leftover_notice([dict(r, calls_left=800) for r in NO_CALLS], 800, "") == \
-        "All 800 calls are left over: no High- or Medium-tier block in this plan takes calls."
+        "All 800 calls are left over: no block in a High- or Medium-tier area of this plan takes calls."
     assert P.leftover_notice(ROWS_24, 800, "") is None and P.leftover_notice(NO_CALLS, 0, "") is None
 
 

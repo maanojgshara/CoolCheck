@@ -457,7 +457,7 @@ def test_3b_calls_left_over_get_a_note_unless_the_summary_says_it():
     rows = copy.deepcopy(ROWS_24)
     for r in rows:  # C03: 100,000 calls, more than the High and Medium blocks hold
         r["calls_left"] = 40309
-    note = "40309 of the 100000 calls are left over: every High- and Medium-tier block in this plan has its calls."
+    note = "40,309 of the 100,000 calls are left over: every block in this plan's High- and Medium-tier areas has its calls."
     req, args = "We can make 100,000 calls tomorrow.", {"call_capacity": 100000}
     d, _ = run(Script(tool_msg(("get_priority_areas", args)), text_msg("Toa Payoh is High.")), request=req, rows=rows)
     assert note in d.notices and note in d.draft_text
@@ -554,8 +554,8 @@ WHATIF = [{"planning_area": "YISHUN", "is_site_area": True, "site_blk_no": "333C
            "share_within_400m_before": 0.5589, "share_within_400m_after": 0.6733,
            "rental_flats_beyond_400m_before": 410, "rental_flats_beyond_400m_after": 262, "blocks_newly_within": 19,
            "newly_within": []}]  # a fixture: the gain 8011 is W01's on 24 Oct, the other values are made up
-WHATIF_NOTE = ("What if a refuge opened at Blk 333C YISHUN ST 31: Yishun: 8011 more HDB dwelling units within 400 m of a "
-               "refuge (39120 to 47131), 19 blocks newly within 400 m, 1-2 room rental flats beyond 400 m 410 to 262. "
+WHATIF_NOTE = ("What if a refuge opened at Blk 333C YISHUN ST 31: Yishun: 8,011 more HDB dwelling units within 400 m of a "
+               "refuge (39,120 to 47,131), 19 blocks newly within 400 m, 1-2 room rental flats beyond 400 m 410 to 262. "
                "Straight-line distances, confirmed blocks only.")
 
 
@@ -574,7 +574,29 @@ def test_w01_a_wrong_gain_still_fails_but_the_answer_reaches_the_coordinator():
                text_msg("A refuge at Blk 333C would bring 8,021 more homes within 400 m."))
     d, _ = run(s, request=W01, wh=FakeWarehouse(what_if=WHATIF))
     assert d.source == "template" and "8,021" in d.fallback_reason
-    assert WHATIF_NOTE in d.draft_text and "8011 more HDB dwelling units" in d.draft_text
+    assert WHATIF_NOTE in d.draft_text and "8,011 more HDB dwelling units" in d.draft_text
+
+
+def test_code_written_numbers_have_thousands_separators_and_both_checks_read_them():
+    from coolcheck import agent_eval as E
+    rows = [dict(r, calls_left=40309) for r in ROWS_24]
+    note = P.leftover_notice(rows, 100000, "")
+    assert note.startswith("40,309 of the 100,000 calls") and P.metres(1239.7) == "about 1,240 m"
+    assert P.capacity_from(800, 25, request_capacity=100000)[1] == "request: 100,000 calls"
+    assert "3,835 1-2 room rental flats" in P.plan_section(ROWS_24)
+    assert E.numbers_in(note)[:2] == [40309.0, 100000.0]                 # window D's grader
+    assert A.check_summary(note, A.source_numbers(rows, 100000))[0]       # B's number check
+    assert P.leftover_notice(rows, 100000, "Toa Payoh is High; 40,309 calls are left over.") is None
+
+
+def test_code_written_text_keeps_the_summarys_rules():
+    # the left-over note first said "every High- and Medium-tier block", which gives a block a tier
+    none = [dict(r, calls_allocated=0, calls_left=800, blocks=[]) for r in ROWS_24]
+    texts = [P.leftover_notice([dict(r, calls_left=40309) for r in ROWS_24], 100000, ""),
+             P.leftover_notice(none, 800, ""), P.template_summary(none, 800), P.template_summary(ROWS_NE, 200, "NORTH-EAST")]
+    # (not the footer: "nothing has been sent" trips the summary's sent rule, which has no negation)
+    for t in texts:
+        assert A.check_summary(t, set(), rated_high=False)[1]["banned"] == [], t
 
 
 def test_b03_a_block_with_no_digit_is_refused_without_a_query():

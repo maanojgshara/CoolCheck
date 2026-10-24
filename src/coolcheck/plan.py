@@ -256,20 +256,28 @@ def forecast_info(runner, target_date, catalog="coolcheck"):
 
 # --- capacity: values from the request override the form; the arithmetic is here, never in a model -------------------
 
+def _n(x):
+    """A whole number with thousands separators for code-written text ("40,309"); the number checks read both forms."""
+    try:
+        return f"{int(x):,}" if float(x) == int(x) else str(x)
+    except (TypeError, ValueError):
+        return str(x)
+
+
 def capacity_from(default_capacity, calls_per_volunteer, volunteers=None, request_calls_per_volunteer=None,
                   request_capacity=None):
     """(call_capacity, basis). A capacity stated in the request wins; else volunteers x calls per volunteer (the request's
     figure if stated, otherwise the App's assumption); else the form's capacity."""
     if request_capacity is not None:
-        return int(request_capacity), f"request: {int(request_capacity)} calls"
+        return int(request_capacity), f"request: {_n(request_capacity)} calls"
     if volunteers is not None:
         if request_calls_per_volunteer is not None:
             cpv, note = int(request_calls_per_volunteer), "calls per volunteer from the request"
         else:
             cpv, note = int(calls_per_volunteer), "calls per volunteer (assumption: replace with your team's figure)"
         cap = int(volunteers) * cpv
-        return cap, f"request: {int(volunteers)} volunteers x {cpv} {note} = {cap} calls"
-    return int(default_capacity), f"form: {int(default_capacity)} calls (placeholder: replace with your team's figure)"
+        return cap, f"request: {_n(volunteers)} volunteers x {_n(cpv)} {note} = {_n(cap)} calls"
+    return int(default_capacity), f"form: {_n(default_capacity)} calls (placeholder: replace with your team's figure)"
 
 
 # --- the text ------------------------------------------------------------------------------------------------------
@@ -298,7 +306,7 @@ def metres(m):
     gave "about 0 m": D01 on 24 Oct)."""
     if m is None:
         return "unknown distance"
-    return "at the block" if m < 10 else f"about {int(round(m, -1))} m"
+    return "at the block" if m < 10 else f"about {_n(round(m, -1))} m"
 
 
 def _join(names):
@@ -384,11 +392,11 @@ def whatif_notices(tool_calls):
     """The result of each what-if that found its block, in the function's own terms, whoever writes the summary."""
     out = []
     for c in (c for c in tool_calls if c.name == "what_if_add_refuge" and not c.error and c.rows):
-        parts = [f"{g['planning_area']}: {g['dwelling_units_newly_within_400m']} more HDB dwelling units within 400 m of a "
-                 f"refuge ({g['dwelling_units_within_400m_before']} to {g['dwelling_units_within_400m_after']}), "
-                 f"{g['blocks_newly_within_400m']} block{'' if g['blocks_newly_within_400m'] == 1 else 's'} newly within "
-                 f"400 m, 1-2 room rental flats beyond 400 m {g['rental_flats_beyond_400m_before']} to "
-                 f"{g['rental_flats_beyond_400m_after']}" for g in whatif_gain(c.rows)]
+        parts = [f"{g['planning_area']}: {_n(g['dwelling_units_newly_within_400m'])} more HDB dwelling units within 400 m of a "
+                 f"refuge ({_n(g['dwelling_units_within_400m_before'])} to {_n(g['dwelling_units_within_400m_after'])}), "
+                 f"{_n(g['blocks_newly_within_400m'])} block{'' if g['blocks_newly_within_400m'] == 1 else 's'} newly within "
+                 f"400 m, 1-2 room rental flats beyond 400 m {_n(g['rental_flats_beyond_400m_before'])} to "
+                 f"{_n(g['rental_flats_beyond_400m_after'])}" for g in whatif_gain(c.rows)]
         site = c.rows[0]  # the site's area first (the function's order, kept by Tools)
         n = (f"What if a refuge opened at Blk {site['site_blk_no']} {site['site_street']}: {'; '.join(parts)}. "
              f"Straight-line distances, confirmed blocks only.")
@@ -398,14 +406,14 @@ def whatif_notices(tool_calls):
 
 
 def leftover_notice(rows, capacity, summary=""):
-    """The calls left over once every High- and Medium-tier block has its calls; None when there are none or the
+    """The calls left over once every block in the High- and Medium-tier areas has its calls; None when there are none or the
     summary already gives the number (the template does)."""
     left = min((r["calls_left"] for r in rows), default=0)
     if not capacity or left <= 0 or left in {int(n.replace(",", "")) for n in re.findall(r"\d[\d,]*", summary or "")}:
         return None
     if any(r["calls_allocated"] > 0 for r in rows):
-        return f"{left} of the {capacity} calls are left over: every High- and Medium-tier block in this plan has its calls."
-    return f"All {capacity} calls are left over: no High- or Medium-tier block in this plan takes calls."
+        return f"{_n(left)} of the {_n(capacity)} calls are left over: every block in this plan's High- and Medium-tier areas has its calls."
+    return f"All {_n(capacity)} calls are left over: no block in a High- or Medium-tier area of this plan takes calls."
 
 
 def _day(d):
@@ -432,10 +440,10 @@ def template_summary(rows, capacity, region=None):
     allocated = sum(r["calls_allocated"] for r in given)
     if given:
         n_blocks = sum(len(r["blocks"]) for r in given)
-        parts.append(f"Of {capacity} calls, {allocated} go to {n_blocks} block{'s' if n_blocks != 1 else ''} in "
-                     f"{_join(area_name(r['planning_area']) for r in given)}; {given[-1]['calls_left']} left.")
+        parts.append(f"Of {_n(capacity)} calls, {_n(allocated)} go to {_n(n_blocks)} block{'s' if n_blocks != 1 else ''} in "
+                     f"{_join(area_name(r['planning_area']) for r in given)}; {_n(given[-1]['calls_left'])} left.")
     elif capacity > 0:
-        parts.append(f"None of the {capacity} calls are allocated: no High- or Medium-tier block takes calls.")
+        parts.append(f"None of the {_n(capacity)} calls are allocated: no block in a High- or Medium-tier area takes calls.")
     else:
         parts.append("No call capacity was given, so no blocks are allocated.")
     return " ".join(parts)
@@ -448,13 +456,13 @@ def plan_section(rows):
         lines.append(f"{r['area_order']}. {area_name(r['planning_area'])} ({region_name(r['region'])}): {r['tier_sentence']}")
         lines.append(f"   Why: {r['reason']}")
         lines.append(f"   Actions: {r['actions']} ({r['actions_status']})")
-        lines.append(f"   Calls: {r['calls_allocated']} of the area's {r['rental_1_2_room']} 1-2 room rental flats; "
-                     f"{r['calls_left']} calls left after this area.")
+        lines.append(f"   Calls: {_n(r['calls_allocated'])} of the area's {_n(r['rental_1_2_room'])} 1-2 room rental flats; "
+                     f"{_n(r['calls_left'])} calls left after this area.")
         for b in r["blocks"]:
             dist = metres(b["refuge_main_m"])
             refuge = (f"nearest refuge {b['refuge_main_name']}, {dist}{'' if dist == 'at the block' else ' in a straight line'}"
                       f"{' (within 400 m)' if b['refuge_within_400m'] else ''}") if b.get("refuge_main_name") else "no refuge found"
-            lines.append(f"   - Blk {b['blk_no']} {b['street']}: {b['calls_allocated']} calls of {b['rental_1_2_room']} "
+            lines.append(f"   - Blk {b['blk_no']} {b['street']}: {_n(b['calls_allocated'])} calls of {_n(b['rental_1_2_room'])} "
                          f"flats{' (partial)' if b['partial'] else ''}; {refuge}")
     return "\n".join(lines) if lines else "No blocks are allocated calls."
 

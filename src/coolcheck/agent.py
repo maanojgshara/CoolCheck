@@ -350,7 +350,7 @@ def _region_notes(request, sent, region):
 
 def _ignored_notes(ignored):
     """The model's values that are not in the request, so were not used (checks.ignored_arguments)."""
-    items = list(dict.fromkeys(ARG_WORDS[k].format(v) for d in ignored for k, v in d.items()))
+    items = list(dict.fromkeys(ARG_WORDS[k].format(P._n(v)) for d in ignored for k, v in d.items()))
     return [f"From the model but not in the request, so not used: {P._join(items)}."] if items else []
 
 
