@@ -1,0 +1,41 @@
+draft	number	line_sha1	reason	line_start
+docs/submission/writeup.md	2	a627d8b9a8bb	Round 2 is the competition's name, not a measured number	*A HeatGuard solution for DAISI Round 2, problem B1. Team AIsenal.*
+docs/submission/writeup.md	24	7c0759bd1bbc	the name of NEA's 24-hour weather forecast	NEA measures heat stress at its weather stations as the Wet Bulb Globe
+docs/submission/writeup.md	24	e166dce253e4	diagram; the diagram's numbers are cited in the steps below it: the name of NEA's 24-hour forecast	data.gov.sg: WBGT, rainfall, 24-hour forecast, air temperature
+docs/submission/writeup.md	15	36cb67baf8b1	diagram; the diagram's numbers are cited in the steps below it: every 15 minutes is cited in step 1 (datasets.md, row 1)	|  collector on GitHub Actions, every 15 minutes (started by cron-job.
+docs/submission/writeup.md	00	218e25d9e878	diagram; the diagram's numbers are cited in the steps below it: 00:15 SGT is cited in step 5 (checks/final_check.md)	| hourly job                            | features known by 00:15 SGT
+docs/submission/writeup.md	15	218e25d9e878	diagram; the diagram's numbers are cited in the steps below it: 00:15 SGT is cited in step 5 (checks/final_check.md)	| hourly job                            | features known by 00:15 SGT
+docs/submission/writeup.md	14	c6903fa00538	diagram; the diagram's numbers are cited in the steps below it: the 14-month back-test is cited in step 6 (checks/backtest.md)	gold.latest_readings -> live page      LightGBM in MLflow: 14-month ba
+docs/submission/writeup.md	22	39442c286965	diagram; the diagram's numbers are cited in the steps below it: the refit to 22 Oct is cited under Results (checks/live_model.md)	live model refit to 22 Oct, registered as champion
+docs/submission/writeup.md	00	c0f551505b0d	diagram; the diagram's numbers are cited in the steps below it: 00:45 SGT is cited in step 7 (checks/heat_forecast_first_night.md)	|  nightly job, 00:45 SGT (refresh, then score)
+docs/submission/writeup.md	45	c0f551505b0d	diagram; the diagram's numbers are cited in the steps below it: 00:45 SGT is cited in step 7 (checks/heat_forecast_first_night.md)	|  nightly job, 00:45 SGT (refresh, then score)
+docs/submission/writeup.md	41	ffb3f7b1f079	diagram; the diagram's numbers are cited in the steps below it: the 41 areas are cited in step 7 (checks/heat_forecast_first_night.md)	gold.heat_forecast: 41 areas
+docs/submission/writeup.md	24	188080ed8fc8	a dataset title (24-hour Weather Forecast), as in attribution.md	| 24-hour Weather Forecast | National Environment Agency | model input
+docs/submission/writeup.md	2026	30afadde4f5f	a dataset title (June 2026), as in attribution.md	| Singapore Residents by Planning Area/Subzone, Age Group, Sex and Flo
+docs/submission/writeup.md	65	30afadde4f5f	an age band (65+) in the use column, defined in checks/area_exposure.md	| Singapore Residents by Planning Area/Subzone, Age Group, Sex and Flo
+docs/submission/writeup.md	75	30afadde4f5f	an age band (75+) in the use column, defined in checks/area_exposure.md	| Singapore Residents by Planning Area/Subzone, Age Group, Sex and Flo
+docs/submission/writeup.md	2016	e02c8342306b	the dataset's vintage (Eldercare Services, 2016), as in attribution.md	| Eldercare Services (2016) | Ministry of Health | a sensitivity run o
+docs/submission/writeup.md	400	873147e1ecd0	the 400 m threshold of the park measure, defined in design/risk_score.md	| NParks Parks and Nature Reserves | National Parks Board | parks with
+docs/submission/writeup.md	2025	ebe94f99be19	a dataset title (Master Plan 2025), as in attribution.md	| Master Plan 2025 SDCP Park layer | Urban Redevelopment Authority | a
+docs/submission/writeup.md	2025	5d7339301e8a	a dataset title (Singapore Energy Statistics 2025), as in attribution.md	| Singapore Energy Statistics 2025, Chapter 3 | Energy Market Authorit
+docs/submission/writeup.md	3	5d7339301e8a	a dataset title (Chapter 3), as in attribution.md	| Singapore Energy Statistics 2025, Chapter 3 | Energy Market Authorit
+docs/submission/writeup.md	95	401950d4d06b	a column header (95% interval); the table's source line below cites checks/backtest.md	| method | PR-AUC (95% interval) |
+docs/submission/writeup.md	0.295	a8a2d9284b8d	table value, in checks/backtest.md (lines 107 to 109); the table's source line below it cites that file	| CoolCheck's model | 0.295 (0.233 to 0.365) |
+docs/submission/writeup.md	0.233	a8a2d9284b8d	table value, in checks/backtest.md (lines 107 to 109); the table's source line below it cites that file	| CoolCheck's model | 0.295 (0.233 to 0.365) |
+docs/submission/writeup.md	0.365	a8a2d9284b8d	table value, in checks/backtest.md (lines 107 to 109); the table's source line below it cites that file	| CoolCheck's model | 0.295 (0.233 to 0.365) |
+docs/submission/writeup.md	0.235	8a8810f6874e	table value, in checks/backtest.md (lines 107 to 109); the table's source line below it cites that file	"| ""same as today"" | 0.235 (0.171 to 0.306) |"
+docs/submission/writeup.md	0.171	8a8810f6874e	table value, in checks/backtest.md (lines 107 to 109); the table's source line below it cites that file	"| ""same as today"" | 0.235 (0.171 to 0.306) |"
+docs/submission/writeup.md	0.306	8a8810f6874e	table value, in checks/backtest.md (lines 107 to 109); the table's source line below it cites that file	"| ""same as today"" | 0.235 (0.171 to 0.306) |"
+docs/submission/writeup.md	0.058	ade6acf540b9	table value, in checks/backtest.md (lines 107 to 109); the table's source line below it cites that file	| NEA forecast rule | 0.058 (0.040 to 0.081) |
+docs/submission/writeup.md	0.040	ade6acf540b9	table value, in checks/backtest.md (lines 107 to 109); the table's source line below it cites that file	| NEA forecast rule | 0.058 (0.040 to 0.081) |
+docs/submission/writeup.md	0.081	ade6acf540b9	table value, in checks/backtest.md (lines 107 to 109); the table's source line below it cites that file	| NEA forecast rule | 0.058 (0.040 to 0.081) |
+docs/submission/deck_outline.md	2025	b77eb0f84c23	from the organisers' DAISI problem statement B1, named on the line; not a repository file	- 2025 was Singapore's hottest year on record (DAISI problem statement
+docs/submission/deck_outline.md	41	1ce41be33f67	message line; 41 areas is in design/risk_score.md, which the evidence below cites	**Message:** Overnight, each of the 41 planning areas with residents a
+docs/submission/deck_outline.md	65	1ce41be33f67	message line; the 65+ band is in design/risk_score.md, which the evidence below cites	**Message:** Overnight, each of the 41 planning areas with residents a
+docs/submission/deck_outline.md	32	1ce41be33f67	message line; 32 rated areas is in design/risk_score.md, which the evidence below cites	**Message:** Overnight, each of the 41 planning areas with residents a
+docs/submission/deck_outline.md	15	18e93459a64b	message line; 15 datasets is cited in the evidence below (attribution.md)	**Message:** 15 open datasets from 9 agencies, four of them live NEA f
+docs/submission/deck_outline.md	9	18e93459a64b	message line; 9 agencies is cited in the evidence below (attribution.md)	**Message:** 15 open datasets from 9 agencies, four of them live NEA f
+docs/submission/deck_outline.md	00	89e86446b1ea	message line; 00:15 is cited in the evidence below (design/backtest.md)	**Message:** One pooled model forecasts each station's heat category f
+docs/submission/deck_outline.md	15	89e86446b1ea	message line; 00:15 is cited in the evidence below (design/backtest.md)	**Message:** One pooled model forecasts each station's heat category f
+docs/submission/deck_outline.md	32	ae45367d05da	message line; 32 rated areas is cited in the evidence below (design/risk_score.md)	**Message:** Seven open-data measures of exposure, of being unable to 
+docs/submission/deck_outline.md	39.5	2e9d62decbd5	message line; 39.5% is cited in the evidence below (checks/risk_score.md)	**Message:** In the back-test, areas flagged High in advance held 39.5

@@ -2,7 +2,7 @@
 
 Next-day heat briefing for community care teams in Singapore (DAISI Round 2, team AIsenal, problem B1 HeatGuard).
 
-**Status on 24 Oct 2026.** Built so far: the four live feeds, the pipeline from raw files to Silver, the live page, the back-test (`docs/checks/backtest.md`), the refuge and park access measures, the risk score and tiers, the live model and the nightly forecast (a job at 00:45 SGT, first scheduled run on 24 Oct), and the agent's three tools as Unity Catalog functions. Not built yet: the briefing dashboard, the agent loop and the approval App, the four languages and the evaluations (placeholders below). All times are Singapore time (SGT).
+**Status on 24 Oct 2026.** Built so far: the four live feeds, the pipeline from raw files to Silver, the live page, the back-test (`docs/checks/backtest.md`), the refuge and park access measures, the risk score and tiers, the live model and the nightly forecast (a job at 00:45 SGT, first scheduled run on 24 Oct), the agent's three tools as Unity Catalog functions, the briefing dashboard, and the agent loop in the approval App (both deployed on 24 Oct; two more rounds of agent fixes are committed and go out with Sunday's deploy). The agent's evaluation has run twice, the second time on the fixes (`docs/checks/agent_eval.md`). Not in the App yet: the four languages, which have had a first translation test (`docs/checks/language_check.md`). All times are Singapore time (SGT).
 
 ## Live feeds
 
@@ -28,7 +28,7 @@ The workflow reads the data.gov.sg API key and the service principal's OAuth cli
 
 ## Where the data lives
 
-The pipeline, the jobs, the MLflow experiment and the live page are deployed from this repository by the bundle in `databricks.yml` (target `dev`). In that target every deployed job, pipeline and dashboard name starts with `[dev <user>]`. The Volume and the tables loaded by local scripts are created by those scripts, not by the bundle. The Unity Catalog catalog is `coolcheck` (the bundle variable `catalog`), with schemas `bronze`, `silver`, `gold` and `ml` (the registered model `heat_model`).
+The pipeline, the jobs, the model's MLflow experiment and the App's (`coolcheck-agent`), the live page, the briefing dashboard and the approval App are deployed from this repository by the bundle in `databricks.yml` (target `dev`). In that target every deployed job, pipeline and dashboard name starts with `[dev <user>]`; the App is named `coolcheck`. The Volume and the tables loaded by local scripts are created by those scripts, not by the bundle. The Unity Catalog catalog is `coolcheck` (the bundle variable `catalog`), with schemas `bronze`, `silver`, `gold` and `ml` (the registered model `heat_model`).
 
 - **Volume** `coolcheck.bronze.raw_files`: the raw responses from the backfill and the collector.
 - **Bronze**, one row per API page, loaded by Auto Loader in the Lakeflow pipeline `coolcheck_pipeline` (`src/pipeline/`, serverless, triggered): `bronze.wbgt_raw`, `bronze.rainfall_raw`, `bronze.forecast_raw`, `bronze.air_temperature_raw`.
@@ -38,7 +38,7 @@ The pipeline, the jobs, the MLflow experiment and the live page are deployed fro
   - `station_daily_label`: each station's highest NEA heat-stress category of the day (Low, Moderate or High);
   - data quality: `quarantine`, `dq_day`, `dq_events`, `dq_conflicts`, `station_gaps`, `wbgt_first_arrival`, and `dq_reconcile` (written by the `reconcile` job).
 - **Silver, loaded by local scripts:** `area_station_distance` (planning-area to station distances, `scripts/static/area_station_distance.py`), `area_exposure` (residents, and those aged 65+ and 75+, per planning area, `scripts/static/load_area_exposure.py`), and the four access tables from `scripts/static/load_refuge_park_access.py`: `refuge_points` and `park_polygons` (the refuge and park layers), `block_access` (per HDB block) and `area_access` (per planning area).
-- **Gold:** `gold.latest_readings` and `gold.stream_status`, refreshed from the live files in the Volume by the `latest_readings` job (hourly at :05), which fails, and so e-mails the user who deployed it, when the newest WBGT reading is over 90 minutes old; `gold.area_nearest_station_daily`, the nearest reporting WBGT station per planning area and day (a view created by `src/jobs/nearest_station.py`). The forecast and risk tables are under Risk score and Tiers below.
+- **Gold:** `gold.latest_readings` and `gold.stream_status`, refreshed from the live files in the Volume by the `latest_readings` job (hourly at :05), which fails, and so e-mails the user who deployed it, when the newest WBGT reading is over 90 minutes old; `gold.area_nearest_station_daily`, the nearest reporting WBGT station per planning area and day (a view created by `src/jobs/nearest_station.py`). The forecast and risk tables are under Risk score and Tiers below, the dashboard's views under Briefing dashboard, and `gold.pending_approval` under Agent.
 
 The pipeline runs in triggered mode: Bronze and Silver move only when an update is started.
 
@@ -85,7 +85,7 @@ No personal data is held. An Active Ageing Centre matches the block list against
 
 Two scales appear here, and they are kept apart. **Heat level** is NEA's own WBGT category for tomorrow, **Low / Moderate / High**. **Tier** is the area's risk, **Low / Medium / High**, from the heat level and the vulnerability third.
 
-**Tomorrow's heat level.** The job `coolcheck heat forecast` (`resources/heat_forecast.job.yml`, `src/jobs/heat_forecast.py`) runs at 00:45 SGT. It refreshes the pipeline, then scores the target date with the registered model `coolcheck.ml.heat_model` at the alias `champion`, using only what is known by 00:15 SGT. It writes one row per area of the 41 with residents aged 65+ to `gold.heat_forecast`, with a MERGE on (`target_date`, `planning_area`), so a rerun replaces rather than duplicates. Each area takes its nearest reporting WBGT station for that day. An area whose station has no feature row gets NULL probabilities, flagged, not scored. The model is the final check's configuration refit on target dates to 22 Oct 2026; it is a different fitted model from the one the final check scored, and nothing is reported for it yet (`docs/checks/live_model.md`).
+**Tomorrow's heat level.** The job `coolcheck heat forecast` (`resources/heat_forecast.job.yml`, `src/jobs/heat_forecast.py`) runs at 00:45 SGT. It refreshes the pipeline, then scores the target date with the registered model `coolcheck.ml.heat_model` at the alias `champion`, using only what is known by 00:15 SGT. It writes one row per area of the 41 with residents aged 65+ to `gold.heat_forecast`, with a MERGE on (`target_date`, `planning_area`), so a rerun replaces rather than duplicates. Each area takes its nearest reporting WBGT station for that day. An area whose station has no feature row gets NULL probabilities, flagged, not scored. The model is the final check's configuration refit on target dates to 22 Oct 2026; it is a different fitted model from the one the final check scored, and nothing is reported for it yet (`docs/checks/live_model.md`). A refit does not reproduce the model file exactly: run once on Free Edition with the same code, packages, input checksums and training counts, it gave a different file (sha256 `ae8fe0f9…` against the trial's `715d7f88…`). Its probability of High differed from the trial's by at most 0.0047 for any area on 23 and 24 Oct, and no heat level or tier changed (`docs/checks/free_edition_chain.md`).
 
 The heat level is High when the model's probability of High reaches the cut-off chosen on the back-test, 0.110 (`docs/checks/backtest_review.md`); otherwise Moderate if Moderate is at least as likely as Low; otherwise Low. **The probability itself is never shown as a number**, because the calibration check found it too high at its highest values and too low at the start of a hot season (`docs/checks/error_analysis.md`, `docs/checks/backtest_review.md`). Tiers and heat levels are shown instead.
 
@@ -113,15 +113,78 @@ The heat level is High when the model's probability of High reaches the cut-off 
 | Low | Routine. |
 | Not rated | Heat level shown only. |
 
-**The agent's tools.** Three Unity Catalog SQL functions in `coolcheck.gold` read these views and allocate calls to capacity in code: `get_priority_areas`, `find_refuges` and `what_if_add_refuge` (`docs/design/agent_tools.md`; `scripts/static/create_agent_functions.py`). None returns a probability or the score.
+**The agent's tools.** Three Unity Catalog SQL functions in `coolcheck.gold` read these views. `get_priority_areas` allocates calls to capacity in code; `find_refuges` and `what_if_add_refuge` answer questions about a block (`docs/design/agent_tools.md`; `scripts/static/create_agent_functions.py`). None returns a probability or the score.
 
 ## Briefing dashboard
 
-> **PLACEHOLDER: not built yet.** This section will describe the briefing dashboard once it exists.
+The AI/BI dashboard **CoolCheck briefing** (`src/dashboards/briefing.lvdash.json`, built by `scripts/dashboards/build_briefing.py`, deployed through `resources/briefing.dashboard.yml`) is the care team's morning view. In the workspace it is `[dev <user>] CoolCheck briefing`, deployed and published on 24 Oct 2026 at 22:54 SGT; read back at about 23:40, its four pages and its datasets equal the committed file. It has four pages:
+
+- **Briefing**, for the latest target date in `gold.area_heat_risk`:
+  - a headline: "Heat risk for <day>, prepared <time> SGT"; a notice when that date is before today in Singapore; the tier counts; what Medium means; and the Not-rated areas with High heat;
+  - a map of the planning areas as dots coloured by tier and sized by 1–2 room rental flats, grey where an area is not rated;
+  - the top 10 areas in briefing order (tier, then `tier_rank`), then every other High or Medium area;
+  - the observed heat of the last 30 completed days.
+- **Blocks:** pick a planning area to see its facts, its blocks and refuges on a map, and its blocks in priority order with straight-line distances to the nearest refuge and park. For a what-if refuge it points to the App.
+- **Observed heat:** observed values only, never forecasts. It shows the WBGT stations per day by NEA category for the last 30 completed days and, for a chosen planning area, its nearest station's daily peak WBGT and category.
+- **About:** the tier rule, the weights, the actions per tier, the limits and the source notices.
+
+The headline's Medium line reads "Medium is not an alert: heightened care where heat is Moderate in an upper- or middle-third area, or High in a lower-third one." It then gives the count of Medium areas with High heat, if there are any. Heat is shown per planning area; the Blocks page says that blocks rank vulnerability only, never heat. No dataset reads the probability, the score, `model_version` or `run_id` (`tests/dashboards/test_briefing_dashboard.py` checks every dataset). The dashboard reads the risk views and tables above and four views made for it, `gold.planning_area_map`, `gold.refuge_layer`, `gold.park_layer` and `gold.observed_heat_daily` (`scripts/static/create_briefing_views.py`). It runs on the Serverless Starter Warehouse.
 
 ## Agent
 
-> **PLACEHOLDER: not built yet.** This section will describe the outreach agent once it exists.
+The approval App **coolcheck** (Databricks Apps, Streamlit: `src/app.py`, deployed through `resources/coolcheck_app.app.yml`; design: `docs/design/agent_app.md`) drafts the day's outreach plan, and a person approves it. A coordinator picks the briefing date, the call capacity (800, a placeholder until the team decides), calls per volunteer (25, an assumption) and a region, and may type a request, such as "Only 8 volunteers tomorrow, North-East only". The agent, `coolcheck.agent.draft_plan`, calls Llama 3.3 70B (`system.ai.meta-llama-3-3-70b-instruct`) through the Unity Gateway at temperature 0, with the three functions above as its tools. Every draft is traced in MLflow (experiment `coolcheck-agent`).
+
+**What the deployed App does** (deploy 3, 22:54 to 22:57 SGT on 24 Oct, from `7f1ec30`; read back at about 23:40, the App's `agent.py`, `plan.py` and `app.py` in the workspace equal that commit):
+
+- **Code allocates the calls.** `get_priority_areas` fills the capacity in tier order, block by block. A capacity from volunteers is volunteers × calls per volunteer, worked out in code (`coolcheck.plan.capacity_from`). The model does no arithmetic.
+- **A number from the model counts only if the request states it.** Otherwise the form's value is used, and the draft records what was dropped. A stated 0 counts: "0 volunteers" gives 0 calls. If the model does not call `get_priority_areas`, the code runs it with the form's values.
+- **The model's summary is kept only if it passes the checks.** Every number in it must be found in a tool result the model saw or in an input, allowing stated rounding. A probability, a score, a claim that something was sent, medical terms, or a tier given to a block each fail. Any failure, model error, timeout or round cap gives a summary that code writes from a template instead, with the reason on screen.
+- **Facts every draft must carry are notes written by code**, not left to the model: a missing forecast issue, every Not-rated area with High heat, and, when no rated area is High, a sentence that says so.
+- **A person approves, and nothing is sent.** Approve writes one row to `gold.pending_approval`, with the status `approved_not_sent`, and a second press writes nothing. The approver is recorded as a Databricks user ID, never a name or an e-mail. The App imports no messaging library, which a test checks. A request is masked for NRIC-like and phone-like strings before the model sees it or the row stores it.
+
+The App's service principal can read `gold.area_heat_risk` and run the three functions, but has no access to `gold.heat_forecast` or to Silver. `find_refuges` and `what_if_add_refuge` read a street as people write it ("Jalan Kukoh" finds 3 JLN KUKOH; `docs/design/agent_tools.md`). Window D replaced the two functions in the workspace with this version at 23:36 SGT on 24 Oct (`docs/checks/agent_eval.md`; checked read-only).
+
+**Goes out with Sunday's deploy** (committed, not deployed; `docs/design/agent_app.md`, "Second round" and "Third round"). The second round:
+- more notes written by code: a block lookup that found nothing, a region that is not one of the five, the model's values that were not used, and the calls left over;
+- the "no High tier" sentence names the plan's region;
+- a planning area named in the reply must appear in a tool result the model saw or in the request;
+- a prompt line so that a question about a block's heat gets the planning area's heat level;
+- a distance under 10 m reads "at the block".
+
+The third round, after run 2:
+- the App's street box says a street can be written as people write it, such as Jalan Kukoh or JLN KUKOH (`4d575c4`);
+- a medicine or a dose fails the check anywhere, while declining medical advice no longer fails it (`e9baed2`);
+- the what-if gain is computed in code, given to the model and written as a note by code (`4858f23`);
+- a prompt line asks for `get_priority_areas` before a block lookup that depends on it, and a block number with no digit is refused without a query (`e1291d9`).
+
+**Evaluation** (`docs/checks/agent_eval.md`; design: `docs/design/agent_eval.md`). Window D ran the same 20 scenarios twice on 24 Oct, each time with the criteria committed before the run, and reran each failure twice.
+
+| | run 1 (20:18 SGT) | run 2 (23:51 SGT) |
+|---|---|---|
+| agent code scored | `941dcbe`, before the fixes | `0224782`, with the first two rounds of fixes |
+| first pass, on run 1's grader (`9ff1874`) | 4 of 20 | 14 of 20 |
+| first pass, on criteria 2 (`fef843e`) | | 16 of 20 |
+| drafts | 52 | 32 |
+
+- **Like for like**, on run 1's grader, the first pass went from 4 to 14 of 20. Criteria 2 grade the draft as the coordinator sees it, including the parts code writes, with a tighter judge prompt; on those, 16 of 20 passed.
+- **What was scored:** run 2 scored `0224782`. That is neither the `7f1ec30` code the App runs now nor Sunday's code: the third round came after run 2 and is scored by run 3.
+- **The caveat:** the fixes were made for these 20 scenarios' failures. So run 2 shows those problems fixed, not how the agent does on new requests. [TBD: run 3: the 20 again, and 9 held-out scenarios written after run 2 and not shown to the window that fixed the agent (tests/agent_eval/scenarios_heldout.json, 707bdeb).]
+
+What a coordinator would have seen:
+
+- **Run 1, 52 drafts.**
+  - No rule was broken.
+  - 14 drafts planned the wrong number of calls, from the model's arguments: 0s filled in for values the request did not state, a stated 0 left out, and invented values.
+  - Street names were not found unless written in HDB's abbreviations.
+  - 31 replies were replaced by the template, 25 of them because the model did not call `get_priority_areas`, so sound refusals never reached the coordinator.
+- **Run 2, 32 drafts.**
+  - No rule was broken.
+  - Every draft had the right number of calls.
+  - Street names were found in 6 of 6 attempts.
+  - 6 replies were replaced by the template. W01's three were replaced rightly: the model's what-if gain was wrong, and the check caught it. G06's three were replaced wrongly: they were sound refusals, which the check failed for the phrase "medical advice".
+- In both runs, the replies to the Malay, Tamil and Chinese requests were in English.
+
+**Not in the App yet:** the advisories in four languages. `coolcheck.languages` translates a draft, back-translates it with a second model family and checks for drift in numbers, blocks, places and untranslated sentences. It was tried on three real drafts, in Malay, Tamil and Chinese, with two translators. All six translations were flagged for drift, and some of the flags come from the back-translation itself (`docs/checks/language_check.md`). It is not wired into the App, which drafts in English.
 
 ## Running the tests
 

@@ -4,7 +4,7 @@
 
 ## Summary
 
-CoolCheck is a next-day heat briefing for Active Ageing Centre teams and care coordinators. Each night it forecasts the coming day's heat stress for 41 planning areas, crosses it with the area's vulnerability (seniors aged 75+, rental flats, distance to cooling refuges) into a Low, Medium or High tier, and lists the HDB blocks to check first. On held-out weeks scored once, the pre-declared test passed: area-day PR-AUC 0.489 against 0.360 for "same as today". At the cut-off it caught 61 of 77 High area-days, about one alert in three correct; at equal alert load, 35 against 32. Without S142, S137 and S135 the edge is small; no difference is claimed from these weeks alone (`checks/final_check.md`). Still to build: the agent, its four-language advisories and its evaluations; the briefing dashboard is in progress.
+CoolCheck is a next-day heat briefing for Active Ageing Centre teams and care coordinators. Each night it forecasts the coming day's heat stress for 41 planning areas, crosses it with the area's vulnerability (seniors aged 75+, rental flats, distance to cooling refuges) into a Low, Medium or High tier, and lists the HDB blocks to check first. On held-out weeks scored once, the pre-declared test passed: area-day PR-AUC 0.489 against 0.360 for "same as today". At the cut-off it caught 61 of 77 High area-days, about one alert in three correct; at equal alert load, 35 against 32. Without S142, S137 and S135 the edge is small; no difference is claimed from these weeks alone (`checks/final_check.md`). A dashboard shows the briefing, and an agent drafts the day's call plan for a person to approve: code allocates the calls and nothing is sent. On the 20 test scenarios its fixes were made for, it went from 4 to 14 passing on the same grader, with a held-out test to come (`checks/agent_eval.md`). Four-language advisories are not in the App yet.
 
 > **Draft of the Devpost project description, 24 Oct 2026.** Every number names the repository file it comes from; paths are relative to `docs/` unless they start with another folder. `[TBD: …]` marks what is not built yet. Weak results are reported as they are.
 
@@ -42,7 +42,12 @@ static open data -> Silver layers -> Gold vulnerability views
                                           v
                                        gold.area_heat_risk: the tier view
                                           |
-                    [TBD: briefing dashboard, approval App and agent]
+                     +--------------------+--------------------+
+                     v                                         v
+          briefing dashboard (AI/BI)          approval App: the agent (LLM) drafts,
+                                              get_priority_areas allocates calls in code,
+                                              a person approves -> gold.pending_approval
+                                              (nothing is sent)
 ```
 
 The diagram's numbers are cited in the steps below.
@@ -60,13 +65,26 @@ The diagram's numbers are cited in the steps below.
 
    Each component becomes a percentile among the 32 areas, and the weighted sum splits the areas into thirds. The coming day's heat level is High when the model's probability of High reaches the cut-off, 0.110 (`checks/backtest_review.md`), and otherwise the more likely of Moderate and Low. A 3×3 rule crosses the heat level with the vulnerability third to give the area's risk tier: Low, Medium or High (`design/risk_score.md`, §6). Within an area, blocks are ordered by 1–2 room rental flats, then by distance to the nearest refuge: blocks rank vulnerability, never heat. The vulnerability views and the weight and action tables are in Unity Catalog. A scheduled job at 00:45 SGT refreshes the pipeline, scores the coming day with the live model and writes `gold.heat_forecast`; the view `gold.area_heat_risk` crosses that with the thirds to give the day's tiers, with no probability or score column (`checks/heat_forecast_first_night.md`). Its first scheduled night was 24 Oct: one night, not a track record.
 8. **What people see.** A live heat-stress page, an AI/BI dashboard, shows the newest WBGT by station on a map in NEA's categories, rain in the last hour and air temperature, from a table an hourly job refreshes. When the table is more than 90 minutes old, every station shows "no recent reading" (`README.md`).
-   - [TBD: the briefing dashboard: the planning-area map by tier, the areas with plain reasons, and the block list.]
+   - The briefing dashboard, an AI/BI dashboard deployed on 24 Oct, has four pages. The first gives the day's tier counts, a map of the planning areas by tier, and the top areas in order with plain reasons. The others give each area's blocks in priority order with the nearest refuge, the observed heat of the last 30 days, and the rule, the weights, the actions and the sources. No dataset reads the probability or the score (`README.md`).
    - The agent's three tools exist as Unity Catalog SQL functions, `get_priority_areas`, `find_refuges` and `what_if_add_refuge`. The first fills the AAC's call capacity in code, in tier order, and none returns a probability or a score. 35 local tests and 16 through Databricks Connect passed (`design/agent_tools.md`).
-   - [TBD: the agent. It drafts the day's outreach plan from the tiers and the block list. Allocation to the AAC's call capacity is done in code, a person approves, and nothing is sent automatically.]
-   - [TBD: advisories in four languages.]
-   - [TBD: the agent's evaluation scenarios.]
+   - The approval App, deployed on 24 Oct, drafts the day's outreach plan from the coordinator's request (`design/agent_app.md`). The agent is an LLM that calls the three functions; the rules around it are code:
+     - code allocates the calls;
+     - a number from the model counts only if the request states it, and otherwise the form's value is used;
+     - the model's summary is kept only if every number in it is found in a tool result and no rule is broken, and otherwise code writes it from a template;
+     - facts every draft must carry are notes written by code.
 
-**Built with:** Unity Catalog (catalog, Volume, tables, views, SQL functions, a model registry, comments, tags), Lakeflow Spark Declarative Pipelines (Auto Loader, expectations, Auto CDC), Lakeflow Jobs on serverless, MLflow, AI/BI dashboards, Declarative Automation Bundles, and Databricks Connect for the tests; GitHub Actions and cron-job.org for collection.
+     A person approves, which writes one row to `gold.pending_approval`, and nothing is sent. Two more rounds of fixes are committed and go out with Sunday's deploy (`design/agent_app.md`).
+   - Advisories in four languages are not in the App yet. `coolcheck.languages` translates a draft, back-translates it with a second model family and checks for drift. It was tried on three real drafts, in Malay, Tamil and Chinese, with two translators. All six translations were flagged for drift, and some of the flags come from the back-translation itself (`checks/language_check.md`). [TBD: the languages in the App.]
+   - The agent's evaluation ran the same 20 scenarios twice, each time with criteria committed before the run (`checks/agent_eval.md`):
+     - On run 1's grader, the first pass went from 4 of 20 before the fixes to 14 of 20 after.
+     - On criteria 2, committed before run 2, 16 of 20 passed. These criteria grade the whole draft as the coordinator sees it.
+     - Run 2 scored the agent code `0224782`, not the code the App runs now (`7f1ec30`). A third round of fixes came after run 2 and is scored by run 3.
+     - In run 1's 52 drafts, 14 planned the wrong number of calls, and 31 replies were replaced by the template.
+     - In run 2's 32 drafts, no rule was broken and every draft had the right number of calls. Street names were found in 6 of 6 attempts. 6 replies were replaced by the template: W01's wrong what-if gain rightly, and G06's sound refusal wrongly.
+     - The replies to the Malay, Tamil and Chinese requests were still in English.
+     - The fixes were made for these 20 scenarios' failures, so run 2 shows those problems fixed, not how the agent does on new requests. [TBD: run 3: the 20 again, and 9 held-out scenarios written after run 2 and not shown to the window that fixed the agent (tests/agent_eval/scenarios_heldout.json, 707bdeb).]
+
+**Built with:** Unity Catalog (catalog, Volume, tables, views, SQL functions, a model registry, comments, tags), Lakeflow Spark Declarative Pipelines (Auto Loader, expectations, Auto CDC), Lakeflow Jobs on serverless, MLflow (runs and traces), AI/BI dashboards, Databricks Apps, a foundation model through the AI gateway, Declarative Automation Bundles, and Databricks Connect for the tests; GitHub Actions and cron-job.org for collection.
 
 ## The datasets
 
@@ -123,7 +141,7 @@ Source of the table: `checks/backtest.md`.
 - Without S142, S137 and S135 the edge is small: on station-days, PR-AUC 0.279 against 0.244, and 11 of 31 each at the same load.
 - No difference between the model and a baseline is claimed from the final check alone: its 49 days are too few for the block bootstrap.
 
-The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days with 465 High (`checks/final_check.md`). The live model is the same configuration refit on target dates to 22 Oct 2026, on 10,861 station-days with 538 High. It is a different fitted model, and no result is reported for it yet (`checks/live_model.md`).
+The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days with 465 High (`checks/final_check.md`). The live model is the same configuration refit on target dates to 22 Oct 2026, on 10,861 station-days with 538 High. It is a different fitted model, and no result is reported for it yet (`checks/live_model.md`). A refit does not reproduce the model file exactly. Run once on Free Edition with the same code, packages, input checksums and training counts, it gave a different file. Its probability of High differed from the trial's by at most 0.0047 for any area on 23 and 24 Oct, and no heat level or tier changed (`checks/free_edition_chain.md`).
 
 **The tiers in the back-test months** (`checks/risk_score.md`).
 - The High tier fired on 566 area-days: about 1.3 areas a day on average, on 168 of 427 days, and at most 14 in one day.
@@ -158,7 +176,8 @@ The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days wi
 - **Air temperature is not tested as a model input.** WBGT is used because NEA's categories are defined on it; we make no claim that it predicts better than air temperature.
 - **Some areas are not rated.** 9 of the 41 areas with residents aged 65+ have no HDB blocks and show their heat level only; they hold 4,730 residents aged 65+ (`design/risk_score.md`).
 - **One night so far.** The nightly job has one scheduled night behind it, 24 Oct, and the live model has no held-out result (`checks/heat_forecast_first_night.md`, `checks/live_model.md`).
-- **Not built yet:** the briefing dashboard, the agent, the four languages and the evaluations, all marked [TBD] above.
+- **The agent's evaluation is not yet a test on new requests.** On the same grader, the agent went from 4 to 14 of 20 scenarios (`checks/agent_eval.md`). But the fixes were made for these 20 scenarios' failures, so run 2 shows those problems fixed, not how the agent does on new requests. [TBD: run 3: the 20 again, and 9 held-out scenarios written after run 2 and not shown to the window that fixed the agent (tests/agent_eval/scenarios_heldout.json, 707bdeb).]
+- **Not in the App yet:** the four languages. A first test flagged drift in all six translations of three real drafts (`checks/language_check.md`).
 
 ## What's next
 
@@ -174,7 +193,7 @@ The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days wi
   - Medium: the AAC broadcasts a hydration and heat advisory in four languages; volunteers flag seniors living alone in the priority blocks.
   - Low: routine.
 
-  In the back-test months that meant about 1.3 High areas and about 11 Medium areas a day (`checks/risk_score.md`). Whether about 11 Medium areas a day is useful is a question for the practitioner review. [TBD: the agent drafts the day's call plan within the AAC's stated capacity, and a person approves it.]
+  In the back-test months that meant about 1.3 High areas and about 11 Medium areas a day (`checks/risk_score.md`). Whether about 11 Medium areas a day is useful is a question for the practitioner review. The App's agent drafts the day's call plan within the AAC's stated capacity, code allocates the calls, and a person approves the plan (`design/agent_app.md`).
 - **Then:**
   - a practitioner's review of the tiers, weights and actions;
   - the full list of Active Ageing Centres from MOH or AIC;

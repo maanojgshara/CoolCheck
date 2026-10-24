@@ -19,7 +19,7 @@
 - The tier crosses NEA's heat level with the area's vulnerability third in a 3×3 rule (`design/risk_score.md`, §6).
 - Blocks are ordered by 1–2 room rental flats, then by distance to the nearest refuge; blocks rank vulnerability, never heat (`design/risk_score.md`).
 - A job at 00:45 SGT scores the next day and writes `gold.heat_forecast`; the view `gold.area_heat_risk` gives the tiers, with no probability or score column. Its first scheduled night was 24 Oct (`checks/heat_forecast_first_night.md`); one night, not a track record.
-- The live heat-stress page is built and published (`README.md`). [TBD: the briefing dashboard and its screenshot.]
+- The live heat-stress page and the briefing dashboard are deployed. The dashboard's four pages give the day's tiers, each area's blocks, the observed heat and the rule (`README.md`). [TBD: the dashboard's screenshot.]
 
 ## 3. Open data in, governed tables out
 
@@ -72,13 +72,25 @@
 
 ## 8. The agent drafts, a person approves
 
-**Message:** [TBD: the agent drafts the day's outreach plan from the tiers and the block list; allocation to call capacity is done in code; a person approves, and nothing is sent automatically.]
+**Message:** The agent drafts the day's outreach plan from the tiers and the block list; code allocates the calls; a person approves, and nothing is sent.
 
 **Evidence:**
 - Tool calling works: Llama 3.3 70B returned a well-formed tool call on the trial (`checks/tool_calling_model_test.md`) and on Free Edition (`checks/free_edition_tool_calling.md`).
 - The endpoint's own description says the model "is not intended for use in languages other than English", so the four languages need checking (`checks/free_edition_tool_calling.md`).
 - The agent's three tools exist as Unity Catalog SQL functions, and the first fills the call capacity in code (`design/agent_tools.md`).
-- [TBD: the agent loop, the approval App, the advisories in four languages and the evaluation scenarios.]
+- The approval App is deployed (`design/agent_app.md`):
+  - a number from the model counts only if the request states it;
+  - the model's summary is kept only if it passes the checks, and otherwise code writes it from a template;
+  - facts every draft must carry are notes written by code.
+
+  Two more rounds of fixes go out with Sunday's deploy.
+- Evaluation, the same 20 scenarios twice (`checks/agent_eval.md`):
+  - on run 1's grader, 4 of 20 before the fixes and 14 of 20 after;
+  - 16 of 20 on criteria 2, committed before run 2;
+  - run 2 scored the agent code `0224782`; a third round of fixes came after it and is scored by run 3.
+- In run 2's 32 drafts, no rule was broken, every draft had the right number of calls, and street names were found in 6 of 6 attempts (`checks/agent_eval.md`).
+- The fixes were made for these scenarios' failures, so this shows them fixed, not how the agent does on new requests (`checks/agent_eval.md`). [TBD: run 3: the 20 again, and 9 held-out scenarios written after run 2 and not shown to the window that fixed the agent (tests/agent_eval/scenarios_heldout.json, 707bdeb).]
+- Four languages: not in the App yet. A first test translated three real drafts and back-translated them; all six translations were flagged for drift (`checks/language_check.md`). Replies to Malay, Tamil and Chinese requests come back in English (`checks/agent_eval.md`).
 
 ## 9. Impact: reach, lead time and recall
 
