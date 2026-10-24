@@ -73,22 +73,33 @@ BANNED = [("P(High), probability or score", re.compile(r"p\s*\(\s*high\s*\)|prob
            re.compile(r"(?<![\d.,])0(?:\.0+)?\s*(?:m|metres?|meters?)\b", re.I))]
 # Medical advice fails, declining it does not (G06 on 24 Oct, run 2: "I'm not able to provide medical advice ... consult a
 # medical professional" was thrown away 3 times): a medicine or a dose fails anywhere; other medical words fail only in a
-# sentence that neither declines nor sends the person to medical help
+# sentence that neither declines to give advice nor sends the person to medical help; discouraging help fails anywhere
+# ("There is no need to see a doctor"), and a negation alone excuses nothing ("Heat exhaustion does not need treatment")
 MEDICINE = re.compile(r"paracetamol|panadol|acetaminophen|ibuprofen|aspirin|\bnsaids?\b|antihistamine|"
                       r"oral rehydration salts?|electrolyte tablets?|\b\d+(?:\.\d+)?\s*(?:mg|mcg|ml)\b|"
                       r"\b\d+\s*(?:tablets?|pills?|capsules?|doses?|teaspoons?)\b", re.I)
 MEDICAL_WORDS = re.compile(r"medic|\bdos(?:e|es|age|ing)\b|diagnos|symptom|prescri|\bpills?\b|tablets?|capsules?|"
                            r"\bdrugs?\b|\btreat(?:ment|ed|s|ing)?\b", re.I)
 EMERGENCY = (995, 1777)  # Singapore's emergency and non-emergency ambulance numbers, allowed in a referral
-DECLINES = re.compile(r"\b(?:not|cannot|can't|unable|never|won't|don't|no)\b|n't\b|only draft|outside|consult|doctor|"
-                      r"\bgp\b|medical (?:professional|help|attention|care)|healthcare|\b995\b|clinic|hospital|"
-                      r"pharmacist", re.I)
+_W = r"(?:[\w'’]+\s+)"  # one word and its space
+_HELP_VERB = r"(?:consult|see|seek|call|contact|visit|ask|go\s+to|get)\w*"
+_HELP = (r"(?:doctors?|gps?|physicians?|medical\s+(?:professionals?|help|attention|care|advice)|healthcare|pharmacists?|"
+         r"clinics?|polyclinics?|hospitals?|995|1777|ambulances?|nurses?)")
+DECLINES_ADVICE = re.compile(rf"\b(?:can(?:not|['’]t)|can\s+not|unable\s+to|(?:am|['’]m|is|are)\s+not\s+able\s+to|"
+                             rf"won['’]t|will\s+not|do(?:n['’]t|\s+not)|must\s+not|never)\s+{_W}{{0,2}}?"
+                             rf"(?:give|provide|offer|recommend|advise|suggest|prescribe|diagnose|tell|share)\b|"
+                             rf"\bonly\s+draft", re.I)
+REFERS = re.compile(rf"\b{_HELP_VERB}\s+{_W}{{0,3}}?{_HELP}\b", re.I)
+DISCOURAGES_HELP = re.compile(rf"\b(?:no\s+need|not\s+necessary|unnecessary|needn['’]t|need\s+not|no\s+reason|"
+                              rf"(?:do|does|did)(?:n['’]t|\s+not)|never|avoid)\s+(?:to\s+|for\s+)?"
+                              rf"(?!(?:hesitate|wait|delay)\b){_W}{{0,2}}?{_HELP_VERB}\s+{_W}{{0,3}}?{_HELP}\b", re.I)
 
 
 def medical_advice(text):
-    """The sentences of text that give medical advice (see MEDICINE, MEDICAL_WORDS, DECLINES)."""
-    return [s for s in re.split(r"(?<=[.!?;])\s+|\n", text)
-            if MEDICINE.search(s) or (MEDICAL_WORDS.search(s) and not DECLINES.search(s))]
+    """The sentences of text that give medical advice or discourage medical help (see the patterns above)."""
+    return [s for s in re.split(r"(?<=[.!?;:])\s+|\n", text)
+            if MEDICINE.search(s) or DISCOURAGES_HELP.search(s)
+            or (MEDICAL_WORDS.search(s) and not (DECLINES_ADVICE.search(s) or REFERS.search(s)))]
 
 
 # "No area is in the High tier" when one is (24 Oct, spot-check of the D01 prompt line: C01, C03, R01, B03 said it), also
