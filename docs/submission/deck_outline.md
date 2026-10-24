@@ -83,7 +83,7 @@
 
 **Evidence:**
 - Reach: 1,806,220 of 4,571,620 senior-days of residents aged 75+ on observed High days (39.5%) fell in areas flagged High in advance; the High tier covered 16,524 residents aged 75+ a day on average (`checks/risk_score.md`).
-- Lead time: the forecast uses data up to 00:15 SGT (`design/backtest.md`), and on High days the first High reading came at 12:45 at the median, never before 09:45 (`checks/eda.md`). [TBD: the briefing's measured publication time; planned about 01:00.]
+- Lead time: the forecast uses data up to 00:15 SGT (`design/backtest.md`), and on High days the first High reading came at 12:45 at the median, never before 09:45 (`checks/eda.md`). On its first scheduled night, 24 Oct, the forecast for all 41 areas was written at 00:49:49 SGT (`checks/heat_forecast_first_night.md`); one night, not a track record.
 - Recall: 355 of 710 High area-days in the back-test (`checks/backtest_review.md`) and 61 of 77 in the final check (`checks/final_check.md`).
 - No open heat-illness data exists, so there is no harm figure.
 

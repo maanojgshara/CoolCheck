@@ -131,7 +131,7 @@ The final check scores the model fitted to 31 Aug 2026, on 9,308 station-days wi
 ## Impact: reach, lead time and recall
 
 - **Reach.** In the back-test months the High tier covered, on average, 16,524 residents aged 75+ a day (`checks/risk_score.md`). Count each such resident once per day as a senior-day. On observed High days in the rated areas there were 4,571,620 senior-days, and 1,806,220 of them (39.5%) fell in areas the tier had flagged High in advance: 143 of 471 High area-days (`checks/risk_score.md`).
-- **Lead time.** The forecast for a day uses only data up to 00:15 SGT that day (`design/backtest.md`). On High days the first High reading came at 12:45 at the median and never before 09:45, over 465 High station-days (`checks/eda.md`). [TBD: the nightly job that publishes the briefing. It is planned to publish by about 01:00, about 5 hours before 06:00; the time will be measured once it runs.]
+- **Lead time.** The forecast for a day uses only data up to 00:15 SGT that day (`design/backtest.md`). On High days the first High reading came at 12:45 at the median and never before 09:45, over 465 High station-days (`checks/eda.md`). On its first scheduled night, 24 Oct 2026, the nightly job had the day's forecast for all 41 areas written at 00:49:49 SGT, 35 minutes after the cut-off and about 5 hours before 06:00 (`checks/heat_forecast_first_night.md`). That is one night, not a track record.
 - **Recall.** In the back-test, the cut-off caught half of the High area-days, 355 of 710 (`checks/backtest_review.md`). In the final check it caught 61 of 77 (`checks/final_check.md`).
 - **No harm figure.** There is no open data on heat illness by area and day, so we claim no lives saved, no admissions avoided and no harm prevented.
 
