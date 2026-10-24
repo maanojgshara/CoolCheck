@@ -70,6 +70,17 @@ def trained_to(mv):
     return date.fromisoformat(window.split("..")[1]) if ".." in window else LM.LIVE_LAST
 
 
+def log_completeness(spark, dq_table, feats, target):
+    """Review finding 1: silver.dq_day for the day before the target date and each station's latest input time, as log
+    lines. Any error in them is printed and swallowed, so this can never fail the night or change a result."""
+    try:
+        dq = [r.asDict() for r in spark.sql(LM.previous_day_sql(dq_table, target)).collect()]
+        for line in LM.completeness_lines(dq, feats, target):
+            print(line, flush=True)
+    except Exception as e:  # noqa: BLE001 - log lines only
+        print(f"completeness lines not written ({type(e).__name__}: {str(e)[:300]}); the score goes on", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--catalog", default="coolcheck")
@@ -118,6 +129,7 @@ def main():
     assert_completed_days(feats, target, ["inputs_max_day"])
     feats["target_date"] = pd.to_datetime(feats.target_date)
     FC.assert_in_window(feats, target, target, "features")
+    log_completeness(spark, t["dq"], feats, target)
     forecast_missing = bool(forecast_for_targets(src["fc"], targets, LM.CUTOFF_MINUTES).toPandas()
                             .forecast_missing.iloc[0])
 

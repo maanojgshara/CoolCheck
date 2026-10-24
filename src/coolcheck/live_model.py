@@ -180,6 +180,39 @@ def forecast_rows(amap41, preds, forecast_missing, t, model_version, run_id, sco
     return rows[[c for c, _ in FORECAST_COLUMNS]]
 
 
+def previous_day_sql(dq_table, t):
+    """silver.dq_day's rows for the day before target date t (review finding 1: was that day complete when scored?)."""
+    return (f"SELECT feed, status, n_timestamps, expected_timestamps, n_stations, n_rows, note FROM {dq_table} "
+            f"WHERE sgt_date = DATE'{t - timedelta(days=1)}' ORDER BY feed")
+
+
+def _hm(ts):
+    return "none" if ts is None or pd.isna(ts) else pd.Timestamp(ts).strftime("%Y-%m-%d %H:%M")
+
+
+def completeness_lines(dq_rows, feats, t):
+    """Log lines only (review finding 1): silver.dq_day for the day before t, per feed, and the stations grouped by their
+    latest input time (inputs_max_ts for WBGT and the forecast, rain_inputs_max_ts for rainfall; SGT). Nothing here
+    changes a result."""
+    d = t - timedelta(days=1)
+    got = {r["feed"]: r for r in dq_rows}
+    parts = []
+    for f in DQ_FEEDS:
+        r = got.get(f)
+        parts.append(f"{f} no row" if r is None else
+                     f"{f} {r['status']} ({r['n_timestamps']} of {r['expected_timestamps']} times, {r['n_stations']} "
+                     f"stations, {r['n_rows']:,} rows{'; ' + r['note'] if r.get('note') else ''})")
+    lines = [f"silver.dq_day for {d} (the day before the target date): " + "; ".join(parts)]
+    for col, label in (("inputs_max_ts", "WBGT and forecast"), ("rain_inputs_max_ts", "rainfall")):
+        groups = {}
+        for sid, ts in zip(feats["station_id"], feats[col]):
+            groups.setdefault(_hm(ts), []).append(str(sid))
+        lines.append(f"latest {label} input per station: " + "; ".join(
+            f"{k} {len(v)} station{'s' if len(v) > 1 else ''}" + (f" ({', '.join(sorted(v))})" if len(v) <= 5 else "")
+            for k, v in sorted(groups.items(), reverse=True)))
+    return lines
+
+
 def create_table_sql(table):
     return f"CREATE TABLE IF NOT EXISTS {table} ({FORECAST_SCHEMA}) COMMENT '{FORECAST_COMMENT}'"
 
