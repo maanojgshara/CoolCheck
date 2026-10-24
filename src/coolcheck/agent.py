@@ -64,7 +64,10 @@ BANNED = [("P(High), probability or score", re.compile(r"p\s*\(\s*high\s*\)|prob
               rf"\b{TIER}\s+(?:hdb\s+)?(?:blocks?|blks?)\b"
               rf"|\b(?:blk|block)\s+\d+[a-z]?(?:\s+[a-z0-9]+){{0,5}}\s+(?:is|are)\s+(?:a\s+|in\s+the\s+)?{TIER}\b"
               r"(?![- ](?:planning\s+)?areas?)"
-              r"|\b(?:blocks?|blks?)(?:['’]s?)?\s+tiers?\b", re.I))]
+              r"|\b(?:blocks?|blks?)(?:['’]s?)?\s+tiers?\b", re.I)),
+          # D01 on 24 Oct, twice: "a refuge about 0 m away" for a refuge the tool result gave as "at the block" (0.0 m)
+          ("a distance of 0 m (the tool says at the block)",
+           re.compile(r"(?<![\d.,])0(?:\.0+)?\s*(?:m|metres?|meters?)\b", re.I))]
 # "No area is in the High tier" when one is (24 Oct, spot-check of the D01 prompt line: C01, C03, R01, B03 said it), also
 # scoped ("No rated area in the North-East region is in the High tier"), which in a regional plan must name the region
 NO_HIGH_TIER = re.compile(r"\bno\s+(?:rated\s+)?areas?\s+(?:in\s+(?:the\s+)?[\w-]+(?:\s+(?:region|island))?\s+)?(?:is|are)\s+"

@@ -481,3 +481,14 @@ def test_3d_the_prompt_gives_a_blocks_area_heat_level_and_never_says_it_is_unava
     ok, checks = A.check_summary("Toa Payoh's forecast heat is High; heat is forecast per area. Call Blk 208A first.",
                                  A.source_numbers(ROWS_24), seen_text="TOA PAYOH")
     assert ok, checks  # the answer the line asks for passes the checks
+
+
+@pytest.mark.parametrize("summary,banned", [
+    ("Block 5 has a refuge about 0 m away.", True),  # D01, 24 Oct, twice: the tool result said "at the block" (0.0 m)
+    ("A refuge within 0 m.", True),
+    ("Bidadari CC is about 450 m away; Care Corner AAC is at the block.", False),
+    ("A refuge 100 m away, another 2.0 m away, 0 minutes.", False),
+])
+def test_3e_a_zero_distance_in_the_summary_fails(summary, banned):
+    ok, checks = A.check_summary(summary, A.source_numbers(ROWS_24, 100, 2.0))
+    assert ("a distance of 0 m (the tool says at the block)" in checks["banned"]) is banned

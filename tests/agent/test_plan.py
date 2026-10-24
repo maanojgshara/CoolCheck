@@ -133,6 +133,13 @@ def test_template_summary_24_oct():
     assert "No call capacity" in P.template_summary(NO_CALLS, 0)
 
 
+@pytest.mark.parametrize("m,spoken", [(0.0, "at the block"), (5.0, "at the block"), (9.99, "at the block"),
+                                      (10.0, "about 10 m"), (15.0, "about 20 m"), (448.34, "about 450 m"),
+                                      (None, "unknown distance")])
+def test_metres_under_10_m_is_at_the_block(m, spoken):
+    assert P.metres(m) == spoken  # 5.0 gave "about 0 m" (rounding to even), copied into D01's summaries
+
+
 def test_plan_section_partial_rounding_and_refuge_at_block():
     text = P.plan_section(ROWS_24)
     assert "Blk 5 LOR 7 TOA PAYOH: 180 calls of 258 flats (partial)" in text

@@ -294,10 +294,11 @@ def no_tier_sentence(tier, region=None):
 
 
 def metres(m):
-    """A straight-line distance rounded to 10 m, for speaking."""
+    """A straight-line distance rounded to 10 m, for speaking; under 10 m is "at the block" (5.0 rounds to even, which
+    gave "about 0 m": D01 on 24 Oct)."""
     if m is None:
         return "unknown distance"
-    return "at the block" if m < 5 else f"about {int(round(m, -1))} m"
+    return "at the block" if m < 10 else f"about {int(round(m, -1))} m"
 
 
 def _join(names):
