@@ -6,6 +6,9 @@
 # first scheduled run. The free target keeps it paused (databricks.yml): Free Edition has no champion model yet.
 #   databricks bundle run heat_forecast -t dev -p coolcheck --params target_date=2026-10-23
 # The failure e-mail goes to the deploying user (workspace.current_user.userName), so no address is in the repository.
+# Each task retries once, 5 minutes later (review finding 2, docs/checks/review_live_model_nightly.md): a transient error
+# in the refresh or the score would otherwise leave the day without a forecast. A second score is safe: its MERGE
+# replaces the date's rows. The e-mail goes only when the retry fails too.
 # Written as heat_forecast.job.yml.draft; renamed to heat_forecast.job.yml for its first deploy.
 resources:
   jobs:
@@ -32,13 +35,16 @@ resources:
               - lightgbm==4.6.0
       tasks:
         - task_key: refresh
+          max_retries: 1
+          min_retry_interval_millis: 300000
           pipeline_task:
             pipeline_id: ${resources.pipelines.coolcheck_pipeline.id}
             full_refresh: false
         - task_key: score
           depends_on:
             - task_key: refresh
-          max_retries: 0
+          max_retries: 1
+          min_retry_interval_millis: 300000
           environment_key: ml
           spark_python_task:
             python_file: ../src/jobs/heat_forecast.py
