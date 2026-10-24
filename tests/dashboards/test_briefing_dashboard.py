@@ -3,7 +3,8 @@
 Structure (local): the file is exactly what the builder makes; every page is GRID_V1 with rows that fill 12 columns; field
 bindings match; widget versions; no dataset names P(High), the score, gold.heat_forecast, model_version or run_id (whole
 words, so gold.score_weights and scored_at are fine); the colours are coolcheck.briefing's checked set and the live page's
-heat categories; nothing calls a page "Tomorrow"; the Briefing page computes today in Singapore, not with current_date().
+heat categories; nothing calls a page "Tomorrow" and nothing reads as unfinished (no placeholder box); the Briefing page
+computes today in Singapore, not with current_date().
 SQL (Databricks Connect, temp views only): every dataset runs unchanged on temp views with the same bare names, built from
 the files the tables are loaded from (coolcheck-data/analysis and reference/) and a made-up forecast through
 coolcheck.risk.area_heat_risk_sql, with the expected rows; the Briefing page's headline, top 10 and the rest; the two
@@ -132,7 +133,11 @@ def test_colours_are_the_checked_set_and_no_page_says_tomorrow():
     assert mappings("trend-chart") == BB.HEAT_COLOURS == {k: live[k] for k in ("Low", "Moderate", "High")}
     assert not any(w.get("spec", {}).get("widgetType") == "choropleth-map" for _, w, _ in widgets())
     assert "tomorrow" not in json.dumps(DASH).lower()
-    assert "what_if_add_refuge" in json.dumps(by["what-if"])
+
+
+def test_nothing_reads_as_unfinished():
+    unfinished = r"not built|reserved for|placeholder|\btbd\b|\btodo\b|coming soon|\bwindow [a-e]\b|what_if"
+    assert not re.findall(unfinished, json.dumps(DASH, ensure_ascii=False), re.I)
 
 
 def test_about_carries_every_notice():
@@ -233,8 +238,8 @@ def test_headline_lines_in_order(views):
     assert lines == [
         f"Heat risk for {LATEST.strftime('%A')}, 31 December 2999, prepared 24 Oct 2026 00:49 SGT",
         f"Tiers: High {n['High']}, Medium {n['Medium']}, Low {n['Low']}, Not rated {n['Not rated']}.",
-        "Medium means heightened care on a Moderate-heat day, not an alert. One Medium area has High heat and is in the "
-        "lower third for vulnerability.",
+        "Medium is not an alert: heightened care where heat is Moderate in an upper- or middle-third area, or High in a "
+        "lower-third one. One Medium area has High heat and is in the lower third for vulnerability.",
         f"{n['High'] + n['Medium']} areas are High or Medium: the top 10 are in the first table, the other "
         f"{n['High'] + n['Medium'] - 10} in the table under it.",
         "Southern Islands and Sungei Kadut have High heat but are Not rated: no HDB blocks to rate, so only the heat level is shown."]

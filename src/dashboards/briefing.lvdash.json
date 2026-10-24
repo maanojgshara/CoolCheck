@@ -27,7 +27,7 @@
         "  SELECT 3, concat('Tiers: High ', n_high, ', Medium ', n_medium, ', Low ', n_low, ', Not rated ', n_not_rated,\n",
         "    CASE WHEN n_no_forecast > 0 THEN concat(', No forecast ', n_no_forecast) ELSE '' END, '.') FROM d\n",
         "  UNION ALL\n",
-        "  SELECT 4, concat('Medium means heightened care on a Moderate-heat day, not an alert.',\n",
+        "  SELECT 4, concat('Medium is not an alert: heightened care where heat is Moderate in an upper- or middle-third area, or High in a lower-third one.',\n",
         "    CASE WHEN n_medium_high_heat = 1 THEN ' One Medium area has High heat and is in the lower third for vulnerability.'\n",
         "         WHEN n_medium_high_heat > 1 THEN concat(' ', n_medium_high_heat, ' Medium areas have High heat and are in the lower third for vulnerability.')\n",
         "         ELSE '' END) FROM d WHERE n_medium > 0\n",
@@ -959,24 +959,7 @@
           "position": {
             "x": 0,
             "y": 6,
-            "width": 8,
-            "height": 9
-          }
-        },
-        {
-          "widget": {
-            "name": "what-if",
-            "multilineTextboxSpec": {
-              "lines": [
-                "### What if a refuge were added here?\n",
-                "Reserved for the what-if refuge result (window B's `what_if_add_refuge`, Saturday). Not built yet.\n"
-              ]
-            }
-          },
-          "position": {
-            "x": 8,
-            "y": 6,
-            "width": 4,
+            "width": 12,
             "height": 9
           }
         },

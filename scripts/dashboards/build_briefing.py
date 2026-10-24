@@ -102,7 +102,7 @@ SELECT line FROM (
   SELECT 3, concat('Tiers: High ', n_high, ', Medium ', n_medium, ', Low ', n_low, ', Not rated ', n_not_rated,
     CASE WHEN n_no_forecast > 0 THEN concat(', No forecast ', n_no_forecast) ELSE '' END, '.') FROM d
   UNION ALL
-  SELECT 4, concat('Medium means heightened care on a Moderate-heat day, not an alert.',
+  SELECT 4, concat('Medium is not an alert: heightened care where heat is Moderate in an upper- or middle-third area, or High in a lower-third one.',
     CASE WHEN n_medium_high_heat = 1 THEN ' One Medium area has High heat and is in the lower third for vulnerability.'
          WHEN n_medium_high_heat > 1 THEN concat(' ', n_medium_high_heat, ' Medium areas have High heat and are in the lower third for vulnerability.')
          ELSE '' END) FROM d WHERE n_medium > 0
@@ -295,10 +295,7 @@ def build():
                 ("hdb_dwelling_units_confirmed", "HDB flats"), ("refuge_beyond", "Flats beyond 400 m of a refuge"),
                 ("park_beyond", "Flats beyond 400 m of a park"), ("held_neutral", "Held at the middle (0.5)")],
                 "The area"), 4, 3, 8, 3),
-            at(points, 0, 6, 8, 9),
-            at(text("what-if", ["### What if a refuge were added here?\n",
-                                "Reserved for the what-if refuge result (window B's `what_if_add_refuge`, Saturday). Not built yet.\n"]),
-               8, 6, 4, 9),
+            at(points, 0, 6, 12, 9),
             at(table("blocks-table", "ds_blocks", [
                 ("priority", "Priority"), ("block", "Block"), ("rental_1_2_room", "1-2 room rental flats"),
                 ("total_dwelling_units", "Flats"), ("refuge_main_name", "Nearest refuge"), ("refuge_m", "Refuge (m)"),
