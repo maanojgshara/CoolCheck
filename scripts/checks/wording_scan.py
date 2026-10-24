@@ -1,12 +1,31 @@
 """Forbidden-wording scan for the submission drafts and the README. Prints each hit with its line, for a person to judge.
 Rules come from the user's wording rules of 24 Oct 2026 and Guide A11. Usage, from the repo root:
-python -I scripts/checks/wording_scan.py README.md docs/submission/writeup.md docs/submission/deck_outline.md"""
+python -I scripts/checks/wording_scan.py README.md docs/submission/writeup.md docs/submission/deck_outline.md
+
+The user's name is read at run time, never written here: WORDING_SCAN_NAMES (comma-separated) if set, else the words of
+`git config user.name`. Names under three characters are skipped."""
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+
+def user_names():
+    if "WORDING_SCAN_NAMES" in os.environ:
+        names = os.environ["WORDING_SCAN_NAMES"].split(",")
+    else:
+        try:
+            names = subprocess.run(["git", "config", "user.name"], capture_output=True, encoding="utf-8",
+                                   cwd=Path(__file__).resolve().parent).stdout.split()
+        except OSError:  # no git on the PATH
+            names = []
+    return [n.strip() for n in names if len(n.strip()) >= 3]  # an initial would match almost every line
+
+
+NAMES = user_names()
 RULES = {
     "P(High) or a class probability as a number": [
         r"\bp_(high|low|moderate)\b",
@@ -39,10 +58,12 @@ RULES = {
     ],
     "old lead-time claim": [r"24-hour lead", r"evening before"],
     "personal data or a user name in a repo file": [
-        r"[\w.+-]+@[\w-]+\.[\w.]+", r"maanoj", r"\[dev (?!<user>)[a-z]+\]",
+        r"[\w.+-]+@[\w-]+\.[\w.]+", *(re.escape(n) for n in NAMES), r"\[dev (?!<user>)[a-z]+\]",
     ],
 }
 
+if not NAMES:
+    print("no user name to look for: set WORDING_SCAN_NAMES or git config user.name")
 for path in sys.argv[1:]:
     print(f"=== {path}")
     n = 0
