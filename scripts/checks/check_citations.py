@@ -26,7 +26,7 @@ if ALLOWLIST.exists():
         for row in csv.DictReader(f, delimiter="\t"):
             allowed[(row["draft"], row["number"], row["line_sha1"])] = row["reason"]
 used = set()
-CITE = re.compile(r"`((?:docs/)?(?:(?:checks|design|submission)/[\w./-]+\.md|datasets\.md|attribution\.md|build-log\.md)|"
+CITE = re.compile(r"`((?:docs/)?(?:(?:checks|design|submission|runbooks)/[\w./-]+\.md|datasets\.md|attribution\.md|build-log\.md)|"
                   r"README\.md|(?:scripts|src)/[\w./-]+\.py)`")  # the README cites from the repo root (docs/...), the drafts from docs/
 NUM = re.compile(r"(?<![\w.§/-])(?:US\$)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(%)?(?![\w/])")
 SKIP_LINE = re.compile(r"^\s*(\d+\.\s+\"Contains information|>|#)")
