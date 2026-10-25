@@ -307,8 +307,9 @@ def capacity_from(default_capacity, calls_per_volunteer, volunteers=None, reques
 # --- the text ------------------------------------------------------------------------------------------------------
 
 def area_name(name):
-    return " ".join(w if w.isupper() and len(w) <= 2 else "-".join(p.capitalize() for p in w.split("-"))
-                    for w in (name or "").split())
+    """A planning area or region with a capital after each space and hyphen: "Ang Mo Kio", "North-Eastern Islands",
+    "North-East" (as the dashboard writes them)."""
+    return " ".join("-".join(p.capitalize() for p in w.split("-")) for w in (name or "").split())
 
 
 def region_name(region):

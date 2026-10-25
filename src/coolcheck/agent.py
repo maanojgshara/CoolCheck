@@ -423,10 +423,12 @@ ARG_WORDS = {"volunteers": "{} volunteers", "calls_per_volunteer": "{} calls per
 
 def _region_notes(request, sent, region):
     """'South is not one of the five regions; this plan covers the whole island.' for a region the model sent that is not
-    one of the five, or one the request names ("the South region"; R01 on 24 Oct: the model sent ALL and said nothing)."""
+    one of the five, or one the request names ("the South region"; R01 on 24 Oct: the model sent ALL and said nothing).
+    A code of two capitals or fewer that the model sent stays as written ("SE is not one of the five regions")."""
     found = {}
     for raw in [m.group(1) for m in NOT_A_REGION.finditer(request or "")] + list(sent):
-        name = P.area_name(re.sub(r"[\s-]*regions?\s*$", "", str(raw).strip(), flags=re.I))
+        words = re.sub(r"[\s-]*regions?\s*$", "", str(raw).strip(), flags=re.I).split()
+        name = " ".join(w if w.isupper() and len(w) <= 2 else P.area_name(w) for w in words)
         found.setdefault(re.sub(r"[^A-Z]", "", name.upper()), name)
     where = f"the {P.region_name(region)} region" if region else "the whole island"
     return [f"{n} is not one of the five regions; this plan covers {where}." for n in found.values() if n]

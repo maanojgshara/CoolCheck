@@ -776,6 +776,23 @@ def test_4_4_calls_over_the_cap_are_recorded_and_not_run():
     assert d.tool_calls[6].llm_arguments == {"blk_no": "1", "street": "X"} and d.tool_calls[8].name == "get_priority_areas"
 
 
+def test_4_5_area_names_have_a_capital_after_each_space_and_hyphen():
+    # "Ang MO Kio" since ecf17da (an all-capital word of two letters was kept): in run 1's stored drafts
+    raw = [*A.PLANNING_AREAS, *P.REGIONS]
+    names = [P.area_name(a) for a in A.PLANNING_AREAS] + [P.region_name(r) for r in P.REGIONS]
+    assert len(names) == 60
+    for r, n in zip(raw, names):
+        assert n.upper() == r and all(w[:1].isupper() and w[1:] == w[1:].lower() for w in re.split(r"[ -]", n)), n
+    assert names[0] == "Ang Mo Kio" and "North-Eastern Islands" in names and P.region_name("NORTH-EAST REGION") == "North-East"
+
+
+def test_4_5_a_region_code_the_model_sent_keeps_its_capitals_in_the_note():
+    s = Script(tool_msg(("get_priority_areas", {"region": "SE"})), tool_msg(("get_priority_areas", {})),
+               text_msg("Toa Payoh is High."))
+    d, _ = run(s)
+    assert "SE is not one of the five regions; this plan covers the whole island." in d.notices
+
+
 STORED = ("docs/checks/agent_eval/20261024T121843Z.json", "docs/checks/agent_eval/20261024T155142Z.json")  # runs 1 and 2
 
 
