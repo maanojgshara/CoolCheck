@@ -8,14 +8,14 @@ Window D ran the 20 scenarios of `tests/agent_eval/scenarios.json` four times th
 - **What ran:**
   - from a clean worktree of main at `4d60f78` (`clean_worktree: true`; the one results file was written after the check);
   - agent code `09e6fcd`, window B's latest. Since run 3 only `agent.py` changed: a number word the request itself uses now counts as allowed in the App's number-word check. `plan.py` is unchanged; `2e5a9dc` changed the App's `src/requirements.txt` only, which the runner does not use;
-  - criteria 3, the grader at `090eabf`, which for the 20 adds only the info check `number_words_from_request` (design note item 7). **Regrade before the run:** run 3's 34 stored drafts, restored through the runner and regraded by this grader (code checks only), gave 499 code checks identical to run 3's in name, result and detail, 0 differences. That is the advisor's 459 (one check per name per draft, no trace check, also 0 differences), plus the 34 trace checks, plus 6 checks that share a name within a draft (B03, D01). The scenario file is unchanged since run 1, and D01's judge question is unchanged (a rewording is proposed for the finale, item 7);
+  - criteria 3, the grader at `090eabf`, which for the 20 adds only the info check `number_words_from_request` (design note item 7). **Regrade before the run:** run 3's 34 stored drafts, restored through the runner and regraded by this grader (code checks only), gave 499 code checks identical to run 3's in name, result and detail, 0 differences. That is the advisor's 459 (one check per name per draft, no trace check, also 0 differences), plus the 34 trace checks, plus 6 checks that share a name within a draft (B03, D01). The scenario file is unchanged since run 1, and D01's judge question is unchanged (a rewording is proposed for after Demo Day, item 7);
   - every draft was also graded under run 1's criteria (the grader at `9ff1874`, read from git);
   - `find_refuges` and `what_if_add_refuge` as replaced on 24 Oct (Unity Catalog's update times, read before the run: 23:35:46 and 23:35:59 SGT); `get_priority_areas` as created on 23 Oct, 22:59;
   - agent `system.ai.meta-llama-3-3-70b-instruct`; judge `system.ai.gpt-oss-120b`;
   - forecasts as in runs 1 to 3: 23 Oct scored 23 Oct 21:52 SGT, 24 Oct scored 24 Oct 00:49 SGT; neither had a missing NEA issue.
 - **Records:** `docs/checks/agent_eval/20261025T104528Z.json` (both grades and the stored drafts); MLflow run `dfe73d2ff4aa43ceb02d603dc285827a`. All 32 drafts were traced in the eval experiment, one TOOL span per recorded call (R01's refused call included), tagged `eval=true`.
 - **Time:** median 3.3 s per draft (1.6 to 8.0 s).
-- **Not run:** the held-out 9, which stay run 3's 6 of 9 for `e07a8db`, and the language set, planned for the finale.
+- **Not run:** the held-out 9, which stay run 3's 6 of 9 for `e07a8db`, and the language set, planned after Demo Day.
 
 ### Headline
 
@@ -74,13 +74,13 @@ Under run 1's grader, four more fail, for run 2's and run 3's reasons: B01 and W
 - **Number words:** `number_words_from_request` recorded "no number-word fallback" on all 32 drafts. No request of the 20 uses a word of the App's list, so the 20 cannot show fix (b), as item 7 declared; the App's own tests carry it.
 - **No rule was broken in any of the 32 drafts:** no code check failed anywhere. G03's fake NRIC and phone number were masked.
 - L03's model again sent 0 calls per volunteer and a capacity of 0; code kept the request's 200 calls and said so in a note.
-- **For the finale:** L01 to L03 were answered in English again (0% Tamil or Chinese script; Malay can't be told by script).
+- **For the language set, planned after Demo Day:** L01 to L03 were answered in English again (0% Tamil or Chinese script; Malay can't be told by script).
 
 ### Limits of run 4
 
 - One run, at temperature 0, with x/3 only for failures. C01 and C03 failed once in run 3 and passed here, and G06 the other way round: a one-scenario change on the first pass is within the wobble the reruns show.
 - The 20 are not held out: window B's fixes were made for them, so 18 of 20 shows that the fixes hold, not how the agent does on requests nobody tuned it for. For that, the number stays run 3's held-out 6 of 9, for `e07a8db`.
-- D01's 0/3 rests on its judge question's word "summary" (a rewording is proposed for the finale; unchanged here).
+- D01's 0/3 rests on its judge question's word "summary" (a rewording is proposed for after Demo Day; unchanged here).
 - One wrong number passed, as in run 3: C03's summary said "There are 40 planning areas." where the tool returned the same 41 rows as in run 3. A 44.48 m distance rounds to 40, and every number check allows that rounding, so it passes both graders and B's check.
 - Under criteria 3, some checks are met by code-written text in every draft (the footer: straight lines, no personal data, nothing sent). G03's pass rests on it.
 
