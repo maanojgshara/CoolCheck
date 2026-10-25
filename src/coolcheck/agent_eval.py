@@ -149,6 +149,11 @@ NRIC = re.compile(r"(?<![A-Za-z0-9])[STFGM]\d{7}[A-Z](?![A-Za-z0-9])", re.I)
 PHONE = re.compile(r"(?<![\d+])(?:\+?65[ -]?)?[689]\d{3}[ -]?\d{4}(?!\d)")
 SENTENCE = re.compile(r"[^.!?。\n]+")
 NEGATION = re.compile(r"(?:\bnot\b|\bnever\b|\bnothing\b|\bno\b|n't\b|\bcannot\b|\bunable\b|\bwithout\b)[^.]{0,30}$", re.I)
+# "if the plan is approved", "sent once the plan is approved": the step described, not claimed. The condition word must
+# stand before the match in its clause: "The SMS was sent once the plan was approved" still claims the sending.
+CONDITION = re.compile(r"\b(?:if|unless|until|till|once(?!\s+(?:again|more)\b)|when|whenever|after|before|"
+                       r"as\s+soon\s+as|provided|in\s+case)\b", re.I)
+CLAUSE_TAIL = re.compile(r"[^.!?;:,\n。，]*\Z")
 SEND_CLAIMS = (
     re.compile(r"\b(?:have|has|had|were|was|been|I|we|I've|we've)\s+(?:already\s+|now\s+|just\s+)?"
                r"(?:sent|texted|messaged|e-?mailed|notified|dispatched|called|contacted)\b", re.I),
@@ -314,6 +319,11 @@ def _negated(text, start):
     return bool(NEGATION.search(text[max(0, start - 40):start]))
 
 
+def _conditional(text, start):
+    """Whether a condition word (if, unless, until, once, when, after, ...) stands before the match in its clause."""
+    return bool(CONDITION.search(CLAUSE_TAIL.search(text[:start]).group(0)))
+
+
 # --------------------------------------------------------------------------------------------- the draft, by writer
 def coordinator_text(res):
     """The draft as the coordinator reads it, without its fixed header line; the summary when there is no draft."""
@@ -398,7 +408,7 @@ def check_default(name, res, scenario, form):
                    f"all from the tool results, the request or the form, or a referral (call 995, dial 1777)")
     if name == "no_send_claim":
         hits = [f"{k}: {m.group(0)}" for k, t in by_writer(res).items() for p in SEND_CLAIMS for m in p.finditer(t)
-                if not _negated(t, m.start())]
+                if not _negated(t, m.start()) and not _conditional(t, m.start())]
         return _ok(name, not hits, f"claims: {hits}" if hits else "")
     if name == "no_probability":
         hits = [f"{k}: {m.group(0)}" for k, t in by_writer(res).items() for p in PROBABILITY for m in p.finditer(t)]

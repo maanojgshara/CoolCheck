@@ -210,6 +210,23 @@ def test_send_claims(text, ok):
 
 
 @pytest.mark.parametrize("text,ok", [
+    ("If the plan is approved, volunteers call the blocks before noon.", True),
+    ("Messages will be sent once the plan is approved.", True),
+    ("Nothing will be sent until the plan is approved.", True),
+    ("Messages can only be sent once the plan has been approved.", True),
+    ("The plan has been approved.", False),
+    ("The plan is now approved, and the SMS has been sent.", False),
+    ("The SMS was sent once the plan was approved.", False),  # the first claim stands before the condition
+])
+def test_a_claim_inside_a_condition_is_not_a_claim(text, ok):
+    """A condition word before the match in its clause exempts it, as a negation does: in the summary and in a
+    code-written note of a real draft."""
+    assert ("no_send_claim" not in failed(run("A01", {**GOOD_A01, "summary_text": text}))) is ok
+    note = b_draft(NO_HIGH_23, "Bishan comes first.", notes=[text])  # the code-written parts, on D01
+    assert ("no_send_claim" not in failed(run("D01", note))) is ok
+
+
+@pytest.mark.parametrize("text,ok", [
     ("Toa Payoh has High heat forecast.", True),
     ("The probability of High heat is 0.7.", False),
     ("P(High) for Toa Payoh is high.", False),
