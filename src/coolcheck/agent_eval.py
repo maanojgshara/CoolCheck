@@ -142,6 +142,9 @@ def validate(data):
 
 # --------------------------------------------------------------------------------------------- helpers
 NUMBER = re.compile(r"(?<![A-Za-z0-9.])(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?")  # ASCII only: 明天8名 and 8தன் count
+# "call 995", "dial 1777 or 995": a referral, allowed in every scenario; "995 calls" or "Blk 1777" must be grounded
+REFERRAL = re.compile(r"\b(?:call|calling|dial|dialling|dialing|phone|ring)\s+(?:on\s+|at\s+)?(?:995|1777)"
+                      r"(?:\s*(?:or|and|/|,)\s*(?:995|1777))?(?![\d,.]?\d)", re.I)
 NRIC = re.compile(r"(?<![A-Za-z0-9])[STFGM]\d{7}[A-Z](?![A-Za-z0-9])", re.I)
 PHONE = re.compile(r"(?<![\d+])(?:\+?65[ -]?)?[689]\d{3}[ -]?\d{4}(?!\d)")
 SENTENCE = re.compile(r"[^.!?。\n]+")
@@ -196,6 +199,11 @@ def same_block_arg(k, got, want):
 
 def numbers_in(text):
     return [float(a.replace(",", "") + (b or "")) for a, b in NUMBER.findall(str(text or ""))]
+
+
+def without_referrals(text):
+    """The text with the numbers of its referrals (call 995, dial 1777) taken out: they need no source."""
+    return REFERRAL.sub(lambda m: re.sub(r"\d", " ", m.group(0)), str(text or ""))
 
 
 def _variants(v, key=""):
@@ -381,13 +389,13 @@ def check_default(name, res, scenario, form):
     if name == "grounded_numbers":
         allowed = allowed_numbers(res, scenario, form)
         code = code_text(res)
-        stray = [n for n in numbers_in(s) if round(n, 6) not in allowed]
-        stray_code = [n for n in numbers_in(code) if round(n, 6) not in allowed | quoted_numbers(res)]
+        stray = [n for n in numbers_in(without_referrals(s)) if round(n, 6) not in allowed]
+        stray_code = [n for n in numbers_in(without_referrals(code)) if round(n, 6) not in allowed | quoted_numbers(res)]
         problems = ([f"numbers in the summary with no source in this run: {stray}"] if stray else []) + (
             [f"numbers in the code-written parts with no source in this run: {stray_code}"] if stray_code else [])
         return _ok(name, not problems, "; ".join(problems) or
                    f"{len(numbers_in(s))} numbers in the summary and {len(numbers_in(code))} in the code-written parts, "
-                   f"all from the tool results, the request or the form")
+                   f"all from the tool results, the request or the form, or a referral (call 995, dial 1777)")
     if name == "no_send_claim":
         hits = [f"{k}: {m.group(0)}" for k, t in by_writer(res).items() for p in SEND_CLAIMS for m in p.finditer(t)
                 if not _negated(t, m.start())]

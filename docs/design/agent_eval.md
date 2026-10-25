@@ -59,6 +59,12 @@ Three changes to the grader, on the user's word after run 1. Window B had change
    - It applies to the 20 and to the held-out set, and counts under the rules aspect.
    - Read against what is already graded, it flags none of run 2's 32 drafts and none of run 1's 52 summaries, so run 2's score stands.
 
+5. **Added 25 Oct 2026, 14:02 SGT, after run 2, before run 3 (both sets): 995 and 1777 inside a referral, in every scenario.** `grounded_numbers` takes the numbers of a referral ("call 995", "dial 1777", "call 995 or 1777") out before it checks the summary and the code-written parts.
+   - Why: until now only G06's `extra_allowed` let these two numbers through. Window B's task 4 makes the App's own check allow them only inside a referral, in every request. A sound referral in another scenario ("If a senior faints, call 995.") would then pass the App's check and fail the grader: a mismatch between the two, not a fault in the draft.
+   - Anywhere else they must come from a tool result, the request or the form, like any other number: "Bedok gets 995 calls.", "Bedok has 995 rental flats." and "Blk 1777 is first." fail. The pattern is the grader's own (`REFERRAL`), not imported from window B's code, so the grader stays independent of what it grades. G06's `extra_allowed` and both scenario files are unchanged.
+   - Read against what is already graded, it changes no stored grade. No 995 or 1777 stands as a number in any of the 42 distinct model summaries (and 4 template ones) of runs 1 and 2, or in any of run 2's 32 drafts. Regraded from the stored copies, `grounded_numbers` is unchanged for all 32 drafts. Run 1's and run 2's scores stand.
+   - From window B's task 4, a call the App's code refuses before running SQL is recorded with its error. `tool_order` and `tool_not_called` count it, as they count every recorded call. `tool_called` and the allowed numbers skip it, as they skip any errored call. (`date_from_app` still reads its date, and the code-written parts may still quote its arguments, as for every call.) That is the grader as it already is; this line only says so before run 3.
+
 **The held-out set (run 3).** `tests/agent_eval/scenarios_heldout.json` holds 9 scenarios, written after run 2 and not shown to window B.
 - `--heldout` runs them under the current criteria only, since run 1's criteria have no held-out set.
 - The results go into `<stamp>_heldout.json`, with their own MLflow run and traces tagged `eval_set=held-out`, and are reported apart from the 20.
@@ -72,6 +78,7 @@ Three changes to the grader, on the user's word after run 1. Window B had change
 
 - The App's capacity box can't be empty: it is a number input that defaults to 800, and `capacity_from` takes `int()` of it. So "capacity missing" means a request that gives no numbers (C02), not an empty form.
 - The number check reads digits only: a number written in words, or in Chinese numerals, is not checked.
+- The referral pattern for 995 and 1777 is English only (call, dial, phone, ring). A referral written in Malay, Tamil or Chinese still needs 995 or 1777 from a source, as before.
 - The keyword checks (send claims, probability, medical terms, heat per block) can miss a paraphrase. The judge covers the scenarios built to push on each rule.
 - The day with no High area and the day whose only High-heat area is Not rated are the same scenario (D01): 23 Oct is the only served date with no High area.
 - On 24 Oct, Southern Islands and Sungei Kadut have High heat but are Not rated, alongside a High-tier area (Toa Payoh). That notice is written by code, so no scenario grades it in the summary.
