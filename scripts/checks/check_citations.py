@@ -26,16 +26,16 @@ if ALLOWLIST.exists():
         for row in csv.DictReader(f, delimiter="\t"):
             allowed[(row["draft"], row["number"], row["line_sha1"])] = row["reason"]
 used = set()
-CITE = re.compile(r"`((?:checks|design|submission)/[\w./-]+\.md|datasets\.md|attribution\.md|build-log\.md|README\.md|"
-                  r"scripts/[\w./-]+\.py)`")
+CITE = re.compile(r"`((?:docs/)?(?:(?:checks|design|submission)/[\w./-]+\.md|datasets\.md|attribution\.md|build-log\.md)|"
+                  r"README\.md|(?:scripts|src)/[\w./-]+\.py)`")  # the README cites from the repo root (docs/...), the drafts from docs/
 NUM = re.compile(r"(?<![\w.§/-])(?:US\$)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(%)?(?![\w/])")
 SKIP_LINE = re.compile(r"^\s*(\d+\.\s+\"Contains information|>|#)")
 
 
 def resolve(c):
-    if c in ("README.md",) or c.startswith("scripts/"):
+    if c in ("README.md",) or c.startswith(("scripts/", "src/")):
         return Path(c)
-    return Path("docs") / c
+    return Path("docs") / c.removeprefix("docs/")
 
 
 cache = {}
