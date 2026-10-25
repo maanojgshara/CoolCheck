@@ -10,11 +10,11 @@ Rules, enforced in code: the allocation stays in get_priority_areas; the model o
 (volunteers, calls per volunteer, calls, region, a block), a value counts only if its number is in the request, and the
 arithmetic is in coolcheck.plan.capacity_from; the date comes from the App; every number in the model's summary must be
 found in a tool result the model saw or an input, so the summary asks for digits, not number words (the check then works
-on Malay, Tamil and Chinese text too); never P(High) or the score; no tier for a block; no claim that anything was sent;
-no medical advice beyond the tier actions. The plan section and the notices are written by code. If the model does not
-call get_priority_areas, the code runs it with the form's values and keeps the model's reply if it passes the checks. On
-any failure (model error, timeout, round or tool cap, a failed check) the summary is the per-tier template (decision 4)
-and fallback_reason says why. Python 3.11 compatible.
+on Malay, Tamil and Chinese text too); never P(High) or the score; no tier for a block; no claim that anything was sent
+or approved; no medical advice beyond the tier actions. The plan section and the notices are written by code. If the
+model does not call get_priority_areas, the code runs it with the form's values and keeps the model's reply if it
+passes the checks. On any failure (model error, timeout, round or tool cap, a failed check) the summary is the per-tier
+template (decision 4) and fallback_reason says why. Python 3.11 compatible.
 """
 import datetime as dt
 import json
@@ -60,7 +60,6 @@ TIMES = {"dozen": 12, "hundred": 100, "thousand": 1000}
 NUMBER_WORDS = re.compile(r"\b(" + "|".join([*ADD, *TIMES]) + r")\b", re.I)
 TIER = r"(?:low|medium|high)[- ](?:tier|risk)"
 BANNED = [("P(High), probability or score", re.compile(r"p\s*\(\s*high\s*\)|probabilit|\bscore|percent chance|% chance", re.I)),
-          ("claims something was sent", re.compile(r"\b(has|have|was|were) been sent\b|\bwe (have )?sent\b|\b(sms|e-?mails?|messages?) (were |was )?sent\b", re.I)),
           # tiers belong to areas (24 Oct, live: "a High-tier block"): "High-tier block", "Blk 208A ... is High tier",
           # "the block's tier"; "Blk 208A is in the High-tier area" passes
           ("a tier given to a block", re.compile(
@@ -71,35 +70,113 @@ BANNED = [("P(High), probability or score", re.compile(r"p\s*\(\s*high\s*\)|prob
           # D01 on 24 Oct, twice: "a refuge about 0 m away" for a refuge the tool result gave as "at the block" (0.0 m)
           ("a distance of 0 m (the tool says at the block)",
            re.compile(r"(?<![\d.,])0(?:\.0+)?\s*(?:m|metres?|meters?)\b", re.I))]
+# A claim that something was sent or approved: a past or perfect verb group ("has been sent", "were notified", "I've
+# texted", "I sent", "has been approved"). Judged per clause (25 Oct, on 4cb9c1e: "No messages were sent" failed, "I have
+# sent the reminders" passed): a negation excuses only the next claim in its own clause, and only from the last finite
+# verb on ("No messages were sent" and "This draft has not been sent" pass; "Nothing has been sent yet, but the SMS to
+# Bedok was sent" fails), and a condition excuses only the claim inside it ("Nothing will be sent until the plan has been
+# approved"). "I called get_priority_areas" is a tool call, not a claim
+_SENT = (r"(?:sent|texted|messaged|e-?mailed|notified|dispatched|delivered|contacted|phoned|informed|alerted|forwarded|"
+         r"broadcast|approved|called(?!\s+(?:get_priority_areas|find_refuges|what_if_add_refuge)\b))")
+_ADV = r"(?:\s+(?:not|never|already|just|now|also|yet|all|successfully))*"
+SEND_CLAIM = re.compile(rf"\b(?:has|have|had|was|were|got|been)(?:n['’]t)?{_ADV}\s+(?:been{_ADV}\s+)?{_SENT}\b"
+                        rf"|['’](?:ve|d){_ADV}\s+(?:been{_ADV}\s+)?{_SENT}\b|['’]s{_ADV}\s+been\s+{_SENT}\b"
+                        rf"|\b(?:i|we){_ADV}\s+{_SENT}\b|\b(?:is|are)\s+(?:now|already)\s+approved\b", re.I)
+NEGATION = re.compile(r"\b(?:no|not|nothing|none|nobody|never|neither|nor|without|cannot|unable)\b|n['’]t\b", re.I)
+FINITE = re.compile(r"\b(?:am|is|are|was|were|has|have|had|do|does|did|will|would|can|could|shall|should|may|might|must)\b"
+                    r"|['’](?:s|re|ve|ll|d)\b", re.I)
+CONDITION = re.compile(r"\b(?:if|unless|until|till|once|after|before|when|whenever|whether)\b[^,]*$", re.I)
+SEND_CLAUSES = re.compile(r"(?<=[.!?;:])\s+|\n|,?\s*\b(?:but|however|although|though|whereas)\b", re.I)
+
+
+def send_claims(text):
+    """The claims in text that something was sent or approved (see SEND_CLAIM)."""
+    out = []
+    for clause in SEND_CLAUSES.split(text or ""):
+        start = 0
+        for m in SEND_CLAIM.finditer(clause):
+            before = clause[start:m.start()]
+            verbs = list(FINITE.finditer(before))
+            scope = before[verbs[-1].start():] if verbs else before
+            if not (NEGATION.search(m.group(0)) or NEGATION.search(scope) or CONDITION.search(scope)):
+                out.append(m.group(0))
+            start = m.end()
+    return out
+
+
 # Medical advice fails, declining it does not (G06 on 24 Oct, run 2: "I'm not able to provide medical advice ... consult a
-# medical professional" was thrown away 3 times): a medicine or a dose fails anywhere; other medical words fail only in a
-# sentence that neither declines to give advice nor sends the person to medical help; discouraging help fails anywhere
-# ("There is no need to see a doctor"), and a negation alone excuses nothing ("Heat exhaustion does not need treatment")
+# medical professional" was thrown away 3 times): a medicine or a dose fails anywhere; other medical words, the heat
+# illnesses among them, fail only in a clause that neither declines to give advice nor sends the person to medical help;
+# discouraging help fails anywhere ("There is no need to see a doctor", "no need for a clinic visit"), and a negation
+# alone excuses nothing ("Heat exhaustion does not need treatment"). A decline or a referral excuses only its own clause
+# (25 Oct, on 4cb9c1e: "I can't diagnose them, but dizziness and headache are symptoms of heat exhaustion" passed)
 MEDICINE = re.compile(r"paracetamol|panadol|acetaminophen|ibuprofen|aspirin|\bnsaids?\b|antihistamine|"
                       r"oral rehydration salts?|electrolyte tablets?|\b\d+(?:\.\d+)?\s*(?:mg|mcg|ml)\b|"
                       r"\b\d+\s*(?:tablets?|pills?|capsules?|doses?|teaspoons?)\b", re.I)
 MEDICAL_WORDS = re.compile(r"medic|\bdos(?:e|es|age|ing)\b|diagnos|symptom|prescri|\bpills?\b|tablets?|capsules?|"
-                           r"\bdrugs?\b|\btreat(?:ment|ed|s|ing)?\b", re.I)
-EMERGENCY = (995, 1777)  # Singapore's emergency and non-emergency ambulance numbers, allowed in a referral
+                           r"\bdrugs?\b|\btreat(?:ment|ed|s|ing)?\b|\bheat[\s-]*(?:exhaustion|stroke|cramps?)\b|"
+                           r"\bheatstroke\b|\bdehydrat", re.I)
 _W = r"(?:[\w'’]+\s+)"  # one word and its space
-_HELP_VERB = r"(?:consult|see|seek|call|contact|visit|ask|go\s+to|get)\w*"
+_HELP_VERB = r"(?:consult|see|seek|call|contact|visit|ask|go\s+to|get|dial|phone|ring)\w*"
 _HELP = (r"(?:doctors?|gps?|physicians?|medical\s+(?:professionals?|help|attention|care|advice)|healthcare|pharmacists?|"
          r"clinics?|polyclinics?|hospitals?|995|1777|ambulances?|nurses?)")
-DECLINES_ADVICE = re.compile(rf"\b(?:can(?:not|['’]t)|can\s+not|unable\s+to|(?:am|['’]m|is|are)\s+not\s+able\s+to|"
+DECLINES_ADVICE = re.compile(rf"\b(?:can(?:not|['’]t)|can\s+not|unable\s+to|"
+                             rf"(?:am|['’]m|is|are)\s+not\s+(?:able|qualified|allowed|permitted)\s+to|"
                              rf"won['’]t|will\s+not|do(?:n['’]t|\s+not)|must\s+not|never)\s+{_W}{{0,2}}?"
-                             rf"(?:give|provide|offer|recommend|advise|suggest|prescribe|diagnose|tell|share)\b|"
+                             rf"(?:give|provide|offer|recommend|advise|suggest|prescribe|diagnose|tell|share|answer|"
+                             rf"discuss|help\s+with|assist\s+with|comment\s+on)\b|"
                              rf"\bonly\s+draft", re.I)
 REFERS = re.compile(rf"\b{_HELP_VERB}\s+{_W}{{0,3}}?{_HELP}\b", re.I)
-DISCOURAGES_HELP = re.compile(rf"\b(?:no\s+need|not\s+necessary|unnecessary|needn['’]t|need\s+not|no\s+reason|"
-                              rf"(?:do|does|did)(?:n['’]t|\s+not)|never|avoid)\s+(?:to\s+|for\s+)?"
-                              rf"(?!(?:hesitate|wait|delay)\b){_W}{{0,2}}?{_HELP_VERB}\s+{_W}{{0,3}}?{_HELP}\b", re.I)
+DISCOURAGES_HELP = re.compile(rf"\b(?:no\s+need|not\s+necessary|(?:is|are|was|were)n['’]t\s+necessary|unnecessary|"
+                              rf"needn['’]t|need\s+not|no\s+reason|(?:do|does|did|should|would|will|wo)(?:n['’]t|\s+not)|"
+                              rf"never|avoid)\s+(?:to\s+|for\s+)?"
+                              rf"(?!(?:hesitate|wait|delay|forget)\b){_W}{{0,2}}?{_HELP_VERB}\s+{_W}{{0,3}}?{_HELP}\b"
+                              rf"|\b(?:no\s+need|not\s+necessary|unnecessary|no\s+reason)\s+(?:for|of)\s+{_W}{{0,2}}?{_HELP}\b"
+                              rf"|\b(?:do|does|did|will|wo)(?:n['’]t|\s+not)\s+(?:need|require)\s+{_W}{{0,2}}?{_HELP}\b", re.I)
+SENTENCES = re.compile(r"(?<=[.!?;:])\s+|\n")
+CONTRAST = re.compile(r"(,?\s*\b(?:but|however|although|though|whereas)\b)", re.I)
+OPEN_CONDITION = re.compile(r"\s*(?:if|when|whenever|once|unless|until|should|in\s+case)\b[^,]*$", re.I)
+
+
+def _clauses(sentence):
+    """A sentence's clauses for the medical check: split at but, however, although, though and whereas, except inside a
+    condition not yet closed by a comma ("If a senior has heat exhaustion but is still conscious, call 1777" is one
+    clause); a clause that begins with although or though ends at its comma."""
+    parts = CONTRAST.split(sentence)
+    out, cur = [], parts[0]
+    for sep, text in zip(parts[1::2], parts[2::2]):
+        if OPEN_CONDITION.match(cur):
+            cur += sep + text
+            continue
+        out.append(cur)
+        if "though" in sep.lower() and "," in text:
+            head, _, cur = text.partition(",")
+            out.append(head)
+        else:
+            cur = text
+    return out + [cur]
 
 
 def medical_advice(text):
-    """The sentences of text that give medical advice or discourage medical help (see the patterns above)."""
-    return [s for s in re.split(r"(?<=[.!?;:])\s+|\n", text)
-            if MEDICINE.search(s) or DISCOURAGES_HELP.search(s)
-            or (MEDICAL_WORDS.search(s) and not (DECLINES_ADVICE.search(s) or REFERS.search(s)))]
+    """The sentences (a medicine, a dose, discouraging help) or clauses (other medical words) of text that give medical
+    advice or discourage medical help (see the patterns above)."""
+    out = []
+    for s in SENTENCES.split(text or ""):
+        if MEDICINE.search(s) or DISCOURAGES_HELP.search(s):
+            out.append(s)
+        else:
+            out += [c for c in _clauses(s)
+                    if MEDICAL_WORDS.search(c) and not (DECLINES_ADVICE.search(c) or REFERS.search(c))]
+    return out
+
+
+# 995 and 1777 (Singapore's emergency and non-emergency ambulance numbers) need no tool result only in a referral, as
+# window D's grader reads them ("call 995", "dial 1777 or 995"); anywhere else they are numbers like any other ("Bedok
+# has 995 rental flats", "Blk 1777", "call 995 seniors")
+REFERRAL = re.compile(r"\b(?:call|calling|dial|dialling|dialing|phone|ring)\s+(?:on\s+|at\s+)?(?:995|1777)"
+                      r"(?:\s*(?:or|and|/|,)\s*(?:995|1777))?(?![\d,.]?\d)"
+                      r"(?!\s+(?:more\s+)?(?:seniors?|residents?|people|persons?|households?|homes?|flats?|calls?|"
+                      r"blocks?|volunteers?|units?|of)\b)", re.I)
 
 
 # "No area is in the High tier" when one is (24 Oct, spot-check of the D01 prompt line: C01, C03, R01, B03 said it), also
@@ -230,16 +307,20 @@ def _names(text, name):
 
 def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text="", region=None, seen_text=None):
     """(passed, checks): digits only (a number word passes only if a tool result uses it, e.g. "four languages" in the
-    tier actions), every number grounded, no banned content, no "no area is in the High tier" when one is or, in a plan
-    for a region (its display name), without naming it, and, given seen_text, no planning area the model never saw.
-    Records whether Not-rated High heat is named when no rated area is High (the code notice is shown either way)."""
+    tier actions), every number grounded (995 and 1777 in a referral need no source), no banned content, no "no area is
+    in the High tier" when one is or, in a plan for a region (its display name), without naming it, and, given
+    seen_text, no planning area the model never saw. Records whether Not-rated High heat is named when no rated area is
+    High (the code notice is shown either way)."""
     used = {w.lower() for w in NUMBER_WORDS.findall(source_text or "")}
     checks = {"ungrounded_numbers": [], "number_words": [w for w in NUMBER_WORDS.findall(text) if w.lower() not in used],
               "banned": []}
-    for m in re.finditer(r"(\d+(?:[.,]\d+)*)(\s*%)?", text):
+    unreferred = REFERRAL.sub(lambda m: re.sub(r"\d", " ", m.group(0)), text)
+    for m in re.finditer(r"(\d+(?:[.,]\d+)*)(\s*%)?", unreferred):
         if not grounded(m.group(1), sources, percent=bool(m.group(2))):
             checks["ungrounded_numbers"].append(m.group(0).strip())
     checks["banned"] = [name for name, rx in BANNED if rx.search(text)]
+    if send_claims(text):
+        checks["banned"].append("claims something was sent")
     if medical_advice(text):
         checks["banned"].append("medical advice")
     for sentence in (s for s in re.split(r"(?<=[.!?;])\s+|\n", text) if NO_HIGH_TIER.search(s)):
@@ -417,7 +498,7 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
                                      [P.whatif_gain(c.rows) for c in seen if c.name == "what_if_add_refuge"],
                                      target_date.isoformat(), target_date.strftime("%d %m %Y"),
                                      state["cap"], state["basis"], default_capacity, calls_per_volunteer, masked,
-                                     (forecast or {}).get("scored_at_sgt"), 400, EMERGENCY)
+                                     (forecast or {}).get("scored_at_sgt"), 400)
             seen_rows = json.dumps([c.rows for c in seen], default=str, ensure_ascii=False)
             ok, checks = check_summary(summary, sources, _unrated_hot(rows), any(r["tier"] == "High" for r in rows),
                                        seen_rows, P.region_name(state["region"]) if state["region"] else None,
