@@ -84,7 +84,7 @@ SEND_CLAIM = re.compile(rf"\b(?:has|have|had|was|were|got|been)(?:n['’]t)?{_AD
                         rf"|\b(?:i|we){_ADV}\s+{_SENT}\b|\b(?:is|are)\s+(?:now|already)\s+approved\b", re.I)
 NEGATION = re.compile(r"\b(?:no|not|nothing|none|nobody|never|neither|nor|without|cannot|unable)\b|n['’]t\b", re.I)
 FINITE = re.compile(r"\b(?:am|is|are|was|were|has|have|had|do|does|did|will|would|can|could|shall|should|may|might|must)\b"
-                    r"|['’](?:s|re|ve|ll|d)\b", re.I)
+                    r"|['’](?:re|ve|ll|d)\b", re.I)  # not 's, mostly a possessive: "None of Toa Payoh's seniors have been"
 CONDITION = re.compile(r"\b(?:if|unless|until|till|once|after|before|when|whenever|whether)\b[^,]*$", re.I)
 SEND_CLAUSES = re.compile(r"(?<=[.!?;:])\s+|\n|,?\s*\b(?:but|however|although|though|whereas)\b", re.I)
 
