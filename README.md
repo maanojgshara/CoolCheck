@@ -168,7 +168,7 @@ The fourth round, before run 3 (25 Oct 2026; the grader's side of the same chang
 **Evaluation** (`docs/checks/agent_eval.md`; design: `docs/design/agent_eval.md`). Window D ran the same 20 scenarios four times, twice on 24 Oct and twice on 25 Oct, and 9 held-out scenarios once, in run 3. Each time the criteria were committed before the run, and each failure was rerun twice.
 
 | | run 1 (24 Oct, 20:18 SGT) | run 2 (24 Oct, 23:51 SGT) | run 3 (25 Oct, 15:54 SGT) | run 4 (25 Oct, 18:45 SGT) |
-|---|---|---|---|
+|---|---|---|---|---|
 | agent code scored | `941dcbe`, before the fixes | `0224782`, with the first two rounds of fixes | `e07a8db`, with all four rounds | `4d60f78`, with all four rounds and the number-word fix (`09e6fcd`) |
 | first pass, on run 1's grader (`9ff1874`) | 4 of 20 | 14 of 20 | 13 of 20 | 14 of 20 |
 | first pass, on criteria 2 (`fef843e`) | | 16 of 20 | | |
