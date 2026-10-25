@@ -812,3 +812,40 @@ def test_4_6_the_stored_summaries_of_runs_1_and_2_pass_the_new_rules():
                 texts.add(e["summary_text"])
     assert len(texts) == 42
     assert [t for t in texts if A.send_claims(t) or A.medical_advice(t) or re.search(r"995|1777", t)] == []
+
+
+# --- for deploy 5 (25 Oct, after run 3): a number word the request uses passes -----------------------------------------
+
+H06 = ("Suppose the void deck at Blk 407 Bukit Batok West Avenue 4 became a cooling point. How many extra homes would then "
+       "be within 400 m of one?")
+WHATIF_407 = [{"planning_area": "BUKIT BATOK", "is_site_area": True, "site_blk_no": "407", "site_street": "BT BATOK WEST AVE 4",
+               "hdb_dwelling_units": 40000, "du_within_400m_before": 20000, "du_within_400m_after": 23146,
+               "share_within_400m_before": 0.5, "share_within_400m_after": 0.5787,
+               "rental_flats_beyond_400m_before": 300, "rental_flats_beyond_400m_after": 250, "blocks_newly_within": 12,
+               "newly_within": []}]  # a fixture: the gain 3146 is the answer run 3 threw away, the other values are made up
+
+
+def test_5_a_number_word_from_the_request_passes():
+    # run 3, H06, 3 of 3: the right answer fell back to the template on "one", which only the request uses
+    s = Script(tool_msg(("what_if_add_refuge", {"blk_no": "407", "street": "Bukit Batok West Avenue 4"})),
+               text_msg("3146 extra homes would then be within 400 m of one."))
+    d, _ = run(s, request=H06, wh=FakeWarehouse(what_if=WHATIF_407))
+    (gain,) = json.loads(s.seen[1][-1]["content"])["gain"]
+    assert gain["dwelling_units_newly_within_400m"] == 3146
+    assert d.source == "agent" and d.checks["number_words"] == [], d.fallback_reason
+    assert any(n.startswith("What if a refuge opened at Blk 407 BT BATOK WEST AVE 4: Bukit Batok: 3,146 more") for n in d.notices)
+
+
+@pytest.mark.parametrize("request_text,args,reply,agent,words", [
+    ("We've got 12 volunteers and each can manage about 30 calls.", {"volunteers": 12, "calls_per_volunteer": 30},
+     "Two blocks are prioritized: Blk 208A Woodleigh Link and Blk 170 Lor 1 Toa Payoh.", False, ["Two"]),  # run 3, H02
+    ("Only twelve volunteers tomorrow.", {"volunteers": 12},
+     "With twelve volunteers, 300 calls go to Toa Payoh, starting with Blk 208A Woodleigh Link.", True, []),
+    ("Only twelve volunteers tomorrow.", {"volunteers": 12},
+     "With twelve volunteers and thirty calls each, 300 calls go to Toa Payoh.", False, ["thirty"]),  # not the request's
+])
+def test_5_only_the_requests_own_number_words_pass(request_text, args, reply, agent, words):
+    d, _ = run(Script(tool_msg(("get_priority_areas", args)), text_msg(reply)), request=request_text)
+    assert (d.source == "agent") is agent, d.fallback_reason
+    assert d.checks["number_words"] == words
+    assert agent or f"number_words: {words}" in d.fallback_reason

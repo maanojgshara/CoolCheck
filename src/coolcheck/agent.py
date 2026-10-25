@@ -308,11 +308,12 @@ def _names(text, name):
 
 
 def check_summary(text, sources, unrated_hot=(), rated_high=True, source_text="", region=None, seen_text=None):
-    """(passed, checks): digits only (a number word passes only if a tool result uses it, e.g. "four languages" in the
-    tier actions), every number grounded (995 and 1777 in a referral need no source), no banned content, no "no area is
-    in the High tier" when one is or, in a plan for a region (its display name), without naming it, and, given
-    seen_text, no planning area the model never saw. Records whether Not-rated High heat is named when no rated area is
-    High (the code notice is shown either way)."""
+    """(passed, checks): digits only (a number word passes only if source_text uses it: draft_plan gives the tool results
+    the model saw, e.g. "four languages" in the tier actions, and the request, e.g. "within 400 m of one?"), every
+    number grounded (995 and 1777 in a referral need no source), no banned content, no "no area is in the High tier"
+    when one is or, in a plan for a region (its display name), without naming it, and, given seen_text, no planning area
+    the model never saw. Records whether Not-rated High heat is named when no rated area is High (the code notice is
+    shown either way)."""
     used = {w.lower() for w in NUMBER_WORDS.findall(source_text or "")}
     checks = {"ungrounded_numbers": [], "number_words": [w for w in NUMBER_WORDS.findall(text) if w.lower() not in used],
               "banned": []}
@@ -512,10 +513,12 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
                                      target_date.isoformat(), target_date.strftime("%d %m %Y"),
                                      state["cap"], state["basis"], default_capacity, calls_per_volunteer, masked,
                                      (forecast or {}).get("scored_at_sgt"), 400)
-            seen_rows = json.dumps([c.rows for c in seen], default=str, ensure_ascii=False)
+            # what the model saw: the tool results and the request. A number word passes if either uses it (run 3, H06:
+            # the request's "within 400 m of one?" made the answer "... within 400 m of one." fall back to the template)
+            seen_text = json.dumps([c.rows for c in seen], default=str, ensure_ascii=False) + "\n" + masked
             ok, checks = check_summary(summary, sources, _unrated_hot(rows), any(r["tier"] == "High" for r in rows),
-                                       seen_rows, P.region_name(state["region"]) if state["region"] else None,
-                                       seen_text=seen_rows + "\n" + masked)
+                                       seen_text, P.region_name(state["region"]) if state["region"] else None,
+                                       seen_text=seen_text)
             if not ok:
                 reason = "the model's summary failed the checks: " + ("; ".join(
                     f"{k}: {v}" for k, v in checks.items() if v and k != "names_unrated_high_heat") or "empty")
