@@ -19,7 +19,7 @@
 - The tier crosses NEA's heat level with the area's vulnerability third in a 3×3 rule (`design/risk_score.md`, §6).
 - Blocks are ordered by 1–2 room rental flats, then by distance to the nearest refuge; blocks rank vulnerability, never heat (`design/risk_score.md`).
 - A job at 00:45 SGT scores the next day and writes `gold.heat_forecast`; the view `gold.area_heat_risk` gives the tiers, with no probability or score column. Its first scheduled night was 24 Oct (`checks/heat_forecast_first_night.md`); one night, not a track record.
-- The live heat-stress page and the briefing dashboard are deployed. The dashboard's four pages give the day's tiers, each area's blocks, the observed heat and the rule (`README.md`). On a day with no High-tier area the headline says so in words, "No rated area is in the High tier.", right after the tier counts (goes out with deploy 4; `README.md`). [TBD: the dashboard's screenshot.]
+- The live heat-stress page and the briefing dashboard are deployed. The dashboard's four pages give the day's tiers, each area's blocks, the observed heat and the rule (`README.md`). On a day with no High-tier area the headline says so in words, "No rated area is in the High tier.", right after the tier counts (since deploy 4, 25 Oct; `README.md`). [TBD: the dashboard's screenshot.]
 
 ## 3. Open data in, governed tables out
 
@@ -84,11 +84,12 @@
   - the model's summary is kept only if it passes the checks, and otherwise code writes it from a template;
   - facts every draft must carry are notes written by code.
 
-  Four rounds of fixes go out with deploy 4 on 25 Oct [TBD deploy 4]. The fourth, before run 3 (`README.md`, Agent): claims and medical advice judged per clause (a decline, negation or condition excuses only its own clause); 995 and 1777 need no tool result only in a referral such as "call 995" (`design/agent_eval.md`); every call refused before SQL is recorded with its error in the trace and the App's tool-call list; "Ang Mo Kio", not "Ang MO Kio".
+  The first round of fixes went out with deploy 3 on 24 Oct, the second to fourth with deploy 4 on 25 Oct, from `e07a8db`, the commit run 3 graded; deploy 4 also gave the nightly job one retry per task and restarted the App, which the platform had stopped at 04:57 SGT (`design/agent_app.md`). The fourth, before run 3 (`README.md`, Agent): claims and medical advice judged per clause (a decline, negation or condition excuses only its own clause); 995 and 1777 need no tool result only in a referral such as "call 995" (`design/agent_eval.md`); every call refused before SQL is recorded with its error in the App's tool-call list and, when tracing is on, in the trace; "Ang Mo Kio", not "Ang MO Kio".
+- MLflow tracing: the evaluation runner's drafts are traced, all 49 of run 3 (`checks/agent_eval.md`). The App's own tracing was off on deploys 1 to 4, a package conflict in the Apps runtime, and is fixed in deploy 5 by pinning `mlflow-skinny==3.16.1` [TBD deploy 5]; drafts, checks, notes, approvals and the tool-call list do not depend on it.
 - Evaluation, the same 20 scenarios three times and 9 held-out scenarios once (`checks/agent_eval.md`):
   - on run 1's grader, 4 of 20 before the fixes, 14 of 20 in run 2 and 13 of 20 in run 3;
   - 16 of 20 on criteria 2 in run 2 and 17 of 20 on criteria 3 in run 3, each committed before its run;
-  - run 2 scored the agent code `0224782`; run 3 graded `e07a8db`, the commit deploy 4 deploys, with all four rounds of fixes;
+  - run 2 scored the agent code `0224782`; run 3 graded `e07a8db`, the commit deploy 4 deployed, with all four rounds of fixes;
   - run 3's criteria: criteria 2 plus three additions declared before the run (`design/agent_eval.md`, items 4 to 6): discouraging medical help fails; 995 and 1777 in a referral need no source; a claim inside a condition is not a claim. None changes a stored grade of runs 1 and 2.
 - In run 2's 32 drafts, no rule was broken, every draft had the right number of calls, and street names were found in 6 of 6 attempts (`checks/agent_eval.md`).
 - The fixes were made for the 20 scenarios' failures, so the 20 show them fixed, not how the agent does on new requests (`checks/agent_eval.md`). The held-out 9, written after run 2 and not shown to the window that fixed the agent, are that test:
@@ -97,7 +98,7 @@
   - one failure, H07, never refused in words a request to ring the residents;
   - the two calls refused before SQL, R01's "South" and H04's "NORTH-WEST", are recorded with their error;
   - limits: the judge failed D01 on its question's word "summary", though the code-written note says it; "40 planning areas", where the tool returned 41, passed on a rounding.
-- Four languages: not in the App yet. A first test translated three real drafts and back-translated them; all six translations were flagged for drift (`checks/language_check.md`). Replies to Malay, Tamil and Chinese requests come back in English (`checks/agent_eval.md`).
+- Four languages: not in the App for Demo Day; planned for the finale on 4 Nov (`build-log.md`). What exists: the translation module with its back-translation drift check, which flagged all six translations of three real drafts in a first test (`checks/language_check.md`), and the grading design for a language set (`design/agent_eval.md`, item 7). Replies to Malay, Tamil and Chinese requests come back in English (`checks/agent_eval.md`).
 
 ## 9. Impact: reach, lead time and recall
 
