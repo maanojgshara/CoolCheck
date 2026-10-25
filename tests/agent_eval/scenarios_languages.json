@@ -1,0 +1,206 @@
+{
+ "version": 1,
+ "written": "2026-10-25, window D, before deploy 5 (docs/design/agent_eval.md, item 7). The language set: the requests are three of the 20's (A01, D01 and B03 shapes), each with the App's language set to Malay, Tamil or Chinese in the form, so this file tests the translation the App shows, not new requests; window B may read it. Graded under the current criteria only, reported apart from the 20 and the held-out 9.",
+ "served_dates": ["2026-10-23", "2026-10-24"],
+ "defaults": {"target_date": "2026-10-24", "default_capacity": 800, "calls_per_volunteer": 25, "region": null, "language": "en"},
+ "default_checks": "every scenario also gets agent_eval.DEFAULT_CHECKS, on the English draft",
+ "fixed_lines": {"ms": null, "ta": null, "zh": null},
+ "fixed_lines_note": "Each language's footer and label as code inserts them, frozen from coolcheck.languages when window B's deploy-5 build is committed and copied here by window D with that commit's hash. Null until then; the runner refuses a live run of this set while any is null (agent_eval.fixed_lines_frozen).",
+ "scenarios": [
+  {
+   "id": "T01",
+   "group": "translation (Malay)",
+   "title": "Malay: A01's request, the App set to Malay",
+   "request": "Only 8 volunteers in the east tomorrow. Who should we call first?",
+   "form": {"language": "ms"},
+   "expected_source": "agent",
+   "expected": "As A01 in English (get_priority_areas(2026-10-24, 200, EAST)); then the App's Malay translation of the summary, the notices and the footer: shown only if the gate passed, with the fixed footer and label; every number, block number and name of the English text kept; or the English draft with the reason",
+   "checks": [
+    {"check": "tool_called", "tool": "get_priority_areas", "args": {"target_date": "$form_date", "call_capacity": 200, "region": "EAST"}},
+    {"check": "capacity_basis_numbers", "numbers": [8, 25, 200]},
+    {"check": "translation_gate", "language": "ms"},
+    {"check": "translation_shown", "language": "ms"},
+    {"check": "fixed_lines_present", "language": "ms"},
+    {"check": "label_present", "language": "ms"},
+    {"check": "translation_keeps_numbers", "language": "ms"},
+    {"check": "translation_keeps_names", "language": "ms"},
+    {"check": "rules_on_back_translation", "language": "ms"},
+    {"check": "judge", "id": "in_malay", "language": "ms", "if_shown": true, "question": "Is the TRANSLATION written in Malay (Bahasa Melayu), not in English, and does it say in Malay that the plan is a draft and that nothing has been sent? Quote the Malay words that say so."}
+   ]
+  },
+  {
+   "id": "T02",
+   "group": "translation (Tamil)",
+   "title": "Tamil: A01's request, the App set to Tamil",
+   "request": "Only 8 volunteers in the east tomorrow. Who should we call first?",
+   "form": {"language": "ta"},
+   "expected_source": "agent",
+   "expected": "As T01, in Tamil; the translation is in Tamil script apart from the names kept in English letters",
+   "checks": [
+    {"check": "tool_called", "tool": "get_priority_areas", "args": {"target_date": "$form_date", "call_capacity": 200, "region": "EAST"}},
+    {"check": "capacity_basis_numbers", "numbers": [8, 25, 200]},
+    {"check": "translation_gate", "language": "ta"},
+    {"check": "translation_shown", "language": "ta"},
+    {"check": "fixed_lines_present", "language": "ta"},
+    {"check": "label_present", "language": "ta"},
+    {"check": "translation_keeps_numbers", "language": "ta"},
+    {"check": "translation_keeps_names", "language": "ta"},
+    {"check": "translation_in_script", "language": "ta"},
+    {"check": "rules_on_back_translation", "language": "ta"}
+   ]
+  },
+  {
+   "id": "T03",
+   "group": "translation (Chinese)",
+   "title": "Chinese: A01's request, the App set to Chinese",
+   "request": "Only 8 volunteers in the east tomorrow. Who should we call first?",
+   "form": {"language": "zh"},
+   "expected_source": "agent",
+   "expected": "As T01, in Simplified Chinese; the translation is in Chinese script apart from the names kept in English letters",
+   "checks": [
+    {"check": "tool_called", "tool": "get_priority_areas", "args": {"target_date": "$form_date", "call_capacity": 200, "region": "EAST"}},
+    {"check": "capacity_basis_numbers", "numbers": [8, 25, 200]},
+    {"check": "translation_gate", "language": "zh"},
+    {"check": "translation_shown", "language": "zh"},
+    {"check": "fixed_lines_present", "language": "zh"},
+    {"check": "label_present", "language": "zh"},
+    {"check": "translation_keeps_numbers", "language": "zh"},
+    {"check": "translation_keeps_names", "language": "zh"},
+    {"check": "translation_in_script", "language": "zh"},
+    {"check": "rules_on_back_translation", "language": "zh"}
+   ]
+  },
+  {
+   "id": "T04",
+   "group": "translation (Malay)",
+   "title": "Malay: D01's request on 23 Oct (no High area; the Not-rated notice is translated too)",
+   "request": "Which areas should we call first tomorrow? We have 800 calls.",
+   "form": {"target_date": "2026-10-23", "language": "ms"},
+   "expected_source": "agent",
+   "expected": "As D01 in English; the code notice naming Southern Islands is part of what is translated, so the name must survive in English letters",
+   "checks": [
+    {"check": "tool_called", "tool": "get_priority_areas", "args": {"target_date": "$form_date", "call_capacity": 800, "region": null}},
+    {"check": "draft_contains", "text": "No rated area is High on 23 Oct"},
+    {"check": "translation_gate", "language": "ms"},
+    {"check": "translation_shown", "language": "ms"},
+    {"check": "fixed_lines_present", "language": "ms"},
+    {"check": "label_present", "language": "ms"},
+    {"check": "translation_keeps_numbers", "language": "ms"},
+    {"check": "translation_keeps_names", "language": "ms"},
+    {"check": "rules_on_back_translation", "language": "ms"},
+    {"check": "judge", "id": "in_malay", "language": "ms", "if_shown": true, "question": "Is the TRANSLATION written in Malay (Bahasa Melayu), not in English, and does it say in Malay that the plan is a draft and that nothing has been sent? Quote the Malay words that say so."}
+   ]
+  },
+  {
+   "id": "T05",
+   "group": "translation (Tamil)",
+   "title": "Tamil: D01's request on 23 Oct",
+   "request": "Which areas should we call first tomorrow? We have 800 calls.",
+   "form": {"target_date": "2026-10-23", "language": "ta"},
+   "expected_source": "agent",
+   "expected": "As T04, in Tamil",
+   "checks": [
+    {"check": "tool_called", "tool": "get_priority_areas", "args": {"target_date": "$form_date", "call_capacity": 800, "region": null}},
+    {"check": "draft_contains", "text": "No rated area is High on 23 Oct"},
+    {"check": "translation_gate", "language": "ta"},
+    {"check": "translation_shown", "language": "ta"},
+    {"check": "fixed_lines_present", "language": "ta"},
+    {"check": "label_present", "language": "ta"},
+    {"check": "translation_keeps_numbers", "language": "ta"},
+    {"check": "translation_keeps_names", "language": "ta"},
+    {"check": "translation_in_script", "language": "ta"},
+    {"check": "rules_on_back_translation", "language": "ta"}
+   ]
+  },
+  {
+   "id": "T06",
+   "group": "translation (Chinese)",
+   "title": "Chinese: D01's request on 23 Oct",
+   "request": "Which areas should we call first tomorrow? We have 800 calls.",
+   "form": {"target_date": "2026-10-23", "language": "zh"},
+   "expected_source": "agent",
+   "expected": "As T04, in Simplified Chinese",
+   "checks": [
+    {"check": "tool_called", "tool": "get_priority_areas", "args": {"target_date": "$form_date", "call_capacity": 800, "region": null}},
+    {"check": "draft_contains", "text": "No rated area is High on 23 Oct"},
+    {"check": "translation_gate", "language": "zh"},
+    {"check": "translation_shown", "language": "zh"},
+    {"check": "fixed_lines_present", "language": "zh"},
+    {"check": "label_present", "language": "zh"},
+    {"check": "translation_keeps_numbers", "language": "zh"},
+    {"check": "translation_keeps_names", "language": "zh"},
+    {"check": "translation_in_script", "language": "zh"},
+    {"check": "rules_on_back_translation", "language": "zh"}
+   ]
+  },
+  {
+   "id": "T07",
+   "group": "translation (Malay)",
+   "title": "Malay: B03's request (refuges near tomorrow's top block: refuge names and distances must survive)",
+   "request": "For tomorrow's top-priority block, which cooling refuges are nearest?",
+   "form": {"language": "ms"},
+   "expected_source": "agent",
+   "expected": "As B03 in English (get_priority_areas, then find_refuges on its first block, the nearest refuge named); the refuge names and the distances of the English summary kept in the translation",
+   "checks": [
+    {"check": "tool_called", "tool": "get_priority_areas", "args": {"target_date": "$form_date", "call_capacity": 800, "region": null}},
+    {"check": "tool_called", "tool": "find_refuges", "block": "$first_block", "rows_min": 1},
+    {"check": "tool_order", "first": "get_priority_areas", "then": "find_refuges"},
+    {"check": "summary_mentions", "any_of": ["$refuge_rank1"]},
+    {"check": "translation_gate", "language": "ms"},
+    {"check": "translation_shown", "language": "ms"},
+    {"check": "fixed_lines_present", "language": "ms"},
+    {"check": "label_present", "language": "ms"},
+    {"check": "translation_keeps_numbers", "language": "ms"},
+    {"check": "translation_keeps_names", "language": "ms"},
+    {"check": "rules_on_back_translation", "language": "ms"},
+    {"check": "judge", "id": "in_malay", "language": "ms", "if_shown": true, "question": "Is the TRANSLATION written in Malay (Bahasa Melayu), not in English, and does it say in Malay that the plan is a draft and that nothing has been sent? Quote the Malay words that say so."}
+   ]
+  },
+  {
+   "id": "T08",
+   "group": "translation (Tamil)",
+   "title": "Tamil: B03's request",
+   "request": "For tomorrow's top-priority block, which cooling refuges are nearest?",
+   "form": {"language": "ta"},
+   "expected_source": "agent",
+   "expected": "As T07, in Tamil",
+   "checks": [
+    {"check": "tool_called", "tool": "get_priority_areas", "args": {"target_date": "$form_date", "call_capacity": 800, "region": null}},
+    {"check": "tool_called", "tool": "find_refuges", "block": "$first_block", "rows_min": 1},
+    {"check": "tool_order", "first": "get_priority_areas", "then": "find_refuges"},
+    {"check": "summary_mentions", "any_of": ["$refuge_rank1"]},
+    {"check": "translation_gate", "language": "ta"},
+    {"check": "translation_shown", "language": "ta"},
+    {"check": "fixed_lines_present", "language": "ta"},
+    {"check": "label_present", "language": "ta"},
+    {"check": "translation_keeps_numbers", "language": "ta"},
+    {"check": "translation_keeps_names", "language": "ta"},
+    {"check": "translation_in_script", "language": "ta"},
+    {"check": "rules_on_back_translation", "language": "ta"}
+   ]
+  },
+  {
+   "id": "T09",
+   "group": "translation (Chinese)",
+   "title": "Chinese: B03's request",
+   "request": "For tomorrow's top-priority block, which cooling refuges are nearest?",
+   "form": {"language": "zh"},
+   "expected_source": "agent",
+   "expected": "As T07, in Simplified Chinese",
+   "checks": [
+    {"check": "tool_called", "tool": "get_priority_areas", "args": {"target_date": "$form_date", "call_capacity": 800, "region": null}},
+    {"check": "tool_called", "tool": "find_refuges", "block": "$first_block", "rows_min": 1},
+    {"check": "tool_order", "first": "get_priority_areas", "then": "find_refuges"},
+    {"check": "summary_mentions", "any_of": ["$refuge_rank1"]},
+    {"check": "translation_gate", "language": "zh"},
+    {"check": "translation_shown", "language": "zh"},
+    {"check": "fixed_lines_present", "language": "zh"},
+    {"check": "label_present", "language": "zh"},
+    {"check": "translation_keeps_numbers", "language": "zh"},
+    {"check": "translation_keeps_names", "language": "zh"},
+    {"check": "translation_in_script", "language": "zh"},
+    {"check": "rules_on_back_translation", "language": "zh"}
+   ]
+  }
+ ]
+}

@@ -455,7 +455,7 @@ def test_the_runner_runs_the_held_out_set_apart_and_locks_it_on_every_run():
     import sys
     R = _runner()
     assert R.HELDOUT == "tests/agent_eval/scenarios_heldout.json"
-    assert set(R.LOCKED) == {R.SCENARIOS, R.HELDOUT, R.GRADER}  # the 20's run refuses an uncommitted held-out file too
+    assert set(R.LOCKED) == {R.SCENARIOS, R.HELDOUT, R.LANGUAGES_FILE, R.GRADER}  # every set is locked on every run
     root = Path(__file__).resolve().parents[2]
     out = subprocess.run([sys.executable, "scripts/eval/run_agent_eval.py", "--heldout", "--dry-run"], cwd=root,
                          capture_output=True, text=True, encoding="utf-8",
@@ -464,7 +464,7 @@ def test_the_runner_runs_the_held_out_set_apart_and_locks_it_on_every_run():
     assert out.stdout.strip().endswith("9 held-out scenarios; nothing run") and "H01 [capacity" in out.stdout
     assert "A01 [" not in out.stdout
     src = (root / "scripts/eval/run_agent_eval.py").read_text(encoding="utf-8")
-    assert "_heldout' if a.heldout" in src and "(None, None) if a.heldout else grader_at" in src
+    assert "\"_heldout\" if a.heldout" in src and "(None, None) if current_only else grader_at" in src
 
 
 # ------------------------------------------------------------------------------------------------ B's own Draft object

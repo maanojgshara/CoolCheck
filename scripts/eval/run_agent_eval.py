@@ -47,8 +47,10 @@ from coolcheck import agent_eval as E  # noqa: E402
 
 SCENARIOS = "tests/agent_eval/scenarios.json"
 HELDOUT = "tests/agent_eval/scenarios_heldout.json"  # written after run 2, not shown to window B; --heldout
+LANGUAGES_FILE = "tests/agent_eval/scenarios_languages.json"  # the language set (design note item 7); --languages
 GRADER = "src/coolcheck/agent_eval.py"
-LOCKED = (SCENARIOS, HELDOUT, GRADER)
+LOCKED = (SCENARIOS, HELDOUT, LANGUAGES_FILE, GRADER)
+TRANSLATE_FOR_APP = "translate_for_app"  # coolcheck.languages.<this>(ws, draft, lang): the App's record of a translation
 AGENT_CODE = ("src/coolcheck/agent.py", "src/coolcheck/plan.py")
 RUN1_CRITERIA = "9ff1874"  # run 1's scenarios and grader (docs/checks/agent_eval.md, 20261024T121843Z)
 
@@ -105,6 +107,23 @@ def lock(paths, root=ROOT):
             raise SystemExit(f"{p} has changed since HEAD: commit it before a live run")
     return {"commit": _git("log", "-1", "--format=%H", "--", *paths, root=root).stdout.strip(),
             "sha256": {p: hashlib.sha256((root / p).read_bytes()).hexdigest() for p in paths}}
+
+
+def languages_ready(data, module, judge_model):
+    """Why the language set cannot run live yet, or None: its fixed lines must be frozen in the scenario file, window
+    B's build must provide the App's translation call, and the judge must come from neither the translator's family
+    (Llama) nor the back-translator's (gpt-oss), since the back-translation is the gate's own evidence."""
+    if not E.fixed_lines_frozen(data):
+        return (f"the language set's fixed lines are not frozen in {LANGUAGES_FILE}: copy each language's footer and "
+                "label from coolcheck.languages once window B's deploy-5 build is committed (design note item 7)")
+    if not callable(getattr(module, TRANSLATE_FOR_APP, None)):
+        return (f"the language set needs coolcheck.languages.{TRANSLATE_FOR_APP}(ws, draft, lang) from window B's "
+                "deploy-5 build: the record of the translation, the gate's verdict, whether the App shows it, why not, "
+                "and the text shown (design note item 7)")
+    if judge_model and any(f in judge_model.lower() for f in ("llama", "gpt-oss")):
+        return ("for the language set the judge must come from neither the translator's family (Llama) nor the "
+                "back-translator's (gpt-oss)")
+    return None
 
 
 def draft_kwargs(form, **workspace):
@@ -188,9 +207,17 @@ def main():
     ap.add_argument("--heldout", action="store_true",
                     help=f"run the held-out set ({HELDOUT}) under the current criteria only, into <stamp>_heldout.json, "
                          "reported apart from the 20")
+    ap.add_argument("--languages", action="store_true",
+                    help=f"run the language set ({LANGUAGES_FILE}) under the current criteria only, into "
+                         "<stamp>_languages.json, reported apart; each draft is translated as the App translates it")
     a = ap.parse_args()
+    if a.heldout and a.languages:
+        raise SystemExit("one set per run: --heldout or --languages")
 
-    scenario_file = HELDOUT if a.heldout else SCENARIOS
+    scenario_file = HELDOUT if a.heldout else LANGUAGES_FILE if a.languages else SCENARIOS
+    set_name = "held-out" if a.heldout else "languages" if a.languages else "the 20"
+    suffix = "_heldout" if a.heldout else "_languages" if a.languages else ""
+    current_only = a.heldout or a.languages  # run 1's criteria have no held-out set and no language checks
     data = E.load_scenarios(ROOT / scenario_file)
     problems = E.validate(data)
     if problems:
@@ -199,12 +226,12 @@ def main():
     if a.dry_run:
         for s in chosen:
             print(f"{s['id']} [{s['group']}; expects {s['expected_source']}] form {E.form_of(data, s)}: {s['title']}")
-        print(f"{len(chosen)} {'held-out ' if a.heldout else ''}scenarios; nothing run")
+        print(f"{len(chosen)} {'held-out ' if a.heldout else 'language ' if a.languages else ''}scenarios; nothing run")
         return
     criteria, agent_code = lock(LOCKED), lock(AGENT_CODE)
     head = _git("rev-parse", "HEAD").stdout.strip()
     clean = not _git("status", "--porcelain").stdout.strip()
-    E1, e1_sha = (None, None) if a.heldout else grader_at(RUN1_CRITERIA)  # run 1's criteria have no held-out set
+    E1, e1_sha = (None, None) if current_only else grader_at(RUN1_CRITERIA)
     criteria_run1 = {"commit": RUN1_CRITERIA, "sha256": {GRADER: e1_sha}} if E1 else None
     if not a.warehouse_id:
         raise SystemExit("--warehouse-id (or DATABRICKS_WAREHOUSE_ID) is needed for the tools")
@@ -217,6 +244,14 @@ def main():
 
     from coolcheck import agent as A
     from coolcheck import plan as P
+
+    translate = None
+    if a.languages:
+        from coolcheck import languages as L
+        why_not = languages_ready(data, L, a.judge_model)
+        if why_not:
+            raise SystemExit(why_not)
+        translate = getattr(L, TRANSLATE_FOR_APP)
 
     os.environ["DATABRICKS_CONFIG_PROFILE"] = a.profile
     os.environ.pop("MLFLOW_EXPERIMENT_ID", None)  # the App's experiment must not catch the eval traces
@@ -240,7 +275,10 @@ def main():
         t0 = time.monotonic()
         stored, error = None, None
         try:
-            stored = stored_draft(A.draft_plan(s["request"], **kw), rows)
+            d = A.draft_plan(s["request"], **kw)
+            stored = stored_draft(d, rows)
+            if translate:  # the language set: the App's translation of this draft, with the gate's verdict
+                stored["translations"] = [_plain(translate(ws, d, form["language"]))]
         except Exception as e:  # noqa: BLE001 - graded as a failure, with the error
             error = f"{type(e).__name__}: {e}"
         res = E.normalise(restored_draft(stored, rows) if stored else None, error)
@@ -253,7 +291,7 @@ def main():
         trace = read_trace(client, res.trace_id)
         if trace and trace.get("found"):
             for k, v in {"eval": "true", "eval_scenario": s["id"], "eval_attempt": str(n), "eval_pass": stamp,
-                         "eval_set": "held-out" if a.heldout else "the 20"}.items():
+                         "eval_set": set_name}.items():
                 try:
                     client.set_trace_tag(res.trace_id, k, v)
                 except Exception as e:  # noqa: BLE001 - recorded, not graded
@@ -282,7 +320,7 @@ def main():
         first1 = [run1_view(g) for g in first]
         summary_run1 = E1.summarise(first1, {i: [run1_view(x) for x in gs] for i, gs in reruns.items()
                                              if next(g for g in first1 if g["id"] == i)["passed"] is False})
-    out = {"stamp": stamp, "set": "held-out" if a.heldout else "the 20", "scenario_file": scenario_file,
+    out = {"stamp": stamp, "set": set_name, "scenario_file": scenario_file,
            "head": head, "clean_worktree": clean, "agent_code": agent_code, "criteria": criteria,
            "criteria_run1": criteria_run1, "agent_model": A.MODEL, "judge_model": a.judge_model,
            "experiment_id": exp.experiment_id,
@@ -290,12 +328,12 @@ def main():
                          for d, f in forecasts.items()},
            "summary": summary, "summary_run1_criteria": summary_run1, "first_pass": first, "reruns": reruns,
            "rows": rows}
-    path = ROOT / a.out_dir / f"{stamp}{'_heldout' if a.heldout else ''}.json"
+    path = ROOT / a.out_dir / f"{stamp}{suffix}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, default=str, ensure_ascii=False, indent=1), encoding="utf-8")  # before MLflow
     try:
         with mlflow.start_run(experiment_id=exp.experiment_id,
-                              run_name=f"agent-eval {stamp}{' held-out' if a.heldout else ''}",
+                              run_name=f"agent-eval {stamp}{suffix.replace('_', ' ')}",
                               tags={"eval": "true", "eval_set": out["set"]}) as run:
             mlflow.log_params({"agent_commit": agent_code["commit"], "criteria_commit": criteria["commit"],
                                "criteria_run1_commit": RUN1_CRITERIA if E1 else "not applied", "head": head,
