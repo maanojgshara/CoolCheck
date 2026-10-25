@@ -21,7 +21,12 @@ DASH = json.loads(PAGE.read_text(encoding="utf-8"))
 SQL = {d["name"]: "".join(d["queryLines"]) for d in DASH["datasets"]}
 WIDGETS = [item["widget"] for page in DASH["pages"] for item in page["layout"]]
 SGT = timezone(timedelta(hours=8))
-NOW = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+
+
+def now():
+    """This minute in UTC, read when a test runs: a time read when pytest collects the file is minutes old once the
+    briefing tests before it have run."""
+    return datetime.now(timezone.utc).replace(second=0, microsecond=0)
 
 
 def sgt(t):
@@ -115,7 +120,7 @@ def run(spark, name):
 
 
 def test_fresh_table(spark, table):
-    r = NOW - timedelta(minutes=10)
+    r = now() - timedelta(minutes=10)
     table(rows(r))
     (banner,) = run(spark, "ds_banner")
     assert banner["state"] == "live"
@@ -148,7 +153,7 @@ def test_fresh_table(spark, table):
 
 
 def test_stale_table_greys_every_station(spark, table):
-    r = NOW - timedelta(minutes=100)
+    r = now() - timedelta(minutes=100)
     table(rows(r))
     (banner,) = run(spark, "ds_banner")
     assert banner["state"] == "stale"
@@ -169,13 +174,13 @@ def test_stale_table_greys_every_station(spark, table):
 
 @pytest.mark.parametrize("age, stale", [(85, False), (95, True)])
 def test_stale_starts_after_90_minutes(spark, table, age, stale):
-    table(rows(NOW - timedelta(minutes=age)))
+    table(rows(now() - timedelta(minutes=age)))
     (banner,) = run(spark, "ds_banner")
     assert (banner["state"] == "stale") is stale
 
 
 def test_no_rainfall_window(spark, table):
-    r = NOW - timedelta(minutes=10)
+    r = now() - timedelta(minutes=10)
     data = [x if x[0] != L.LAST_HOUR else (*x[:5], None, None, x[7], None, 0, x[10], None) for x in rows(r)]
     table(data)
     (label,) = run(spark, "ds_rain_label")
@@ -195,7 +200,7 @@ def test_empty_table(spark, table):
 
 
 def test_times_are_sgt_whatever_the_session_time_zone(spark, table):
-    r = NOW - timedelta(minutes=10)
+    r = now() - timedelta(minutes=10)
     table(rows(r))
     before = spark.conf.get("spark.sql.session.timeZone")
     try:
