@@ -179,6 +179,24 @@ def test_draft_direct_raises_when_the_tool_fails():
         P.draft_direct(P.Tools(FakeWarehouse(fail="get_priority_areas"), trace=False), D24, 800, "b", trace=False)
 
 
+def test_tool_call_lines_for_the_apps_list():
+    ran = P.ToolCall("find_refuges", {"blk_no": "208A", "street": "WOODLEIGH LINK"}, rows=[{"refuge_rank": 1}],
+                     elapsed_ms=12, llm_arguments={"blk_no": "208A", "street": "Woodleigh Link"})
+    assert ran.line() == ("**find_refuges** `{'blk_no': '208A', 'street': 'WOODLEIGH LINK'}` (the model asked for "
+                          "`{'blk_no': '208A', 'street': 'Woodleigh Link'}`): 1 rows in 12 ms") and not ran.refused
+    failed = P.ToolCall("get_priority_areas", {"target_date": "2026-10-24", "call_capacity": 800, "region": None},
+                        error="ToolError: x")
+    assert failed.line().endswith(": 0 rows in 0 ms; error: ToolError: x") and not failed.refused  # SQL ran, and failed
+    wh = FakeWarehouse()
+    tools = P.Tools(wh, trace=False)
+    refused = tools.refuse("find_refuges", {"blk_no": "tbd", "street": "X"}, "blk_no 'tbd' is not a block number")
+    assert refused.refused and tools.calls == [refused] and wh.statements == []
+    assert refused.line() == ("**find_refuges**, refused before SQL (the model asked for `{'blk_no': 'tbd', 'street': "
+                              "'X'}`): blk_no 'tbd' is not a block number")
+    assert tools.refuse(None, "{", "malformed arguments: x").line() == ("**unnamed tool**, refused before SQL (the model "
+                                                                       "asked for `{`): malformed arguments: x")
+
+
 def test_tools_sort_and_reject_bad_catalog():
     call = P.Tools(FakeWarehouse(), trace=False).find_refuges("208A", "WOODLEIGH LINK")
     assert [r["refuge_rank"] for r in call.rows] == [1, 2]

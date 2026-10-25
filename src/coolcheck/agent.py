@@ -2,7 +2,7 @@
 evaluation scenarios.
 
 Request text in; out a coolcheck.plan.Draft: the draft text, every tool call with the model's arguments, the SQL
-arguments and the rows, the checks and the MLflow trace ID. The model is Llama 3.3 70B through the Unity Gateway
+arguments and the rows (a call refused before SQL with its error), the checks and the MLflow trace ID. The model is Llama 3.3 70B through the Unity Gateway
 chat-completions route (system.ai.meta-llama-3-3-70b-instruct; docs/checks/free_edition_tool_calling.md, confirmed on
 the trial 24 Oct). The three Unity Catalog functions are its tools, described by their own comments.
 
@@ -387,7 +387,10 @@ def _int_arg(args, name, stated):
     v = args.get(name)
     if v is None or v == "":
         return None
-    v = int(v)  # ValueError for a malformed value; reported to the model
+    try:
+        v = int(v)  # ValueError for a malformed value; reported to the model
+    except TypeError:  # a list or an object
+        raise ValueError(f"{name} must be a whole number") from None
     if not 0 <= v <= MAX_INT:
         raise ValueError(f"{name} must be between 0 and {MAX_INT}")
     return v if v in stated else None
@@ -479,13 +482,19 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
                 messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
                 for c in calls:
                     n_calls += 1
-                    if n_calls > max_tool_calls:
-                        raise RuntimeError(f"more than {max_tool_calls} tool calls")
+                    if n_calls > max_tool_calls:  # recorded, not run; the draft falls back to the template below
+                        name, args, _ = _parse(c)
+                        _refuse(tools, name, args, f"not run: more than {max_tool_calls} tool calls", target_date)
+                        continue
                     result = _run_tool(c, tools, target_date, default_capacity, calls_per_volunteer, state)
                     messages.append({"role": "tool", "tool_call_id": c.get("id"), "content": json.dumps(result, default=str)})
+                if n_calls > max_tool_calls:
+                    raise RuntimeError(f"more than {max_tool_calls} tool calls")
         except Exception as e:
             reason = f"{type(e).__name__}: {e}"
-        seen = list(tools.calls)  # the tool results the model saw: its summary may take numbers from these only
+        # the tool results the model saw: its summary may take numbers and names from these only (a call that failed or
+        # was refused before SQL gave it an error, no rows)
+        seen = [c for c in tools.calls if not c.error]
         by_model = state["gpa"] is not None
         if not by_model:  # no get_priority_areas call from the model (or it failed): run in code with the form's values
             call = tools.get_priority_areas(target_date, form_cap, form_region)
@@ -523,57 +532,78 @@ def draft_plan(request, *, target_date, default_capacity, calls_per_volunteer, r
     return d
 
 
-def _run_tool(c, tools, target_date, default_capacity, calls_per_volunteer, state):
-    """Run one tool call; the result (or the error) goes back to the model."""
-    name = (c.get("function") or {}).get("name")
-    raw = (c.get("function") or {}).get("arguments") or "{}"
+def _parse(c):
+    """(name, arguments, error): the tool the model called and its arguments as an object, or, when they are not one,
+    the raw arguments and why."""
+    fn = c.get("function") or {}
+    name, raw = fn.get("name"), fn.get("arguments") or "{}"
     try:
         args = json.loads(raw) if isinstance(raw, str) else dict(raw)
         if not isinstance(args, dict):
             raise ValueError("arguments are not an object")
     except Exception as e:
-        return {"error": f"malformed arguments: {e}"}
-    try:
-        if name == "get_priority_areas":
-            unknown = set(args) - {"volunteers", "calls_per_volunteer", "call_capacity", "region"}
-            if unknown:
-                return {"error": f"unknown arguments: {sorted(unknown)}"}
+        return name, raw, f"malformed arguments: {e}"
+    return name, args, None
+
+
+def _refuse(tools, name, args, error, target_date):
+    """A call refused before any SQL ran: recorded with the model's arguments in its own TOOL span (Tools.refuse), with
+    the date the App fixes for get_priority_areas; the error goes back to the model."""
+    fixed = {"target_date": str(target_date)} if name == "get_priority_areas" else None
+    return {"error": tools.refuse(name, args, error, fixed).error}
+
+
+def _run_tool(c, tools, target_date, default_capacity, calls_per_volunteer, state):
+    """Run one tool call; the result (or the error) goes back to the model. A call refused before any SQL runs
+    (malformed or unknown arguments, an unknown region, a block lookup without a block number or a street, an unknown
+    tool) is recorded too, so the draft, the App and the trace show every call the model made, in its order (since
+    e1291d9 the refused first call of B03 was missing: run 2 failed B03 on the order find_refuges, get_priority_areas,
+    find_refuges)."""
+    name, args, error = _parse(c)
+    if error:
+        return _refuse(tools, name, args, error, target_date)
+    if name == "get_priority_areas":
+        unknown = set(args) - {"volunteers", "calls_per_volunteer", "call_capacity", "region"}
+        if unknown:
+            return _refuse(tools, name, args, f"unknown arguments: {sorted(unknown)}", target_date)
+        try:
             vals = {k: _int_arg(args, k, state["stated"]) for k in ("volunteers", "calls_per_volunteer", "call_capacity")}
-            try:
-                region = _region_arg(args, state["form_region"])
-            except ValueError:  # back to the model as an error; the draft gets a note
-                state["unknown_regions"].append(args["region"])
-                raise
-            ignored = {k: args[k] for k, v in vals.items() if v is None and args.get(k) not in (None, "")}
-            if ignored:  # numbers not in the request: the form's values are used, and the trace shows what was dropped
-                state["ignored"].append(ignored)
-            cap, basis = P.capacity_from(default_capacity, calls_per_volunteer, vals["volunteers"],
-                                         vals["calls_per_volunteer"], vals["call_capacity"])
-            call = tools.get_priority_areas(target_date, cap, region, llm_arguments=args)
-            if call.error:
-                return {"error": call.error}
-            state.update(gpa=call, cap=cap, basis=basis, region=region)
-            rows = call.rows
-            high = [P.area_name(r["planning_area"]) for r in rows if r["tier"] == "High"]
-            reply = {"call_capacity": cap, "capacity_basis": basis, "region": region or "whole island",
-                     "calls_left_over": rows[-1]["calls_left"] if rows else None, "high_tier_areas": high}
-            if rows and not high:  # the sentence the template writes, scoped to the region, for the model to copy
-                reply["no_high_tier_sentence"] = P.no_tier_sentence("High", region)
-            return dict(reply, not_rated_high_heat=_unrated_hot(rows), areas=_compact(rows))
-        if name in ("find_refuges", "what_if_add_refuge"):
-            if not (args.get("blk_no") and args.get("street")):
-                return {"error": "blk_no and street are required"}
-            if not re.search(r"\d", str(args["blk_no"])):  # B03, 24 Oct: "to be determined by get_priority_areas"
-                return {"error": f"blk_no {args['blk_no']!r} is not a block number (it has no digit), so nothing was "
-                                 f"looked up; if the block comes from the plan, call get_priority_areas first"}
-            call = getattr(tools, name)(args["blk_no"], args["street"], llm_arguments=args)
-            if call.error:
-                return {"error": call.error}
-            if not call.rows:
-                return {"rows": "no rows: block not found or not confirmed"}
-            if name == "what_if_add_refuge":  # the gain, computed here, as calls_left_over is
-                return {"gain": P.whatif_gain(call.rows), "rows": call.rows}
-            return {"rows": call.rows}
-        return {"error": f"unknown tool {name!r}"}
-    except ValueError as e:
-        return {"error": str(e)}
+        except ValueError as e:
+            return _refuse(tools, name, args, str(e), target_date)
+        try:
+            region = _region_arg(args, state["form_region"])
+        except ValueError as e:  # the draft gets a note
+            state["unknown_regions"].append(args["region"])
+            return _refuse(tools, name, args, str(e), target_date)
+        ignored = {k: args[k] for k, v in vals.items() if v is None and args.get(k) not in (None, "")}
+        if ignored:  # numbers not in the request: the form's values are used, and the trace shows what was dropped
+            state["ignored"].append(ignored)
+        cap, basis = P.capacity_from(default_capacity, calls_per_volunteer, vals["volunteers"],
+                                     vals["calls_per_volunteer"], vals["call_capacity"])
+        call = tools.get_priority_areas(target_date, cap, region, llm_arguments=args)
+        if call.error:
+            return {"error": call.error}
+        state.update(gpa=call, cap=cap, basis=basis, region=region)
+        rows = call.rows
+        high = [P.area_name(r["planning_area"]) for r in rows if r["tier"] == "High"]
+        reply = {"call_capacity": cap, "capacity_basis": basis, "region": region or "whole island",
+                 "calls_left_over": rows[-1]["calls_left"] if rows else None, "high_tier_areas": high}
+        if rows and not high:  # the sentence the template writes, scoped to the region, for the model to copy
+            reply["no_high_tier_sentence"] = P.no_tier_sentence("High", region)
+        return dict(reply, not_rated_high_heat=_unrated_hot(rows), areas=_compact(rows))
+    if name in ("find_refuges", "what_if_add_refuge"):
+        if not (args.get("blk_no") and args.get("street")):
+            return _refuse(tools, name, args, "blk_no and street are required", target_date)
+        if not re.search(r"\d", str(args["blk_no"])):  # B03, 24 Oct: "to be determined by get_priority_areas"
+            return _refuse(tools, name, args, f"blk_no {args['blk_no']!r} is not a block number (it has no digit), so "
+                                              f"nothing was looked up; if the block comes from the plan, call "
+                                              f"get_priority_areas first", target_date)
+        call = getattr(tools, name)(args["blk_no"], args["street"], llm_arguments=args)
+        if call.error:
+            return {"error": call.error}
+        if not call.rows:
+            return {"rows": "no rows: block not found or not confirmed"}
+        if name == "what_if_add_refuge":  # the gain, computed here, as calls_left_over is
+            return {"gain": P.whatif_gain(call.rows), "rows": call.rows}
+        return {"rows": call.rows}
+    return _refuse(tools, name, args, f"unknown tool {name!r}", target_date)

@@ -619,7 +619,10 @@ def test_code_written_text_keeps_the_summarys_rules():
 
 
 def test_b03_a_block_with_no_digit_is_refused_without_a_query():
-    # run 1 and 2: find_refuges on "to be determined by get_priority_areas", then all 4 rounds used
+    # run 1 and 2: find_refuges on "to be determined by get_priority_areas", then all 4 rounds used. The refused call is
+    # on the record, first, as the model made it (25 Oct; it was left out since e1291d9), so window D's B03 check
+    # (get_priority_areas before find_refuges) reads the model's own order
+    from coolcheck import agent_eval as E
     s = Script(tool_msg(("find_refuges", {"blk_no": "to be determined by get_priority_areas", "street": "to be determined"})),
                tool_msg(("get_priority_areas", {})),
                tool_msg(("find_refuges", {"blk_no": "208A", "street": "WOODLEIGH LINK"})),
@@ -628,7 +631,12 @@ def test_b03_a_block_with_no_digit_is_refused_without_a_query():
     err = json.loads(s.seen[1][-1]["content"])["error"]
     assert err.startswith("blk_no 'to be determined by get_priority_areas' is not a block number") and \
         "call get_priority_areas first" in err
-    assert [c.name for c in d.tool_calls] == ["get_priority_areas", "find_refuges"] and len(wh.statements) == 2
+    order = ["find_refuges", "get_priority_areas", "find_refuges"]
+    assert [c.name for c in d.tool_calls] == order and len(wh.statements) == 2  # the refused call ran no SQL
+    first = d.tool_calls[0]
+    assert first.refused and first.error == err and first.arguments == {} and first.rows == []
+    assert first.llm_arguments == {"blk_no": "to be determined by get_priority_areas", "street": "to be determined"}
+    assert [(c.name, c.error) for c in E.normalise(d).tool_calls] == [(n, err if i == 0 else None) for i, n in enumerate(order)]
     assert d.source == "agent" and not any("was not found" in n for n in d.notices)
 
 
@@ -706,6 +714,66 @@ def test_4_3_a_referral_is_a_call_to_the_number_not_a_count():
     assert ok("Call 995 or 1777.") and ok("Dial 1777 for a non-emergency ambulance.") and ok("If unsure, phone 995.")
     assert not ok("Call 995 seniors in Bedok.") and not ok("Call 9951.") and not ok("Toa Payoh has 995 flats.")
     assert A.check_summary("Toa Payoh has 995 flats.", {995.0})[0]  # from a tool result, like any number
+
+
+REFUSED = [("get_priority_areas", "{not json"),                                      # malformed
+           ("get_priority_areas", {"date": "2026-10-25"}),                          # an unknown argument
+           ("get_priority_areas", {"volunteers": -3}),                              # out of range
+           ("get_priority_areas", {"volunteers": [8]}),                             # not a number
+           ("get_priority_areas", {"region": "South"}),                             # an unknown region
+           ("find_refuges", {"blk_no": "208A"}),                                    # no street
+           ("what_if_add_refuge", {"blk_no": "to be determined", "street": "X"}),  # no digit
+           ("send_sms", {"to": "volunteers"})]                                      # an unknown tool
+
+
+def test_4_4_every_refused_call_is_recorded_in_order_with_its_error_and_the_models_arguments(monkeypatch):
+    spans, real = [], P.span
+
+    @contextmanager
+    def recording(name, span_type, inputs=None, enabled=True):
+        spans.append((name, span_type))
+        with real(name, span_type, inputs, False) as s:
+            yield s
+
+    from coolcheck import agent_eval as E
+    monkeypatch.setattr(P, "span", recording)
+    s = Script(tool_msg(*REFUSED[:4]), tool_msg(*REFUSED[4:]), tool_msg(("get_priority_areas", {})),
+               text_msg("Toa Payoh is High."))
+    d, wh = run(s, max_tool_calls=10)
+    assert [c.name for c in d.tool_calls] == [n for n, _ in REFUSED] + ["get_priority_areas"]
+    assert len(wh.statements) == 1 and d.source == "agent"  # only the valid call ran
+    replies = [json.loads(m["content"]) for m in s.seen[3] if m["role"] == "tool"]
+    for c, (name, args), reply in zip(d.tool_calls, REFUSED, replies):
+        fixed = {"target_date": "2026-10-24"} if name == "get_priority_areas" else {}  # the date the App fixes
+        assert c.refused and c.arguments == fixed and c.rows == [] and c.llm_arguments == args and c.error == reply["error"]
+        assert c.line().startswith(f"**{name}**, refused before SQL (the model asked for `{args}`): {reply['error']}")
+    assert [c.error.split(":")[0] for c in d.tool_calls[:3]] == ["malformed arguments", "unknown arguments",
+                                                                 "volunteers must be between 0 and 100000"]
+    assert d.tool_calls[3].error == "volunteers must be a whole number"  # was a TypeError, which ended the loop
+    assert d.tool_calls[7].error == "unknown tool 'send_sms'" and not d.tool_calls[8].refused
+    assert [x for x in spans if x[1] == "TOOL"] == [(n, "TOOL") for n, _ in REFUSED] + [("get_priority_areas", "TOOL")]
+    stored = json.loads(P.approval_params(d, "1234567890")["tool_calls_json"][0])
+    assert [(c["name"], c["refused"], c["error"] is not None) for c in stored] == \
+        [(n, True, True) for n, _ in REFUSED] + [("get_priority_areas", False, False)]
+    assert "South is not one of the five regions; this plan covers the whole island." in d.notices
+    assert P.lookup_notices(d.tool_calls) == [] and P.whatif_notices(d.tool_calls) == []
+    # window D's date check reads the date of every get_priority_areas call, refused ones too (design note, 4dab3e6)
+    assert E.check_default("date_from_app", E.normalise(d), {}, {"target_date": "2026-10-24"})["passed"]
+
+
+def test_4_4_an_error_the_model_got_is_no_source_for_its_numbers():
+    s = Script(tool_msg(("get_priority_areas", {"volunteers": -3})), tool_msg(("get_priority_areas", {})),
+               text_msg("Toa Payoh is High; up to 100000 volunteers can be used."))
+    d, _ = run(s)
+    assert d.source == "template" and "ungrounded_numbers: ['100000']" in d.fallback_reason
+
+
+def test_4_4_calls_over_the_cap_are_recorded_and_not_run():
+    many = tool_msg(*[("find_refuges", {"blk_no": "1", "street": "X"})] * 4)
+    d, wh = run(Script(many, many), max_tool_calls=6)
+    assert "more than 6 tool calls" in d.fallback_reason and len(wh.statements) == 7  # 6 lookups, then the plan in code
+    assert [c.error for c in d.tool_calls] == [None] * 6 + ["not run: more than 6 tool calls"] * 2 + [None]
+    assert d.tool_calls[6].llm_arguments == {"blk_no": "1", "street": "X"} and d.tool_calls[8].name == "get_priority_areas"
 
 
 STORED = ("docs/checks/agent_eval/20261024T121843Z.json", "docs/checks/agent_eval/20261024T155142Z.json")  # runs 1 and 2

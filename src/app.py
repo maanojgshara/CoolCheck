@@ -71,13 +71,12 @@ def show_draft(d):
                        "heat level": r["heat_level"], "vulnerability third": r["third"], "reason": r["reason"]}
                       for r in others], hide_index=True, width="stretch")
     with st.expander(f"Tool calls ({len(d.tool_calls)})"):
-        for c in d.tool_calls:
-            asked = f" (the model asked for `{c.llm_arguments}`)" if c.llm_arguments is not None else ""
-            st.markdown(f"**{c.name}** `{c.arguments}`{asked}: {len(c.rows)} rows in {c.elapsed_ms} ms"
-                        f"{'; error: ' + c.error if c.error else ''}")
+        for c in d.tool_calls:  # every call the model made, in its order, refused ones too
+            st.markdown(c.line())
+            if not c.error:  # a call that failed or was refused has no rows
+                st.json(c.rows, expanded=False)
         if d.checks:
             st.write("Checks:", d.checks)
-            st.json(c.rows, expanded=False)
     st.caption(f"MLflow trace: {d.trace_id or 'none'} · approval id {d.approval_id}")
 
 

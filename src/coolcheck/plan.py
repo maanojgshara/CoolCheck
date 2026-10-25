@@ -172,15 +172,25 @@ def trace_id_of(s):
 @dataclass
 class ToolCall:
     name: str
-    arguments: dict            # what ran in SQL
+    arguments: dict            # what ran in SQL; for a refused call only what the App fixes (get_priority_areas' date)
     rows: list = field(default_factory=list)
     error: str = None
     elapsed_ms: int = 0
-    llm_arguments: dict = None  # what the model asked for (agent loop only)
+    llm_arguments: dict = None  # what the model asked for (agent loop only; the raw text if it was not JSON)
+    refused: bool = False       # refused by the agent loop before any SQL ran (Tools.refuse): nothing ran
 
     def summary(self):
         return {"name": self.name, "arguments": self.arguments, "llm_arguments": self.llm_arguments,
-                "row_count": len(self.rows), "error": self.error, "elapsed_ms": self.elapsed_ms}
+                "row_count": len(self.rows), "error": self.error, "elapsed_ms": self.elapsed_ms, "refused": self.refused}
+
+    def line(self):
+        """The call in the App's Tool calls list (Markdown): what ran in SQL and what came back, or the error a call
+        refused before SQL gave the model."""
+        asked = f" (the model asked for `{self.llm_arguments}`)" if self.llm_arguments is not None else ""
+        if self.refused:
+            return f"**{self.name or 'unnamed tool'}**, refused before SQL{asked}: {self.error}"
+        return (f"**{self.name}** `{self.arguments}`{asked}: {len(self.rows)} rows in {self.elapsed_ms} ms"
+                f"{'; error: ' + self.error if self.error else ''}")
 
 
 def region_param(region):
@@ -190,7 +200,8 @@ def region_param(region):
 
 
 class Tools:
-    """The three Unity Catalog functions by full name, each call recorded (and traced as a TOOL span)."""
+    """The three Unity Catalog functions by full name, each call recorded (and traced as a TOOL span), and so is each
+    call the agent loop refuses before SQL."""
 
     def __init__(self, runner, catalog="coolcheck", trace=True):
         if not re.fullmatch(r"\w+", catalog):
@@ -212,6 +223,19 @@ class Tools:
                 call.error = f"{type(e).__name__}: {e}"
             call.elapsed_ms = int((time.monotonic() - t0) * 1000)
             s.set_outputs({"rows": call.rows, "error": call.error})
+        self.calls.append(call)
+        return call
+
+    def refuse(self, name, llm_arguments, error, arguments=None):
+        """A call the agent loop refused before any SQL ran (malformed or unknown arguments, an unknown region, no block
+        number, an unknown tool, the tool-call cap): recorded with the model's arguments and the error, in its own TOOL
+        span, so the calls and the trace keep every call the model made, in its order. arguments: what the App fixes
+        whatever the model sends (get_priority_areas' date), which window D's date check reads on every call."""
+        call = ToolCall(name=str(name or ""), arguments=dict(arguments or {}), error=error, llm_arguments=llm_arguments,
+                        refused=True)
+        with span(call.name or "unnamed tool", "TOOL", {"arguments": call.arguments, "llm_arguments": llm_arguments},
+                  self.trace) as s:
+            s.set_outputs({"rows": [], "error": error, "refused": True})
         self.calls.append(call)
         return call
 
