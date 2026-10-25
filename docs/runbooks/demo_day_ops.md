@@ -268,6 +268,17 @@ Built from the IDs; not opened from here (no browser in this window). `echo` the
 3. One draft in the App, then `MSYS_NO_PATHCONV=1 databricks api get "/api/2.0/mlflow/traces?experiment_ids=3392806487792873&max_results=1" -p coolcheck`. At 17:42 today it returned `{}`: **no trace in the App's experiment**, while the evaluation's has more than 100 (the newest 25 Oct, 16:04:26 SGT). If it is still `{}` after a draft, the App's Diagnostics expander shows the tracing note (`tracing_ready` in `src/app.py`). For a trace on screen on Tuesday, the evaluation's experiment works today.
 4. The collector: `MSYS_NO_PATHCONV=1 databricks fs ls dbfs:/Volumes/coolcheck/bronze/raw_files/wbgt/live/2026-10-25 -p coolcheck | tail -3`: a file every 15 minutes, the newest less than 15 minutes old.
 
+**Done on 25 Oct 2026, 23:10 to 23:12 SGT (window A).** Read-only; the App was running, so nothing was started.
+
+| Step | Result |
+|---|---|
+| 1. `ops_status` | The App ACTIVE / RUNNING, "App compute is running.", MEDIUM. Started at 16:57:02 (`startApp`, window B's deploy 4), running since 16:59:38. Deploy 5 redeployed it at 19:16:56 to 19:17:18 (deployment `01f1d06596de`, SUCCEEDED, "App started successfully"), the record's `update_time`. The audit log since 16:50 (`service_name = 'apps'`, gets and lists left out): `startApp` 16:57:02, `deployApp` 16:59:41, `createUpdate` 19:16:52, `deployApp` 19:16:56; no `stopApp`. The nightly job's last run 00:45, SUCCESS; the live page's job 23:05, SUCCESS. The warehouse STOPPED (the audit query then started it) |
+| 2. `FINAL` and retries | `FINAL` is `4d60f78` (deploy 5). Job `131450384398104`: `refresh` and `score` each `max_retries` 1, `min_retry_interval_millis` 300,000, `retry_on_timeout` false; 00:45 SGT, UNPAUSED. Job `997063708299006`: no retries set; hourly at :05, UNPAUSED |
+| 3. The traces call | No draft from here: the user drafted at 22:01 and 22:02. Exit 0, one trace (`max_results=1`): `tr-fabe226c...`, 22:15:16, status OK, 14,320 ms, experiment `3392806487792873`, with a `next_page_token`. No longer `{}`. Not looked into further here: window B has the App's tracing |
+| 4. The collector | The newest WBGT file `wbgt_2026-10-25T230043_40204877640.jsonl`, 10 minutes old at 23:10:51; the two before it 22:30:31 and 22:45:24. Air temperature, rainfall and forecast have their 23:00:43 file too. Today's 100 WBGT files (from 00:00:42): no gap over 15.3 minutes; 9 came less than 10 minutes after the one before |
+
+Deploy 5's redeploy moves the times in section 3 ("What to watch"): 6 h 1 min after the last deployment (19:16:56) is about 01:18 on Monday and 9 h 36 min after the start (16:57:02) about 02:33, both before Monday morning's check; 24 hours after the start is Monday 16:57, after the last deployment 19:17.
+
 ### Monday 26 Oct, morning (task 19; 10 minutes)
 
 1. `night 2026-10-26`. Expect: run PERIODIC, SUCCESS; `refresh` and `score` attempt 0, SUCCESS (an attempt 1 means a retry ran: this is the first night with retries, so record it either way); the log lines `heat forecast for 2026-10-26; git <deployed commit> …`, `model …`, then the two new with deploy 4, `silver.dq_day for 2026-10-25 (the day before the target date): …` and `latest … input per station: …` (a line starting `completeness lines not written` means they failed and the score went on); 41 rows, 41 areas, `scored_at` about 16:50 UTC on 25 Oct (00:50 SGT).
