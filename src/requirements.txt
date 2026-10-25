@@ -1,5 +1,10 @@
 # Packages for the Databricks App only (src/app.py; resources/coolcheck_app.app.yml). The jobs pin theirs in resources/,
 # local scripts use requirements-dev.txt. databricks-sdk matches .venv, where the plan code is tested.
+# mlflow-skinny, not mlflow-tracing: a pip-based App comes with mlflow-skinny 2.16.2 pre-installed, and mlflow-tracing
+# beside it put two mlflow versions in one namespace (deploy 4's Diagnostics: "tracing off: ImportError: cannot import
+# name 'EvaluationDataset' from 'mlflow.entities'"). This pin upgrades the pre-installed package instead. 3.16.1 is the
+# version window D's evaluation venv traced draft_plan with on this workspace (scripts/eval/run_agent_eval.py). The App
+# needs only set_tracking_uri, set_experiment and start_span (src/app.py tracing_ready, coolcheck.plan.span).
 databricks-sdk==0.154.0
-mlflow-tracing==3.16.1
+mlflow-skinny==3.16.1
 streamlit==1.50.0

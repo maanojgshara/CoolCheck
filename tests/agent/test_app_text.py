@@ -1,7 +1,16 @@
-"""Static checks on the App's wording (src/app.py is a Streamlit page, so it is read as text, not run)."""
+"""Static checks on the App's wording and packages (src/app.py is a Streamlit page, so it is read as text, not run)."""
 from pathlib import Path
 
-APP = (Path(__file__).resolve().parents[2] / "src" / "app.py").read_text(encoding="utf-8")
+SRC = Path(__file__).resolve().parents[2] / "src"
+APP = (SRC / "app.py").read_text(encoding="utf-8")
+REQUIREMENTS = (SRC / "requirements.txt").read_text(encoding="utf-8")
+
+
+def test_the_app_upgrades_its_preinstalled_mlflow_skinny_instead_of_adding_a_second_mlflow():
+    # deploy 4's Diagnostics: "tracing off: ImportError: cannot import name 'EvaluationDataset' from 'mlflow.entities'",
+    # with mlflow-tracing 3.16.1 beside the App's pre-installed mlflow-skinny 2.16.2
+    pins = dict(line.split("==") for line in REQUIREMENTS.splitlines() if line.strip() and not line.startswith("#"))
+    assert pins == {"databricks-sdk": "0.154.0", "mlflow-skinny": "3.16.1", "streamlit": "1.50.0"}
 
 
 def test_tool_calls_list_shows_every_call_and_the_rows_of_each_that_ran():
