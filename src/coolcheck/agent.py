@@ -134,14 +134,16 @@ DISCOURAGES_HELP = re.compile(rf"\b(?:no\s+need|not\s+necessary|(?:is|are|was|we
                               rf"|\b(?:no\s+need|not\s+necessary|unnecessary|no\s+reason)\s+(?:for|of)\s+{_W}{{0,2}}?{_HELP}\b"
                               rf"|\b(?:do|does|did|will|wo)(?:n['’]t|\s+not)\s+(?:need|require)\s+{_W}{{0,2}}?{_HELP}\b", re.I)
 SENTENCES = re.compile(r"(?<=[.!?;:])\s+|\n")
-CONTRAST = re.compile(r"(,?\s*\b(?:but|however|although|though|whereas)\b)", re.I)
+CONTRAST = re.compile(r"(,?\s*\b(?:but|however|although|though|whereas)\b|,\s*\band\b)", re.I)
 OPEN_CONDITION = re.compile(r"\s*(?:if|when|whenever|once|unless|until|should|in\s+case)\b[^,]*$", re.I)
 
 
 def _clauses(sentence):
-    """A sentence's clauses for the medical check: split at but, however, although, though and whereas, except inside a
-    condition not yet closed by a comma ("If a senior has heat exhaustion but is still conscious, call 1777" is one
-    clause); a clause that begins with although or though ends at its comma."""
+    """A sentence's clauses for the medical check: split at but, however, although, though, whereas and a comma followed
+    by and (", and heat exhaustion is treated with rest" is its own clause; "medicines and doses" and "has heat
+    exhaustion and is still conscious" have no comma, so they stay whole), except inside a condition not yet closed by a
+    comma ("If a senior has heat exhaustion but is still conscious, call 1777" is one clause); a clause that begins with
+    although or though ends at its comma."""
     parts = CONTRAST.split(sentence)
     out, cur = [], parts[0]
     for sep, text in zip(parts[1::2], parts[2::2]):
