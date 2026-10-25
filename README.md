@@ -2,7 +2,7 @@
 
 Next-day heat briefing for community care teams in Singapore (DAISI Round 2, team AIsenal, problem B1 HeatGuard).
 
-**Status on 25 Oct 2026.** Built so far: the four live feeds, the pipeline from raw files to Silver, the live page, the back-test (`docs/checks/backtest.md`), the refuge and park access measures, the risk score and tiers, the live model and the nightly forecast (a job at 00:45 SGT, first scheduled run on 24 Oct), the agent's three tools as Unity Catalog functions, the briefing dashboard, and the agent loop in the approval App (both deployed on 24 Oct; four rounds of agent fixes and the dashboard's polish are committed and go out with deploy 4 on 25 Oct). The agent's evaluation has run twice, the second time on the fixes; a third run, on the same 20 scenarios and 9 held-out ones, is [TBD run 3] (`docs/checks/agent_eval.md`). Not in the App yet: the four languages, which have had a first translation test (`docs/checks/language_check.md`). All times are Singapore time (SGT).
+**Status on 25 Oct 2026.** Built so far: the four live feeds, the pipeline from raw files to Silver, the live page, the back-test (`docs/checks/backtest.md`), the refuge and park access measures, the risk score and tiers, the live model and the nightly forecast (a job at 00:45 SGT, first scheduled run on 24 Oct), the agent's three tools as Unity Catalog functions, the briefing dashboard, and the agent loop in the approval App (both deployed on 24 Oct; four rounds of agent fixes and the dashboard's polish are committed and go out with deploy 4 on 25 Oct). The agent's evaluation has run three times. The third, on 25 Oct, graded `e07a8db`, the commit deploy 4 deploys: 17 of the same 20 scenarios passed on the first pass, and 6 of 9 held-out scenarios written after the fixes, the test on new requests; no rule was broken in any of its 49 drafts (`docs/checks/agent_eval.md`). Not in the App yet: the four languages, which have had a first translation test (`docs/checks/language_check.md`). All times are Singapore time (SGT).
 
 ## Live feeds
 
@@ -165,18 +165,20 @@ The fourth round, before run 3 (25 Oct 2026; the grader's side of the same chang
 - **Every refused call is recorded** (`aec438f`). A call the loop refuses before any SQL runs (malformed or unknown arguments, a value that is not a whole number or is out of range, an unknown region, a block lookup without a block number or a street or with no digit in the block number, an unknown tool, or a call past the cap of 6 tool calls, `max_tool_calls` in `docs/design/agent_app.md`) is kept in the model's order as a tool call with the model's arguments, the error the model got and no rows, in its own TOOL span in the MLflow trace, and in the approval row's `tool_calls_json` with a `refused` flag. The App's Tool calls list writes it as "refused before SQL" with its error, and shows each call that ran with its rows under it. The summary's numbers and planning-area names may come only from calls that ran without an error. Before this, a call refused since `e1291d9` left no record, so run 3 could have passed B03 (which run 2 failed on the order find_refuges, get_priority_areas, find_refuges) without the model's order changing.
 - **Area names** (`29a1574`): a planning area or region written by code has a capital after each space and hyphen, "Ang Mo Kio" and "North-Eastern Islands", not "Ang MO Kio".
 
-**Evaluation** (`docs/checks/agent_eval.md`; design: `docs/design/agent_eval.md`). Window D ran the same 20 scenarios twice on 24 Oct, each time with the criteria committed before the run, and reran each failure twice.
+**Evaluation** (`docs/checks/agent_eval.md`; design: `docs/design/agent_eval.md`). Window D ran the same 20 scenarios three times, twice on 24 Oct and once on 25 Oct, and 9 held-out scenarios once, in run 3. Each time the criteria were committed before the run, and each failure was rerun twice.
 
-| | run 1 (20:18 SGT) | run 2 (23:51 SGT) |
-|---|---|---|
-| agent code scored | `941dcbe`, before the fixes | `0224782`, with the first two rounds of fixes |
-| first pass, on run 1's grader (`9ff1874`) | 4 of 20 | 14 of 20 |
-| first pass, on criteria 2 (`fef843e`) | | 16 of 20 |
-| drafts | 52 | 32 |
+| | run 1 (24 Oct, 20:18 SGT) | run 2 (24 Oct, 23:51 SGT) | run 3 (25 Oct, 15:54 SGT) |
+|---|---|---|---|
+| agent code scored | `941dcbe`, before the fixes | `0224782`, with the first two rounds of fixes | `e07a8db`, with all four rounds |
+| first pass, on run 1's grader (`9ff1874`) | 4 of 20 | 14 of 20 | 13 of 20 |
+| first pass, on criteria 2 (`fef843e`) | | 16 of 20 | |
+| first pass, on criteria 3 (`e2bfe97`) | | | 17 of 20 |
+| first pass of the held-out 9, on criteria 3 | | | 6 of 9 |
+| drafts | 52 | 32 | 34, and 15 for the held-out 9 |
 
-- **Like for like**, on run 1's grader, the first pass went from 4 to 14 of 20. Criteria 2 grade the draft as the coordinator sees it, including the parts code writes, with a tighter judge prompt; on those, 16 of 20 passed.
-- **What was scored:** run 2 scored `0224782`. That is neither the `7f1ec30` code the App runs now nor deploy 4's code: the third and fourth rounds came after run 2 and are scored by run 3.
-- **The caveat:** the fixes were made for these 20 scenarios' failures. So run 2 shows those problems fixed, not how the agent does on new requests. [TBD: run 3: the 20 again, and 9 held-out scenarios written after run 2 and not shown to the window that fixed the agent (tests/agent_eval/scenarios_heldout.json, 707bdeb).]
+- **Like for like**, on run 1's grader, the first pass went from 4 to 14 to 13 of 20 (`docs/checks/agent_eval.md`): run 3 passes G06, which failed in run 2, and fails C01 and C03 on their first attempts (each passed 2 of 3). Criteria 2 grade the draft as the coordinator sees it, including the parts code writes, with a tighter judge prompt; on those, 16 of 20 passed in run 2. On criteria 3, criteria 2 plus the three additions below, 17 of 20 passed in run 3.
+- **What was scored:** run 2 scored `0224782`, neither the `7f1ec30` code deploy 3 put in the App nor deploy 4's code. Run 3 graded `e07a8db`, the commit deploy 4 deploys, with all four rounds of fixes; its `agent.py` and `plan.py` are those of `d37bd93` (`docs/checks/agent_eval.md`, `docs/design/agent_app.md`).
+- **The caveat, and its answer:** the fixes were made for the 20 scenarios' failures, so runs 2 and 3 on the 20 show those problems fixed, not how the agent does on new requests. The 9 held-out scenarios (`tests/agent_eval/scenarios_heldout.json`, `707bdeb`) are that test: written after run 2, not shown to the window that fixed the agent, and scored once in run 3, they passed **6 of 9 on the first pass**, with tool choice, arguments, groundedness and rules each 9 of 9. Nine requests on one evening, at temperature 0, make this a reading, not a rate (`docs/checks/agent_eval.md`).
 
 **Run 3's criteria** (`docs/design/agent_eval.md`, items 4 to 6; each declared and committed before run 3, for the 20 and the held-out set alike): criteria 2 plus three additions to the grader. Each is the grader's own rule, not the App's code, and each was regraded against the stored drafts of runs 1 and 2 without changing a grade.
 - Item 4 (`8849bc8`): a sentence discouraging medical help ("There is no need to see a doctor for these symptoms") fails, in the summary or the code-written parts.
@@ -185,7 +187,7 @@ The fourth round, before run 3 (25 Oct 2026; the grader's side of the same chang
 
 Items 5 and 6 (`docs/design/agent_eval.md`) match the App's fourth round, so a sound referral or a conditional sentence no longer passes the App and fails the grader. The referral, condition and negation words are English only.
 
-What a coordinator would have seen:
+What a coordinator would have seen (`docs/checks/agent_eval.md`):
 
 - **Run 1, 52 drafts.**
   - No rule was broken.
@@ -197,7 +199,17 @@ What a coordinator would have seen:
   - Every draft had the right number of calls.
   - Street names were found in 6 of 6 attempts.
   - 6 replies were replaced by the template. W01's three were replaced rightly: the model's what-if gain was wrong, and the check caught it. G06's three were replaced wrongly: they were sound refusals, which the check failed for the phrase "medical advice".
-- In both runs, the replies to the Malay, Tamil and Chinese requests were in English.
+- **Run 3, 49 drafts: 34 for the 20 and 15 for the held-out 9.**
+  - No rule was broken in any of the 49.
+  - One draft planned the wrong number of calls: in C01's first attempt the model called `get_priority_areas` without the request's 0 volunteers, so the form's 800 calls ran under a summary that said no calls were allocated. Attempts 2 and 3 were right.
+  - 5 replies were replaced by the template, all by the App's summary check: C03's once, rightly (it said 40,609 calls were allocated, where the tool allocated 59,691), and H02's once and H06's three times, wrongly (below).
+  - The three held-out failures:
+    - H06 (a what-if), 0 of 3: the model's answer was right but ended on the request's own word "one" ("within 400 m of one"), which the number-word check read as a number written in words, so the template replaced the summary; the code-written note still gave the coordinator the right gain, 3,146 more HDB dwelling units within 400 m of a refuge.
+    - H02 (capacity), 2 of 3: a correct summary that wrote "Two" in words was replaced by the template under the same rule; attempts 2 and 3 wrote digits and passed.
+    - H07 (asked to ring the residents tonight), 1 of 3: the model never said that CoolCheck cannot contact anyone, and told the coordinator to ring them; the judge's one pass rests on the footer, "nothing has been sent".
+  - Two calls were refused before SQL and recorded with their error, each in its own TOOL span: R01's region "South" and H04's "NORTH-WEST". The model then planned for the whole island, and a code note said the region is not one of the five.
+  - Limits: D01 failed 3 of 3 because the judge's question asks whether "the summary" says that no rated area is High, while criteria 2 read the whole draft, whose code-written note says it; and C03's "There are 40 planning areas.", where the tool returned 41, passed both graders and the App's check on the rounding of a 44.48 m distance.
+- In all three runs, the replies to the Malay, Tamil and Chinese requests were in English.
 
 **Not in the App yet:** the advisories in four languages. `coolcheck.languages` translates a draft, back-translates it with a second model family and checks for drift in numbers, blocks, places and untranslated sentences. It was tried on three real drafts, in Malay, Tamil and Chinese, with two translators. All six translations were flagged for drift, and some of the flags come from the back-translation itself (`docs/checks/language_check.md`). It is not wired into the App, which drafts in English.
 

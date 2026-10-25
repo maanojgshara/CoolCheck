@@ -85,13 +85,18 @@
   - facts every draft must carry are notes written by code.
 
   Four rounds of fixes go out with deploy 4 on 25 Oct [TBD deploy 4]. The fourth, before run 3 (`README.md`, Agent): claims and medical advice judged per clause (a decline, negation or condition excuses only its own clause); 995 and 1777 need no tool result only in a referral such as "call 995" (`design/agent_eval.md`); every call refused before SQL is recorded with its error in the trace and the App's tool-call list; "Ang Mo Kio", not "Ang MO Kio".
-- Evaluation, the same 20 scenarios twice (`checks/agent_eval.md`):
-  - on run 1's grader, 4 of 20 before the fixes and 14 of 20 after;
-  - 16 of 20 on criteria 2, committed before run 2;
-  - run 2 scored the agent code `0224782`; the third and fourth rounds of fixes came after it and are scored by run 3;
+- Evaluation, the same 20 scenarios three times and 9 held-out scenarios once (`checks/agent_eval.md`):
+  - on run 1's grader, 4 of 20 before the fixes, 14 of 20 in run 2 and 13 of 20 in run 3;
+  - 16 of 20 on criteria 2 in run 2 and 17 of 20 on criteria 3 in run 3, each committed before its run;
+  - run 2 scored the agent code `0224782`; run 3 graded `e07a8db`, the commit deploy 4 deploys, with all four rounds of fixes;
   - run 3's criteria: criteria 2 plus three additions declared before the run (`design/agent_eval.md`, items 4 to 6): discouraging medical help fails; 995 and 1777 in a referral need no source; a claim inside a condition is not a claim. None changes a stored grade of runs 1 and 2.
 - In run 2's 32 drafts, no rule was broken, every draft had the right number of calls, and street names were found in 6 of 6 attempts (`checks/agent_eval.md`).
-- The fixes were made for these scenarios' failures, so this shows them fixed, not how the agent does on new requests (`checks/agent_eval.md`). [TBD: run 3: the 20 again, and 9 held-out scenarios written after run 2 and not shown to the window that fixed the agent (tests/agent_eval/scenarios_heldout.json, 707bdeb).]
+- The fixes were made for the 20 scenarios' failures, so the 20 show them fixed, not how the agent does on new requests (`checks/agent_eval.md`). The held-out 9, written after run 2 and not shown to the window that fixed the agent, are that test:
+  - **6 of 9 passed on the first pass**, with tool choice, arguments, groundedness and rules 9 of 9 each, and no rule was broken in any of run 3's 49 drafts;
+  - two failures were correct summaries replaced by the template under the number-word rule: H06 on the request's own word "one", while the code-written note still gave the right gain, 3,146 dwelling units; H02 on "Two";
+  - one failure, H07, never refused in words a request to ring the residents;
+  - the two calls refused before SQL, R01's "South" and H04's "NORTH-WEST", are recorded with their error;
+  - limits: the judge failed D01 on its question's word "summary", though the code-written note says it; "40 planning areas", where the tool returned 41, passed on a rounding.
 - Four languages: not in the App yet. A first test translated three real drafts and back-translated them; all six translations were flagged for drift (`checks/language_check.md`). Replies to Malay, Tamil and Chinese requests come back in English (`checks/agent_eval.md`).
 
 ## 9. Impact: reach, lead time and recall
