@@ -7,9 +7,10 @@ heat categories; nothing calls a page "Tomorrow" and nothing reads as unfinished
 points to the App for the what-if; the Briefing page computes today in Singapore, not with current_date().
 SQL (Databricks Connect, temp views only): every dataset runs unchanged on temp views with the same bare names, built from
 the files the tables are loaded from (coolcheck-data/analysis and reference/) and a made-up forecast through
-coolcheck.risk.area_heat_risk_sql, with the expected rows; the Briefing page's headline, top 10 and the rest; the two
-wording fixes (the 75+ reasons as one phrase; "too few flats to measure" for areas held neutral); the Observed heat page's
-rows per area and day.
+coolcheck.risk.area_heat_risk_sql, with the expected rows; the Briefing page's headline (the App's "No rated area is in
+the High tier." only on a day with no High area and some Medium or Low), top 10 and the rest; the two wording fixes (the
+75+ reasons as one phrase; "too few flats to measure" for areas held neutral); area names with a capital after each space
+and hyphen wherever the page shows one; the filters open on Bedok; the Observed heat page's rows per area and day.
 """
 import json
 import re
@@ -222,16 +223,18 @@ def views(spark):
 LATEST = date(2999, 12, 31)  # after any real today, so no "no forecast for today" notice unless a test asks for one
 
 
-def heat_risk_view(spark, latest):
-    """area_heat_risk over a made-up forecast for every planning area: on `latest`, High heat in HIGH_AREAS and in the
-    first lower-third area (a Medium with High heat), Moderate elsewhere; the day before, High heat everywhere (so a
-    dataset that missed the latest-date filter would count differently)."""
+def heat_risk_view(spark, latest, high=None, missing=False):
+    """area_heat_risk over a made-up forecast for every planning area: on `latest`, High heat in `high` (by default
+    HIGH_AREAS and the first lower-third area, a Medium with High heat) and Moderate elsewhere, or no forecast for any
+    area if `missing`; the day before, High heat everywhere (so a dataset that missed the latest-date filter would count
+    differently)."""
     from datetime import timedelta, timezone
     areas = sorted(r["planning_area"] for r in spark.table("t_exposure").select("planning_area").collect())
     lower = min(r["planning_area"] for r in spark.sql("SELECT planning_area FROM area_vulnerability WHERE third = 'lower'").collect())
     at = SCORED_AT.replace(tzinfo=timezone.utc)
-    rows = [(d, a, "S00", *((0.1, 0.4, 0.5) if a in hi else (0.2, 0.7, 0.1)), "m", "r", at, at, False)
-            for d, hi in ((latest, HIGH_AREAS | {lower}), (latest - timedelta(days=1), set(areas))) for a in areas]
+    days = ((latest, HIGH_AREAS | {lower} if high is None else set(high)), (latest - timedelta(days=1), set(areas)))
+    rows = [(d, a, "S00", *((None,) * 3 if missing and d == latest else (0.1, 0.4, 0.5) if a in hi else (0.2, 0.7, 0.1)),
+             "m", "r", at, at, False) for d, hi in days for a in areas]
     spark.createDataFrame(rows, "target_date DATE, planning_area STRING, station_id STRING, p_low DOUBLE, p_moderate DOUBLE, "
                                 "p_high DOUBLE, model_version STRING, run_id STRING, cutoff_ts TIMESTAMP, scored_at TIMESTAMP, "
                                 "forecast_missing BOOLEAN").createOrReplaceTempView("t_forecast")
@@ -266,16 +269,35 @@ def test_every_dataset_runs_unchanged_with_the_expected_rows(views):
 
 
 def test_default_area_exists(views):
+    """The Blocks and Observed heat pages open on Bedok: each filter's default is a name in every dataset it filters."""
     areas = {r["planning_area"] for r in views.sql(sql_of(next(d for d in DASH["datasets"] if d["name"] == "ds_area_facts"))).collect()}
-    assert BB.DEFAULT_AREA in areas and len(areas) == 32
-    assert BB.DEFAULT_AREA in {r["planning_area"] for r in rows_of(views, "ds_area_observed")}
+    assert BB.DEFAULT_AREA == "Bedok" and BB.DEFAULT_AREA in areas and len(areas) == 32
+    filters = [(page, w) for page, w, _ in widgets() if w.get("spec", {}).get("widgetType") == "filter-single-select"]
+    assert [page for page, _ in filters] == ["blocks", "observed"]
+    for _, w in filters:
+        assert w["spec"]["selection"]["defaultSelection"]["values"]["values"] == [{"value": BB.DEFAULT_AREA}]
+        for q in w["queries"]:
+            assert BB.DEFAULT_AREA in {r["planning_area"] for r in rows_of(views, q["query"]["datasetName"])}, q["name"]
 
 
-def test_area_names_are_title_case_on_the_blocks_and_observed_pages(views):
-    for name in ("ds_area_facts", "ds_blocks", "ds_points", "ds_area_observed"):
-        areas = {r["planning_area"] for r in rows_of(views, name)}
+def test_area_names_are_title_case_in_every_dataset_that_shows_them(views):
+    """The headline's Not-rated names are checked in its own tests (North-Eastern Islands in the no-High one)."""
+    for name, col in (("ds_area_map", "area"), ("ds_top_areas", "area"), ("ds_more_areas", "area"),
+                      ("ds_area_facts", "planning_area"), ("ds_blocks", "planning_area"), ("ds_points", "planning_area"),
+                      ("ds_area_observed", "planning_area")):
+        areas = {r[col] for r in rows_of(views, name)}
         assert areas and all(a == a.title() for a in areas), name
     assert "Downtown Core" in {r["planning_area"] for r in rows_of(views, "ds_area_facts")}
+
+
+def test_all_55_area_names_have_a_capital_after_each_space_and_hyphen(views):
+    """Spark's initcap alone capitalises only after a space ("North-eastern Islands"); each name on the map is
+    str.title() of its upper-case name."""
+    raw = {r["planning_area"] for r in views.sql(
+        f"SELECT planning_area FROM area_heat_risk WHERE target_date = DATE'{LATEST}'").collect()}
+    shown = {r["area"] for r in rows_of(views, "ds_area_map")}
+    assert len(raw) == len(shown) == 55 and all(a.isupper() for a in raw)
+    assert shown == {a.title() for a in raw} and {"North-Eastern Islands", "Ang Mo Kio"} <= shown
 
 
 def test_table_counts_and_distances_are_numbers_so_a_header_click_sorts_them_right(views):
@@ -321,6 +343,32 @@ def test_headline_lines_in_order(views):
         "Southern Islands and Sungei Kadut have High heat but are Not rated: no HDB blocks to rate, so only the heat level is shown."]
 
 
+def test_no_high_line_right_after_the_tier_counts_only_when_no_area_is_high_and_some_are_rated(views):
+    """The App's sentence for the whole island; not on the fixture day (Toa Payoh is High), nor on a day with no forecast."""
+    assert BB.NO_HIGH == "No rated area is in the High tier."
+    assert BB.NO_HIGH not in [r["line"] for r in rows_of(views, "ds_briefing_lines")]
+    head = f"Heat risk for {LATEST.strftime('%A')}, 31 December 2999, prepared 24 Oct 2026 00:49 SGT"
+    try:
+        heat_risk_view(views, LATEST, high={"NORTH-EASTERN ISLANDS", "SOUTHERN ISLANDS"})  # High heat only where Not rated
+        n = tier_counts(views)
+        assert "High" not in n and n["Medium"] + n["Low"] == 32
+        assert [r["line"] for r in rows_of(views, "ds_briefing_lines")] == [
+            head, f"Tiers: High 0, Medium {n['Medium']}, Low {n['Low']}, Not rated {n['Not rated']}.",
+            "No rated area is in the High tier.",
+            "Medium is not an alert: heightened care where heat is Moderate in an upper- or middle-third area, or High in a "
+            "lower-third one.",
+            f"{n['Medium']} areas are High or Medium: the top 10 are in the first table, the other {n['Medium'] - 10} in the "
+            "table under it.",
+            "North-Eastern Islands and Southern Islands have High heat but are Not rated: no HDB blocks to rate, so only the "
+            "heat level is shown."]
+        heat_risk_view(views, LATEST, missing=True)
+        assert tier_counts(views) == {"No forecast": 55}
+        assert [r["line"] for r in rows_of(views, "ds_briefing_lines")] == [
+            head, "Tiers: High 0, Medium 0, Low 0, Not rated 0, No forecast 55."]
+    finally:
+        heat_risk_view(views, LATEST)
+
+
 def test_notice_when_the_latest_date_is_before_today_in_singapore(views):
     try:
         heat_risk_view(views, date(2026, 10, 1))
@@ -333,7 +381,7 @@ def test_notice_when_the_latest_date_is_before_today_in_singapore(views):
 def test_top_ten_then_every_other_high_or_medium_area_in_tier_then_tier_rank_order(views):
     lower = min(r["planning_area"] for r in views.sql("SELECT planning_area FROM area_vulnerability WHERE third = 'lower'").collect())
     want = [r.asDict() for r in views.sql(f"""
-        SELECT initcap(planning_area) AS area, tier FROM area_heat_risk WHERE target_date = DATE'{LATEST}'
+        SELECT {BB.area_name_sql('planning_area')} AS area, tier FROM area_heat_risk WHERE target_date = DATE'{LATEST}'
         ORDER BY CASE tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, tier_rank""").collect()]
     top, more = rows_of(views, "ds_top_areas"), rows_of(views, "ds_more_areas")
     assert [r["briefing_order"] for r in top + more] == list(range(1, len(top) + len(more) + 1))

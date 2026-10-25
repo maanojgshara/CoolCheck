@@ -7,14 +7,16 @@ Pages: Briefing, Blocks, Observed heat, About. The Blocks page points to the Coo
 Observed heat page shows observed values only: the stations by daily NEA category, and for a chosen planning area its
 nearest station's daily peak WBGT and category. The Briefing page reads gold.area_heat_risk for its latest target_date only: a headline
 table ("Heat risk for <weekday, date>, prepared <scored_at> SGT", times converted to SGT in the SQL; a notice when that
-date is before today in Singapore; the tier counts; what Medium means; how many areas are High or Medium beyond the top 10;
-Not-rated areas with High heat), the planning-area point map (one dot per area at its polygon's centroid, coloured by
+date is before today in Singapore; the tier counts; the App's "No rated area is in the High tier." when no area is High and
+at least one is Medium or Low; what Medium means; how many areas are High or Medium beyond the top 10; Not-rated areas with High
+heat), the planning-area point map (one dot per area at its polygon's centroid, coloured by
 tier, sized by 1-2 room rental flats), the top 10 in briefing order (tier, then tier_rank as built), every other High or
 Medium area below them, and the observed 30-day trend from gold.observed_heat_daily. Queries use bare names, which the
 bundle's dataset_catalog and dataset_schema point at <catalog>.gold: area_heat_risk, area_vulnerability,
 block_vulnerability, planning_area_map, refuge_layer, observed_heat_daily, score_weights, tier_actions. P(High), the
 score, model_version and run_id are never read (tests/dashboards/test_briefing_dashboard.py checks every dataset).
 Colours are coolcheck.briefing's, checked with coolcheck.palette; the observed heat categories take the live page's.
+Planning-area names have a capital after each space and hyphen ("North-Eastern Islands"), as the App writes them.
 The polygon maps were dropped on 24 Oct: the render test showed the server drops the custom-geometry region key, so
 both choropleths stored without a region; the maps are point maps.
 """
@@ -27,6 +29,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
 from coolcheck import briefing as B  # noqa: E402
+from coolcheck import plan as P  # noqa: E402
 
 OUT = REPO / "src/dashboards/briefing.lvdash.json"
 DEFAULT_AREA = "Bedok"  # the area the Blocks and Observed heat pages open on (rank 1 for V on 23 Oct 2026)
@@ -44,6 +47,7 @@ _PHRASES = {r["component"]: r["reason_phrase"] for r in csv.DictReader(open(REPO
 # the two 75+ components read as one thing when they are an area's two reasons, so they show as one phrase
 MERGED_75 = "many residents aged 75+, who are a high share of its residents"
 TOO_FEW_FLATS = "too few flats to measure"  # the 400 m shares of an area held neutral for fewer than 1,000 HDB flats
+NO_HIGH = P.no_tier_sentence("High")  # the App's sentence for the whole island: "No rated area is in the High tier."
 
 
 def _q(s):
@@ -59,6 +63,12 @@ def share_sql(col):
     return f"CASE WHEN small_hdb THEN {_q(TOO_FEW_FLATS)} ELSE concat(format_number(100 * {col}, 0), '%') END"
 
 
+def area_name_sql(col):
+    """A planning area's name with a capital after each space and hyphen, as str.title() and the App's plan.area_name
+    write it: initcap alone capitalises only after a space ("North-eastern Islands")."""
+    return f"array_join(transform(split(initcap({col}), '-'), x -> concat(upper(substr(x, 1, 1)), substr(x, 2))), '-')"
+
+
 TIER_ORDER = "CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END"
 LATEST = """WITH latest AS (
   SELECT target_date, planning_area, heat_level, tier, tier_rank, tier_sentence, reason, actions, scored_at
@@ -66,7 +76,7 @@ LATEST = """WITH latest AS (
 )"""
 ORDERED = f"""{LATEST},
 ordered AS (
-  SELECT r.planning_area, initcap(r.planning_area) AS area, r.tier, r.heat_level, r.tier_sentence,
+  SELECT r.planning_area, {area_name_sql('r.planning_area')} AS area, r.tier, r.heat_level, r.tier_sentence,
     coalesce({reason_sql('r.reason')}, '') AS reason, coalesce(r.actions, '') AS actions,
     coalesce(v.rental_1_2_room, 0) AS rental_1_2_room,
     row_number() OVER (ORDER BY {TIER_ORDER}, r.tier_rank) AS briefing_order
@@ -98,7 +108,7 @@ d AS (
     count_if(tier = 'High') AS n_high, count_if(tier = 'Medium') AS n_medium, count_if(tier = 'Low') AS n_low,
     count_if(tier = 'Not rated') AS n_not_rated, count_if(tier = 'No forecast') AS n_no_forecast,
     count_if(tier = 'Medium' AND heat_level = 'High') AS n_medium_high_heat,
-    array_sort(collect_list(CASE WHEN tier = 'Not rated' AND heat_level = 'High' THEN initcap(planning_area) END)) AS nr
+    array_sort(collect_list(CASE WHEN tier = 'Not rated' AND heat_level = 'High' THEN {area_name_sql('planning_area')} END)) AS nr
   FROM latest
 ),
 today AS (SELECT to_date(from_utc_timestamp(current_timestamp(), 'Asia/Singapore')) AS sgt_today)
@@ -112,15 +122,17 @@ SELECT line FROM (
   SELECT 3, concat('Tiers: High ', n_high, ', Medium ', n_medium, ', Low ', n_low, ', Not rated ', n_not_rated,
     CASE WHEN n_no_forecast > 0 THEN concat(', No forecast ', n_no_forecast) ELSE '' END, '.') FROM d
   UNION ALL
-  SELECT 4, concat('Medium is not an alert: heightened care where heat is Moderate in an upper- or middle-third area, or High in a lower-third one.',
+  SELECT 4, {_q(NO_HIGH)} FROM d WHERE n_high = 0 AND n_medium + n_low > 0
+  UNION ALL
+  SELECT 5, concat('Medium is not an alert: heightened care where heat is Moderate in an upper- or middle-third area, or High in a lower-third one.',
     CASE WHEN n_medium_high_heat = 1 THEN ' One Medium area has High heat and is in the lower third for vulnerability.'
          WHEN n_medium_high_heat > 1 THEN concat(' ', n_medium_high_heat, ' Medium areas have High heat and are in the lower third for vulnerability.')
          ELSE '' END) FROM d WHERE n_medium > 0
   UNION ALL
-  SELECT 5, concat(n_high + n_medium, ' areas are High or Medium: the top {TOP} are in the first table, the other ',
+  SELECT 6, concat(n_high + n_medium, ' areas are High or Medium: the top {TOP} are in the first table, the other ',
     n_high + n_medium - {TOP}, ' in the table under it.') FROM d WHERE n_high + n_medium > {TOP}
   UNION ALL
-  SELECT 6, concat({NAMES}, CASE WHEN size(nr) = 1 THEN ' has High heat but is' ELSE ' have High heat but are' END,
+  SELECT 7, concat({NAMES}, CASE WHEN size(nr) = 1 THEN ' has High heat but is' ELSE ' have High heat but are' END,
     ' Not rated: no HDB blocks to rate, so only the heat level is shown.') FROM d WHERE size(nr) > 0
 )
 ORDER BY k
@@ -151,21 +163,21 @@ FROM observed_heat_daily
 GROUP BY sgt_date, heat_category, heat_order
 ORDER BY sgt_date, heat_order
 """),
-    "ds_area_observed": ("Observed heat per planning area", """
-SELECT initcap(planning_area) AS planning_area, sgt_date, station_name, round(max_wbgt, 1) AS max_wbgt, heat_category,
+    "ds_area_observed": ("Observed heat per planning area", f"""
+SELECT {area_name_sql('planning_area')} AS planning_area, sgt_date, station_name, round(max_wbgt, 1) AS max_wbgt, heat_category,
   heat_order
 FROM observed_heat_daily
 WHERE planning_area IS NOT NULL
 ORDER BY planning_area, sgt_date DESC
 """),
     "ds_area_facts": ("Area facts", f"""
-SELECT initcap(planning_area) AS planning_area, initcap(third) AS third, {reason_sql('reason')} AS reason,
+SELECT {area_name_sql('planning_area')} AS planning_area, initcap(third) AS third, {reason_sql('reason')} AS reason,
   aged_75_plus, rental_1_2_room, hdb_dwelling_units_confirmed, {share_sql('refuge_beyond_400m')} AS refuge_beyond,
   {share_sql('park_beyond_400m')} AS park_beyond, coalesce(neutral_components, '') AS held_neutral
 FROM area_vulnerability
 """),
-    "ds_blocks": ("Blocks in priority order", """
-SELECT initcap(planning_area) AS planning_area, priority, concat(blk_no, ' ', street) AS block,
+    "ds_blocks": ("Blocks in priority order", f"""
+SELECT {area_name_sql('planning_area')} AS planning_area, priority, concat(blk_no, ' ', street) AS block,
   rental_1_2_room, total_dwelling_units,
   refuge_main_name, CAST(round(refuge_main_m) AS INT) AS refuge_m,
   CASE WHEN refuge_within_400m THEN 'yes' ELSE 'no' END AS refuge_400m,
@@ -175,15 +187,15 @@ SELECT initcap(planning_area) AS planning_area, priority, concat(blk_no, ' ', st
 FROM block_vulnerability
 ORDER BY planning_area, priority
 """),
-    "ds_points": ("Blocks and refuges", """
-SELECT initcap(planning_area) AS planning_area, lat, lon,
+    "ds_points": ("Blocks and refuges", f"""
+SELECT {area_name_sql('planning_area')} AS planning_area, lat, lon,
   CASE WHEN refuge_within_400m THEN 'Block within 400 m' ELSE 'Block beyond 400 m' END AS point_type,
   CASE WHEN refuge_within_400m THEN 1 ELSE 2 END AS point_order,
   concat(blk_no, ' ', street) AS label, greatest(rental_1_2_room, 1) AS marker_size,
   concat('priority ', CAST(priority AS STRING), '; 1-2 room rental flats ', format_number(rental_1_2_room, 0)) AS detail
 FROM block_vulnerability
 UNION ALL
-SELECT initcap(planning_area), lat, lon, 'Refuge', 3, name, 30, refuge_type
+SELECT {area_name_sql('planning_area')}, lat, lon, 'Refuge', 3, name, 30, refuge_type
 FROM refuge_layer
 ORDER BY point_order
 """),
