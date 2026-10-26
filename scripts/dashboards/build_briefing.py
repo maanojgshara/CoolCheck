@@ -14,7 +14,9 @@ tier, sized by 1-2 room rental flats), the top 10 in briefing order (tier, then 
 Medium area below them, and the observed 30-day trend from gold.observed_heat_daily. Both area tables have "Why, in a
 sentence" after the tier: the area's sentence from gold.area_tier_explanation for the same date (written by
 scripts/explanations/generate.py, docs/design/tier_explanations.md), or its tier sentence when the row is missing, so the
-cell is never blank; no dataset calls ai_query. Queries use bare names, which the bundle's dataset_catalog and
+cell is never blank; no dataset calls ai_query. The tables show #, area, tier, the sentence, 1-2 room rental flats and the
+actions; "Why this tier" and "Why vulnerable" are hidden (the sentence carries both), and the datasets keep their fields.
+Queries use bare names, which the bundle's dataset_catalog and
 dataset_schema point at <catalog>.gold: area_heat_risk, area_vulnerability, area_tier_explanation, block_vulnerability,
 planning_area_map, refuge_layer, observed_heat_daily, score_weights, tier_actions. P(High), the score, model_version and
 run_id are never read (tests/dashboards/test_briefing_dashboard.py checks every dataset).
@@ -300,9 +302,10 @@ def at(widget, x, y, w, h):
     return {"widget": widget, "position": {"x": x, "y": y, "width": w, "height": h}}
 
 
+# "Why this tier" and "Why vulnerable" hidden (the user, 26 Oct 23:28): the sentence begins with the tier sentence and names
+# the same measures with their values, and the two columns made the table scroll sideways; the datasets keep both fields
 AREA_TABLE = [("briefing_order", "#"), ("area", "Planning area"), ("tier", "Tier"), ("explanation", "Why, in a sentence"),
-              ("tier_sentence", "Why this tier"), ("reason", "Why vulnerable"), ("rental_1_2_room", "1-2 room rental flats"),
-              ("actions", "Actions (a proposal)")]
+              ("rental_1_2_room", "1-2 room rental flats"), ("actions", "Actions (a proposal)")]
 
 
 def build():

@@ -6,7 +6,8 @@ reordered (About first), titles at 24 px, the guide and the About text as bullet
 is in src/dashboards/briefing.lvdash.json, so an update from that file would undo it. This takes the live draft and
 changes only what the explanation needs, from the committed file:
 - the queries of the datasets that read gold.area_tier_explanation (ds_area_map, ds_top_areas, ds_more_areas);
-- "Why, in a sentence" right after "Tier" in the two area tables (the query field and the column);
+- "Why, in a sentence" right after "Tier" in the two area tables (the query field and the column), and "Why this tier"
+  and "Why vulnerable" out of them (the user, 26 Oct 23:28: the sentence carries both); the datasets keep those fields;
 - the note under the top-10 table, one grid row high, with every widget below it on that page one row lower.
 It checks that nothing else changed, then writes the body for `databricks lakeview update ID --json @OUT` (the draft's
 serialized_dashboard and warehouse_id; no etag, so the body also restores over a later version).
@@ -23,6 +24,7 @@ DATASETS = ("ds_area_map", "ds_top_areas", "ds_more_areas")
 TABLES = ("top-areas", "more-areas")
 NOTE = "explanation-note"
 COLUMN = {"fieldName": "explanation", "displayName": "Why, in a sentence"}
+HIDDEN = ("tier_sentence", "reason")  # "Why this tier" and "Why vulnerable", out of the two tables
 
 
 def _layout(dash, page="briefing"):
@@ -41,11 +43,12 @@ def patch(live, committed):
     if NOTE in items:
         raise SystemExit("STOP: the live dashboard already has the note; nothing to patch")
     for name in TABLES:
-        w = items[name]["widget"]
-        fields, columns = w["queries"][0]["query"]["fields"], w["spec"]["encodings"]["columns"]
-        fields.insert(next(k for k, f in enumerate(fields) if f["name"] == "tier") + 1,
-                      {"name": "explanation", "expression": "`explanation`"})
-        columns.insert(next(k for k, c in enumerate(columns) if c["fieldName"] == "tier") + 1, dict(COLUMN))
+        q, spec = items[name]["widget"]["queries"][0]["query"], items[name]["widget"]["spec"]["encodings"]
+        q["fields"] = [f for f in q["fields"] if f["name"] not in HIDDEN]
+        spec["columns"] = [c for c in spec["columns"] if c["fieldName"] not in HIDDEN]
+        q["fields"].insert(next(k for k, f in enumerate(q["fields"]) if f["name"] == "tier") + 1,
+                           {"name": "explanation", "expression": "`explanation`"})
+        spec["columns"].insert(next(k for k, c in enumerate(spec["columns"]) if c["fieldName"] == "tier") + 1, dict(COLUMN))
     top = items["top-areas"]["position"]
     row = top["y"] + top["height"]
     for i in layout:
@@ -68,8 +71,8 @@ def changes(a, b, path=""):
 
 
 def check(live, patched, committed):
-    """Only the datasets, the two tables' field and column, the note and the moved positions changed; the datasets and
-    the tables' columns are now the committed ones."""
+    """Only the datasets, the two tables' fields and columns, the note and the moved positions changed; the datasets and
+    the tables' fields and columns are now the committed ones."""
     before = {**live, "pages": [p for p in live["pages"] if p["name"] != "briefing"]}
     after = {**patched, "pages": [p for p in patched["pages"] if p["name"] != "briefing"]}
     strip = lambda ds: [{k: v for k, v in d.items() if k not in ("catalog", "schema", "queryLines")} for d in ds]  # noqa: E731
@@ -86,8 +89,9 @@ def check(live, patched, committed):
         if name in TABLES:
             widget["queries"][0]["query"]["fields"] = new[name]["widget"]["queries"][0]["query"]["fields"]
             widget["spec"]["encodings"]["columns"] = new[name]["widget"]["spec"]["encodings"]["columns"]
-            committed_columns = next(c["widget"] for c in _layout(committed) if c["widget"]["name"] == name)
-            assert widget["spec"]["encodings"]["columns"] == committed_columns["spec"]["encodings"]["columns"], name
+            mine = next(c["widget"] for c in _layout(committed) if c["widget"]["name"] == name)
+            assert widget["spec"]["encodings"]["columns"] == mine["spec"]["encodings"]["columns"], name
+            assert widget["queries"][0]["query"]["fields"] == mine["queries"][0]["query"]["fields"], name
         assert new[name]["widget"] == widget, name
 
 

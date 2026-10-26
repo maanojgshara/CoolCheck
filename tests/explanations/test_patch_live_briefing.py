@@ -1,7 +1,8 @@
-"""scripts/explanations/patch_live_briefing.py, offline: on the committed dashboard without the explanation change, the
-patch gives the committed dashboard back; on one edited in the dashboard editor (pages reordered, a title restyled, a
-text rewritten, catalog and schema added by the server), it keeps every edit and adds only the change; it refuses a
-dashboard that already has the note."""
+"""scripts/explanations/patch_live_briefing.py, offline: on the committed dashboard as it was before the explanation
+change (the old queries, "Why this tier" and "Why vulnerable" shown, no sentence, no note), the patch gives the committed
+dashboard back; on one edited in the dashboard editor (pages reordered, a title restyled, a text rewritten, catalog and
+schema added by the server), it keeps every edit and makes only the change; it refuses a dashboard that already has the
+note."""
 import copy
 import json
 import sys
@@ -17,8 +18,12 @@ import patch_live_briefing as PL  # noqa: E402
 COMMITTED = json.loads(PL.COMMITTED.read_text(encoding="utf-8"))
 
 
+SHOWN_BEFORE = [("tier_sentence", "Why this tier"), ("reason", "Why vulnerable")]  # after "Tier", before the change
+
+
 def without_explanations(dash):
-    """The dashboard as it was before the change: other queries, no column, no note, the rows below the note one up."""
+    """The dashboard as it was before the change: other queries, "Why this tier" and "Why vulnerable" after the tier
+    instead of the sentence, no note, the rows below the note one up."""
     d = copy.deepcopy(dash)
     for ds in d["datasets"]:
         if ds["name"] in PL.DATASETS:
@@ -32,8 +37,10 @@ def without_explanations(dash):
         w = i["widget"]
         if w["name"] in PL.TABLES:
             q, spec = w["queries"][0]["query"], w["spec"]["encodings"]
-            q["fields"] = [f for f in q["fields"] if f["name"] != "explanation"]
-            spec["columns"] = [c for c in spec["columns"] if c["fieldName"] != "explanation"]
+            k = next(n for n, f in enumerate(q["fields"]) if f["name"] == "explanation")
+            q["fields"][k:k + 1] = [{"name": c, "expression": f"`{c}`"} for c, _ in SHOWN_BEFORE]
+            k = next(n for n, c in enumerate(spec["columns"]) if c["fieldName"] == "explanation")
+            spec["columns"][k:k + 1] = [{"fieldName": c, "displayName": t} for c, t in SHOWN_BEFORE]
     return d
 
 
@@ -60,7 +67,11 @@ def test_the_patch_keeps_edits_made_in_the_editor():
     assert new["top-areas"]["widget"]["spec"]["frame"]["title"]["value"].startswith("<span")
     assert new["briefing-guide"]["widget"]["multilineTextboxSpec"]["lines"] == ["- Each dot is a planning area\n"]
     for name in PL.TABLES:
-        assert [c["fieldName"] for c in new[name]["widget"]["spec"]["encodings"]["columns"]][2:4] == ["tier", "explanation"]
+        widget = new[name]["widget"]
+        assert [c["displayName"] for c in widget["spec"]["encodings"]["columns"]] == [
+            "#", "Planning area", "Tier", "Why, in a sentence", "1-2 room rental flats", "Actions (a proposal)"]
+        assert [f["name"] for f in widget["queries"][0]["query"]["fields"]] == [
+            "briefing_order", "area", "tier", "explanation", "rental_1_2_room", "actions"]
     assert all((d["catalog"], d["schema"]) == ("coolcheck", "gold") for d in patched["datasets"])
     with pytest.raises(SystemExit):
         PL.patch(patched, COMMITTED)  # already has the note

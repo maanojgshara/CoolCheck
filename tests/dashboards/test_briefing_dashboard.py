@@ -3,8 +3,9 @@
 Structure (local): the file is exactly what the builder makes; every page is GRID_V1 with rows that fill 12 columns; field
 bindings match; widget versions; no dataset names P(High), the score, gold.heat_forecast, model_version or run_id (whole
 words, so gold.score_weights and scored_at are fine), nor reaches one through gold.area_tier_explanation (it holds none,
-and the datasets take only its sentence); both area tables keep every column and show "Why, in a sentence" after the
-tier, the explanation or else the tier sentence, with the note on who writes it under the top 10, and no dataset calls
+and the datasets take only its sentence); both area tables show six columns, "Why, in a sentence" after the tier (the
+explanation or else the tier sentence) and no longer "Why this tier" or "Why vulnerable" (the user, 26 Oct 23:28), while
+their datasets keep both fields; the note on who writes the sentences is under the top 10, and no dataset calls
 ai_query; the colours are coolcheck.briefing's checked set and the live page's
 heat categories; nothing calls a page "Tomorrow" and nothing reads as unfinished (no placeholder box); the Blocks page
 points to the App for the what-if; the Briefing page computes today in Singapore, not with current_date().
@@ -134,17 +135,19 @@ def test_the_explanation_table_gives_the_datasets_its_sentence_only():
     assert not any("ai_query" in sql_of(d).lower() for d in DASH["datasets"])
 
 
-def test_why_in_a_sentence_after_the_tier_in_both_area_tables_with_every_column_kept():
+def test_both_area_tables_show_six_columns_with_why_in_a_sentence_after_the_tier():
+    """"Why this tier" and "Why vulnerable" are hidden (the user, 26 Oct 23:28): the sentence begins with the tier
+    sentence and names the same measures; the datasets keep both fields."""
     by = {w["name"]: w for _, w, _ in widgets()}
     for name in ("top-areas", "more-areas"):
         assert [(c["fieldName"], c["displayName"]) for c in by[name]["spec"]["encodings"]["columns"]] == [
             ("briefing_order", "#"), ("area", "Planning area"), ("tier", "Tier"), ("explanation", "Why, in a sentence"),
-            ("tier_sentence", "Why this tier"), ("reason", "Why vulnerable"), ("rental_1_2_room", "1-2 room rental flats"),
-            ("actions", "Actions (a proposal)")], name
+            ("rental_1_2_room", "1-2 room rental flats"), ("actions", "Actions (a proposal)")], name
     for name in ("ds_top_areas", "ds_more_areas"):
         sql = sql_of(next(d for d in DASH["datasets"] if d["name"] == name))
         assert "coalesce(e.explanation, r.tier_sentence) AS explanation" in sql
         assert "LEFT JOIN area_tier_explanation e ON e.target_date = r.target_date AND e.planning_area = r.planning_area" in sql
+        assert "SELECT briefing_order, area, tier, explanation, tier_sentence, reason, rental_1_2_room, actions FROM ordered" in sql
 
 
 def test_the_note_on_who_writes_the_sentences_is_under_the_top_ten():

@@ -423,14 +423,6 @@
                       "expression": "`explanation`"
                     },
                     {
-                      "name": "tier_sentence",
-                      "expression": "`tier_sentence`"
-                    },
-                    {
-                      "name": "reason",
-                      "expression": "`reason`"
-                    },
-                    {
                       "name": "rental_1_2_room",
                       "expression": "`rental_1_2_room`"
                     },
@@ -463,14 +455,6 @@
                   {
                     "fieldName": "explanation",
                     "displayName": "Why, in a sentence"
-                  },
-                  {
-                    "fieldName": "tier_sentence",
-                    "displayName": "Why this tier"
-                  },
-                  {
-                    "fieldName": "reason",
-                    "displayName": "Why vulnerable"
                   },
                   {
                     "fieldName": "rental_1_2_room",
@@ -537,14 +521,6 @@
                       "expression": "`explanation`"
                     },
                     {
-                      "name": "tier_sentence",
-                      "expression": "`tier_sentence`"
-                    },
-                    {
-                      "name": "reason",
-                      "expression": "`reason`"
-                    },
-                    {
                       "name": "rental_1_2_room",
                       "expression": "`rental_1_2_room`"
                     },
@@ -577,14 +553,6 @@
                   {
                     "fieldName": "explanation",
                     "displayName": "Why, in a sentence"
-                  },
-                  {
-                    "fieldName": "tier_sentence",
-                    "displayName": "Why this tier"
-                  },
-                  {
-                    "fieldName": "reason",
-                    "displayName": "Why vulnerable"
                   },
                   {
                     "fieldName": "rental_1_2_room",
