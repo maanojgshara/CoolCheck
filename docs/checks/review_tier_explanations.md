@@ -260,3 +260,95 @@ C's line "The check keeps what is shown correct either way" holds for 26 Oct, wh
 - No test checks that a sentence's tier equals the row's tier (finding 5).
 - No test covers a duplicate `(target_date, planning_area)` row. The `REPLACE WHERE` write makes one unlikely, but it would show an area twice and shift the order.
 - Nothing tests the rendering. Only the user's screenshot covers it, by eye (section 4).
+
+## Re-review 2: `e61e224` (27 Oct 2026, about 00:00 to 00:20 SGT)
+
+Reviewed by window D, read-only as before, on window C's `e61e224` (26 Oct, 23:56 SGT). It implements findings 3 and 4 on top of `93a6dd9`. What it changes:
+- `src/coolcheck/explain.py`: the three rules, `not_verbatim`, `wrong_brackets` and `beyond_frame` with `FRAME`;
+- the note's wording, in `build_briefing.py` and the dashboard JSON;
+- the tests, and a new fixture of the stored 26 Oct rows;
+- C's two docs.
+
+`patch_live_briefing.py` and every query are unchanged. Everything below was run from a `git archive` of `e61e224`. As before: no `ai_query`, no `generate.py`, no `lakeview create`, `update` or `publish`.
+
+**Verdict: switch it on once 27 Oct's sentences are written and read.**
+- The check now catches all 54 of this review's wrong sentences. It rejects none of the stored sentences, the templates, the prompt's examples or the controls.
+- One narrow gap remains (item 2): sentences made only of facts and frame words that swap the forecast and the observation.
+- The person reading 27 Oct's sentences before the apply would see any such sentence, and a fourth rule closes the gap (prototype below).
+
+| # | Item | Result | Evidence (below) |
+|---|---|---|---|
+| 1 | The live patch (check 4) | **Pass** | Only the 3 queries, the two six-column tables, the note in its new wording, and 2 moved widgets change. Every editor change of 26 Oct, 15:19 is kept. The restore body equals the live JSON, with "Peak WBGT (°C)" intact. |
+| 2 | The check, adversarially | **54 of 54** old cases caught; **9 of 15** new ones | All the stored sentences, the templates and the prompt's examples pass. The 6 misses are all one kind: the forecast and the observation swapped, using frame words only. |
+| 3 | Tests (check 6) | **Pass** | `tests/explanations`: 76 passed. Structural dashboard tests: 15 passed. |
+| 4 | The frame list without the seven tier, heat and third words | **Agree** | It catches what my list let through, and rejects no stored sentence, template or example. |
+
+### 1. The live patch (check 4, at `e61e224`)
+
+**The get.** A fresh read-only get at 00:02 SGT, made by replicating C's restore step 1:
+- Unchanged since 23:15: the same `update_time` (07:19:18.685Z) and `etag`. The published revision is 07:19:20.248Z, with credentials embedded.
+- **Restore point:** step 1 printed "restore body = live draft of 2026-10-26T07:19:18.685Z". My own comparison: the body equals the live JSON, the warehouse is kept, "Peak WBGT (°C)" appears twice in both, and there is no `Â`.
+
+**The patch at `e61e224`, run offline on that get.** Its own check passed. My diff, independent of it:
+- **What changes:** the Briefing page's layout and the `queryLines` of `ds_area_map`, `ds_top_areas` and `ds_more_areas`. These are identical: the About, Blocks and Observed heat pages; `uiSettings`; the page order (About first); the datasets' catalog, schema and display names.
+- **The queries:** the live queries were `e98fcc9`'s. The patched ones are `e61e224`'s, unchanged since `75013d9`.
+- **The tables:** 7 fields and columns become 6: #, Planning area, Tier, Why, in a sentence, 1-2 room rental flats, and Actions (a proposal). Both tables equal `e61e224`'s, and the 24 px titles are kept.
+- **The note:** the new wording, equal to `e61e224`'s: "Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code checks that it states the tier, heat level, third and each measure as given, and nothing but the facts, or shows the template sentence."
+- **The layout:** the note sits at (0, 30, 12, 1), `more-areas` moves from y 30 to 31 and `trend-chart` from 34 to 35, and nothing overlaps.
+- **The body:** `serialized_dashboard` and `warehouse_id` only, with the non-ASCII characters unchanged.
+
+### 2. The check, adversarially (at `e61e224`)
+
+**This review's cases.** All **54 of 54** wrong sentences from section 2 are caught, and the 3 controls pass. That includes the two my own prototype missed: "High vulnerability" (left over by rule (c)) and "30.5 °C (High)" (rule (b): not its category).
+
+**Stored data:**
+- All 31 stored AI sentences pass. Clementi's still fails, as stored.
+- All 32 templates pass, and so do the prompt's 3 examples.
+- The new fixture `tests/explanations/stored_26oct.json` equals the table for every row's facts, `ai_sentence`, `template_sentence` and `written_by`. Only `checks_failed` differs: NULL in the table, `''` in the fixture, for the 31 AI rows. That is cosmetic.
+
+**New wrong sentences aimed at the new rules: 15, plus 4 controls.** The 4 controls pass. Caught (9):
+- wrong labels: "aged 65+" for "aged 75+"; "rental" dropped; "near a park" added;
+- brackets in the wrong place: the rental rank after the 75+ count; after the tier; after the date; the right rank with extra words;
+- Kallang's rank with the wrong denominator;
+- a true rank without brackets after the wrong measure.
+
+**Missed (6).** All are made only of facts and frame words, and each swaps the forecast and the observation. On Toa Payoh's facts (the forecast is Moderate, for 26 Oct; the station observed 30.5 °C, Low, on 25 Oct):
+- "Medium: its station observed Moderate heat and the upper third for vulnerability, with …";
+- "Medium: forecast Moderate heat on 25 Oct and the upper third …";
+- "Medium: forecast Moderate heat with a peak of 30.5 °C on 25 Oct and the upper third …";
+- "…; forecast peak WBGT of 30.5 °C on 25 Oct.";
+- "…; its station observed 30.5 °C on 25 Oct with Moderate heat.";
+- "Medium: forecast Moderate heat on 25 Oct: 30.5 °C (Low), and the upper third …".
+
+**How serious.** Medium severity: each could lead a reader to take the observation for the forecast, or the reverse. Low likelihood: all 31 stored sentences, the 3 examples and the template keep the observation in its own clause after a semicolon.
+
+C's design note says the check "cannot see the order of the frame words" and calls such sentences odd. These six show that the order can also make a sentence false.
+
+**Rule (d), a prototype in scratch:** the observation (observed, peak, WBGT, station, the peak, its date) appears only after the first semicolon. That clause holds no forecast word and no heat level other than the observed category.
+- It catches all 6.
+- It passes all 31 stored AI sentences, the 32 templates, the 3 examples and the 4 controls, including Changi's true "observed … Moderate heat".
+- Advised before the 27 Oct run if there is time. Otherwise, the person reading 27 Oct's sentences looks for exactly this.
+
+### 3. Tests (check 6, at `e61e224`, offline)
+
+- **`tests/explanations`: 76 passed.** That is the 37 before, plus 36 cases (one per wrong sentence the old check missed), plus 3 new tests: the stored 26 Oct sentences and templates pass; the controls pass; every group has a case that only the new rules catch.
+- **The 15 structural dashboard tests: 15 passed,** the note's new wording among them. The 18 Connect tests were not run by me.
+
+### 4. The frame list (agree)
+
+**The change.** C's list is my 25 words minus upper, middle, lower, low, moderate, high and medium: 18 words. Rule (c) removes the area's own words where they belong: the tier as the first word, the heat level and the observed category before "heat", and the third before "third".
+
+**Why I agree:**
+- It catches what my list let through: "High vulnerability", and, with rule (b), "(High)".
+- It rejects no stored sentence, template or example.
+- Its cost is false rejections ("the top third", "heat is forecast to be Moderate"), and those fall back to the template, which is right by construction.
+
+**One limit, of position rather than of the list.** A heat word is removed before "heat" in either clause, so the forecast level passes as observed (the first of the six misses). Rule (d) handles that.
+
+### The findings after re-review 2
+
+- **1, the 27 Oct rows:** open. Must be done before the apply.
+- **2, the restore point:** fixed in `93a6dd9`, and verified again at `e61e224`.
+- **3, a check narrower than the note:** fixed in `e61e224` for all 54 cases. A narrow remainder (6 of 15 new cases) is left; rule (d) is advised.
+- **4, the note:** fixed in `e61e224`; it now says what the check does. With the remainder, "nothing but the facts" holds word by word, but not for order: "forecast Moderate heat on 25 Oct" uses only facts. Low.
+- **5 to 8:** unchanged (after Demo Day, or a team decision).
