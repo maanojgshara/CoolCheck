@@ -2,13 +2,17 @@
 
 Structure (local): the file is exactly what the builder makes; every page is GRID_V1 with rows that fill 12 columns; field
 bindings match; widget versions; no dataset names P(High), the score, gold.heat_forecast, model_version or run_id (whole
-words, so gold.score_weights and scored_at are fine); the colours are coolcheck.briefing's checked set and the live page's
+words, so gold.score_weights and scored_at are fine), nor reaches one through gold.area_tier_explanation (it holds none,
+and the datasets take only its sentence); both area tables keep every column and show "Why, in a sentence" after the
+tier, the explanation or else the tier sentence, with the note on who writes it under the top 10, and no dataset calls
+ai_query; the colours are coolcheck.briefing's checked set and the live page's
 heat categories; nothing calls a page "Tomorrow" and nothing reads as unfinished (no placeholder box); the Blocks page
 points to the App for the what-if; the Briefing page computes today in Singapore, not with current_date().
 SQL (Databricks Connect, temp views only): every dataset runs unchanged on temp views with the same bare names, built from
 the files the tables are loaded from (coolcheck-data/analysis and reference/) and a made-up forecast through
 coolcheck.risk.area_heat_risk_sql, with the expected rows; the Briefing page's headline (the App's "No rated area is in
-the High tier." only on a day with no High area and some Medium or Low), top 10 and the rest; the two wording fixes (the
+the High tier." only on a day with no High area and some Medium or Low), top 10 and the rest, each with the date's
+explanation or its tier sentence (never blank); the two wording fixes (the
 75+ reasons as one phrase; "too few flats to measure" for areas held neutral); area names with a capital after each space
 and hyphen wherever the page shows one; the filters open on Bedok; the Observed heat page's rows per area and day.
 """
@@ -115,6 +119,45 @@ def test_no_dataset_names_the_probability_the_score_the_forecast_table_or_the_ru
     assert not shown & {"tier_rank", "heat_level", "v", "third_code"}
 
 
+def test_the_explanation_table_gives_the_datasets_its_sentence_only():
+    """Nothing never shown comes in through gold.area_tier_explanation: the table has no such column (its facts hold none,
+    tests/explanations), and a dataset takes only the sentence and the join keys from it."""
+    from coolcheck import explain as E
+    assert not {c for c, _, _ in E.COLUMNS} & {*NEVER_SHOWN, "v", "v_rank", "tier_rank"}
+    readers = [d for d in DASH["datasets"] if "area_tier_explanation" in sql_of(d)]
+    assert {d["name"] for d in readers} == {"ds_area_map", "ds_top_areas", "ds_more_areas"}  # the shared ORDERED CTE
+    for d in readers:
+        sql = sql_of(d)
+        assert set(re.findall(r"\be\.(\w+)", sql)) == {"explanation", "target_date", "planning_area"}, d["name"]
+        for col in ("facts", "ai_sentence", "template_sentence", "checks_failed", "written_by"):
+            assert not re.search(rf"\b{col}\b", sql), (d["name"], col)
+    assert not any("ai_query" in sql_of(d).lower() for d in DASH["datasets"])
+
+
+def test_why_in_a_sentence_after_the_tier_in_both_area_tables_with_every_column_kept():
+    by = {w["name"]: w for _, w, _ in widgets()}
+    for name in ("top-areas", "more-areas"):
+        assert [(c["fieldName"], c["displayName"]) for c in by[name]["spec"]["encodings"]["columns"]] == [
+            ("briefing_order", "#"), ("area", "Planning area"), ("tier", "Tier"), ("explanation", "Why, in a sentence"),
+            ("tier_sentence", "Why this tier"), ("reason", "Why vulnerable"), ("rental_1_2_room", "1-2 room rental flats"),
+            ("actions", "Actions (a proposal)")], name
+    for name in ("ds_top_areas", "ds_more_areas"):
+        sql = sql_of(next(d for d in DASH["datasets"] if d["name"] == name))
+        assert "coalesce(e.explanation, r.tier_sentence) AS explanation" in sql
+        assert "LEFT JOIN area_tier_explanation e ON e.target_date = r.target_date AND e.planning_area = r.planning_area" in sql
+
+
+def test_the_note_on_who_writes_the_sentences_is_under_the_top_ten():
+    pos = {w["name"]: p for _, w, p in widgets()}
+    note = next(w for _, w, _ in widgets() if w["name"] == "explanation-note")
+    assert "".join(note["multilineTextboxSpec"]["lines"]).strip() == (
+        "Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code checks the "
+        "tier and every number, or shows the template sentence.")
+    top = pos["top-areas"]
+    assert pos["explanation-note"] == {"x": 0, "y": top["y"] + top["height"], "width": 12, "height": 1}
+    assert pos["more-areas"]["y"] == top["y"] + top["height"] + 1
+
+
 def test_briefing_page_reads_the_latest_date_and_today_in_singapore():
     sql = {d["name"]: sql_of(d) for d in DASH["datasets"]}
     for name in ("ds_briefing_lines", "ds_area_map", "ds_top_areas", "ds_more_areas"):
@@ -216,11 +259,15 @@ def views(spark):
     spark.createDataFrame(OBSERVED, ", ".join(f"{c} {t}" for c, t in zip(
         [c for c, _ in B.OBSERVED_COLUMNS], ["DATE", "STRING", "STRING", "STRING", "INT", "DOUBLE", "STRING"]))) \
         .createOrReplaceTempView("observed_heat_daily")
+    spark.createDataFrame(EXPLANATIONS, "target_date DATE, planning_area STRING, explanation STRING") \
+        .createOrReplaceTempView("area_tier_explanation")
     heat_risk_view(spark, LATEST)
     return spark
 
 
 LATEST = date(2999, 12, 31)  # after any real today, so no "no forecast for today" notice unless a test asks for one
+# gold.area_tier_explanation: Toa Payoh has the latest date's sentence; Bedok only the day before's
+EXPLANATIONS = [(LATEST, "TOA PAYOH", "High: a checked sentence."), (date(2999, 12, 30), "BEDOK", "An older sentence.")]
 
 
 def heat_risk_view(spark, latest, high=None, missing=False):
@@ -389,6 +436,17 @@ def test_top_ten_then_every_other_high_or_medium_area_in_tier_then_tier_rank_ord
     assert {r["tier"] for r in more} <= {"High", "Medium"} and want[len(top) + len(more)]["tier"] not in ("High", "Medium")
     assert top[0]["area"] == "Toa Payoh" and lower.title() in [r["area"] for r in top + more]
     assert all(r["actions"] for r in top + more)
+
+
+def test_why_in_a_sentence_is_the_dates_explanation_or_else_the_tier_sentence(views):
+    """An area with a row for the date shows its sentence; any other, Bedok's row for the day before included, shows its
+    tier sentence, so no cell is blank."""
+    rows = rows_of(views, "ds_top_areas") + rows_of(views, "ds_more_areas")
+    by = {r["area"]: r for r in rows}
+    assert by["Toa Payoh"]["explanation"] == "High: a checked sentence."
+    assert by["Bedok"]["explanation"] == by["Bedok"]["tier_sentence"]
+    assert all(r["explanation"] == r["tier_sentence"] for a, r in by.items() if a != "Toa Payoh")
+    assert all(r["explanation"] for r in rows) and len(by) == len(rows)
 
 
 def test_no_more_areas_says_so(views):

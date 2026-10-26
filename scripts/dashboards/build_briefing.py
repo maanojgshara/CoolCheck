@@ -11,10 +11,13 @@ date is before today in Singapore; the tier counts; the App's "No rated area is 
 at least one is Medium or Low; what Medium means; how many areas are High or Medium beyond the top 10; Not-rated areas with High
 heat), the planning-area point map (one dot per area at its polygon's centroid, coloured by
 tier, sized by 1-2 room rental flats), the top 10 in briefing order (tier, then tier_rank as built), every other High or
-Medium area below them, and the observed 30-day trend from gold.observed_heat_daily. Queries use bare names, which the
-bundle's dataset_catalog and dataset_schema point at <catalog>.gold: area_heat_risk, area_vulnerability,
-block_vulnerability, planning_area_map, refuge_layer, observed_heat_daily, score_weights, tier_actions. P(High), the
-score, model_version and run_id are never read (tests/dashboards/test_briefing_dashboard.py checks every dataset).
+Medium area below them, and the observed 30-day trend from gold.observed_heat_daily. Both area tables have "Why, in a
+sentence" after the tier: the area's sentence from gold.area_tier_explanation for the same date (written by
+scripts/explanations/generate.py, docs/design/tier_explanations.md), or its tier sentence when the row is missing, so the
+cell is never blank; no dataset calls ai_query. Queries use bare names, which the bundle's dataset_catalog and
+dataset_schema point at <catalog>.gold: area_heat_risk, area_vulnerability, area_tier_explanation, block_vulnerability,
+planning_area_map, refuge_layer, observed_heat_daily, score_weights, tier_actions. P(High), the score, model_version and
+run_id are never read (tests/dashboards/test_briefing_dashboard.py checks every dataset).
 Colours are coolcheck.briefing's, checked with coolcheck.palette; the observed heat categories take the live page's.
 Planning-area names have a capital after each space and hyphen ("North-Eastern Islands"), as the App writes them.
 The polygon maps were dropped on 24 Oct: the render test showed the server drops the custom-geometry region key, so
@@ -77,14 +80,18 @@ LATEST = """WITH latest AS (
 ORDERED = f"""{LATEST},
 ordered AS (
   SELECT r.planning_area, {area_name_sql('r.planning_area')} AS area, r.tier, r.heat_level, r.tier_sentence,
+    coalesce(e.explanation, r.tier_sentence) AS explanation,
     coalesce({reason_sql('r.reason')}, '') AS reason, coalesce(r.actions, '') AS actions,
     coalesce(v.rental_1_2_room, 0) AS rental_1_2_room,
     row_number() OVER (ORDER BY {TIER_ORDER}, r.tier_rank) AS briefing_order
   FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area
+    LEFT JOIN area_tier_explanation e ON e.target_date = r.target_date AND e.planning_area = r.planning_area
 )"""
 # Table columns stay numbers (a text column sorts "9,000" after "10,000" if a viewer clicks a header); format_number is
 # used only where nothing sorts: the map tooltip and the Blocks map's detail text.
-AREA_COLUMNS = "briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions"
+AREA_COLUMNS = "briefing_order, area, tier, explanation, tier_sentence, reason, rental_1_2_room, actions"
+EXPLANATION_NOTE = ("Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code "
+                    "checks the tier and every number, or shows the template sentence.")
 NAMES = "CASE WHEN size(nr) = 1 THEN nr[0] ELSE concat(array_join(slice(nr, 1, size(nr) - 1), ', '), ' and ', element_at(nr, -1)) END"
 LONG_DATE = "date_format(target_date, 'EEEE, d MMMM yyyy')"
 NOTICES = [  # copied exactly from docs/attribution.md (register notices 1, 3, 7, 9, 12, 14, 16, 19, 22, 23)
@@ -153,7 +160,7 @@ SELECT {AREA_COLUMNS} FROM ordered WHERE briefing_order <= {TOP} ORDER BY briefi
 {ORDERED}
 SELECT {AREA_COLUMNS} FROM ordered WHERE briefing_order > {TOP} AND tier IN ('High', 'Medium')
 UNION ALL
-SELECT NULL, 'None: every High or Medium area is in the top {TOP}', NULL, NULL, NULL, NULL, NULL
+SELECT NULL, 'None: every High or Medium area is in the top {TOP}', NULL, NULL, NULL, NULL, NULL, NULL
 WHERE NOT EXISTS (SELECT 1 FROM ordered WHERE briefing_order > {TOP} AND tier IN ('High', 'Medium'))
 ORDER BY briefing_order
 """),
@@ -293,8 +300,9 @@ def at(widget, x, y, w, h):
     return {"widget": widget, "position": {"x": x, "y": y, "width": w, "height": h}}
 
 
-AREA_TABLE = [("briefing_order", "#"), ("area", "Planning area"), ("tier", "Tier"), ("tier_sentence", "Why this tier"),
-              ("reason", "Why vulnerable"), ("rental_1_2_room", "1-2 room rental flats"), ("actions", "Actions (a proposal)")]
+AREA_TABLE = [("briefing_order", "#"), ("area", "Planning area"), ("tier", "Tier"), ("explanation", "Why, in a sentence"),
+              ("tier_sentence", "Why this tier"), ("reason", "Why vulnerable"), ("rental_1_2_room", "1-2 room rental flats"),
+              ("actions", "Actions (a proposal)")]
 
 
 def build():
@@ -319,10 +327,11 @@ def build():
             at(table("top-areas", "ds_top_areas", AREA_TABLE,
                      f"Top {TOP} areas: by tier, then within a tier by {WITHIN_TIER} (the number is never shown)"),
                0, 15, 12, 9),
+            at(text("explanation-note", [EXPLANATION_NOTE + "\n"]), 0, 24, 12, 1),
             # height 8 showed 12 of the 13 rows on 24 Oct; 10 leaves room for a few more
             at(table("more-areas", "ds_more_areas", AREA_TABLE, f"Every other High or Medium area, after the top {TOP}, in the same order"),
-               0, 24, 12, 10),
-            at(trend_chart("trend-chart"), 0, 34, 12, 6),
+               0, 25, 12, 10),
+            at(trend_chart("trend-chart"), 0, 35, 12, 6),
         ]}
     area_filter = {
         "name": "area-filter",

@@ -53,10 +53,12 @@
         "),\n",
         "ordered AS (\n",
         "  SELECT r.planning_area, array_join(transform(split(initcap(r.planning_area), '-'), x -> concat(upper(substr(x, 1, 1)), substr(x, 2))), '-') AS area, r.tier, r.heat_level, r.tier_sentence,\n",
+        "    coalesce(e.explanation, r.tier_sentence) AS explanation,\n",
         "    coalesce(CASE WHEN r.reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE r.reason END, '') AS reason, coalesce(r.actions, '') AS actions,\n",
         "    coalesce(v.rental_1_2_room, 0) AS rental_1_2_room,\n",
         "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
         "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
+        "    LEFT JOIN area_tier_explanation e ON e.target_date = r.target_date AND e.planning_area = r.planning_area\n",
         ")\n",
         "SELECT o.area, o.tier, o.tier_sentence, format_number(o.rental_1_2_room, 0) AS rental_1_2_room,\n",
         "  greatest(o.rental_1_2_room, 1) AS marker_size,\n",
@@ -75,12 +77,14 @@
         "),\n",
         "ordered AS (\n",
         "  SELECT r.planning_area, array_join(transform(split(initcap(r.planning_area), '-'), x -> concat(upper(substr(x, 1, 1)), substr(x, 2))), '-') AS area, r.tier, r.heat_level, r.tier_sentence,\n",
+        "    coalesce(e.explanation, r.tier_sentence) AS explanation,\n",
         "    coalesce(CASE WHEN r.reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE r.reason END, '') AS reason, coalesce(r.actions, '') AS actions,\n",
         "    coalesce(v.rental_1_2_room, 0) AS rental_1_2_room,\n",
         "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
         "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
+        "    LEFT JOIN area_tier_explanation e ON e.target_date = r.target_date AND e.planning_area = r.planning_area\n",
         ")\n",
-        "SELECT briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order <= 10 ORDER BY briefing_order\n"
+        "SELECT briefing_order, area, tier, explanation, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order <= 10 ORDER BY briefing_order\n"
       ]
     },
     {
@@ -93,14 +97,16 @@
         "),\n",
         "ordered AS (\n",
         "  SELECT r.planning_area, array_join(transform(split(initcap(r.planning_area), '-'), x -> concat(upper(substr(x, 1, 1)), substr(x, 2))), '-') AS area, r.tier, r.heat_level, r.tier_sentence,\n",
+        "    coalesce(e.explanation, r.tier_sentence) AS explanation,\n",
         "    coalesce(CASE WHEN r.reason IN ('many residents aged 75+; a high share of residents aged 75+', 'a high share of residents aged 75+; many residents aged 75+') THEN 'many residents aged 75+, who are a high share of its residents' ELSE r.reason END, '') AS reason, coalesce(r.actions, '') AS actions,\n",
         "    coalesce(v.rental_1_2_room, 0) AS rental_1_2_room,\n",
         "    row_number() OVER (ORDER BY CASE r.tier WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 WHEN 'Not rated' THEN 4 ELSE 5 END, r.tier_rank) AS briefing_order\n",
         "  FROM latest r LEFT JOIN area_vulnerability v ON v.planning_area = r.planning_area\n",
+        "    LEFT JOIN area_tier_explanation e ON e.target_date = r.target_date AND e.planning_area = r.planning_area\n",
         ")\n",
-        "SELECT briefing_order, area, tier, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium')\n",
+        "SELECT briefing_order, area, tier, explanation, tier_sentence, reason, rental_1_2_room, actions FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium')\n",
         "UNION ALL\n",
-        "SELECT NULL, 'None: every High or Medium area is in the top 10', NULL, NULL, NULL, NULL, NULL\n",
+        "SELECT NULL, 'None: every High or Medium area is in the top 10', NULL, NULL, NULL, NULL, NULL, NULL\n",
         "WHERE NOT EXISTS (SELECT 1 FROM ordered WHERE briefing_order > 10 AND tier IN ('High', 'Medium'))\n",
         "ORDER BY briefing_order\n"
       ]
@@ -413,6 +419,10 @@
                       "expression": "`tier`"
                     },
                     {
+                      "name": "explanation",
+                      "expression": "`explanation`"
+                    },
+                    {
                       "name": "tier_sentence",
                       "expression": "`tier_sentence`"
                     },
@@ -449,6 +459,10 @@
                   {
                     "fieldName": "tier",
                     "displayName": "Tier"
+                  },
+                  {
+                    "fieldName": "explanation",
+                    "displayName": "Why, in a sentence"
                   },
                   {
                     "fieldName": "tier_sentence",
@@ -483,6 +497,22 @@
         },
         {
           "widget": {
+            "name": "explanation-note",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code checks the tier and every number, or shows the template sentence.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
             "name": "more-areas",
             "queries": [
               {
@@ -501,6 +531,10 @@
                     {
                       "name": "tier",
                       "expression": "`tier`"
+                    },
+                    {
+                      "name": "explanation",
+                      "expression": "`explanation`"
                     },
                     {
                       "name": "tier_sentence",
@@ -541,6 +575,10 @@
                     "displayName": "Tier"
                   },
                   {
+                    "fieldName": "explanation",
+                    "displayName": "Why, in a sentence"
+                  },
+                  {
                     "fieldName": "tier_sentence",
                     "displayName": "Why this tier"
                   },
@@ -566,7 +604,7 @@
           },
           "position": {
             "x": 0,
-            "y": 24,
+            "y": 25,
             "width": 12,
             "height": 10
           }
@@ -653,7 +691,7 @@
           },
           "position": {
             "x": 0,
-            "y": 34,
+            "y": 35,
             "width": 12,
             "height": 6
           }
