@@ -162,6 +162,12 @@ The rate per token comes from this workspace's own billing, not from a price pag
 
 The exact counts will be in `system.ai_gateway.usage` once it has the run. At 23:00 SGT its latest event was 09:47:47 UTC.
 
+**Exact counts, read on 27 Oct at 00:57 SGT: twice the calls, so about twice the cost.**
+- **What the table holds.** For this run's window, `system.ai_gateway.usage` holds 64 calls, not 32, all `AI_QUERY` with status 200: 65,834 input and 2,476 output tokens.
+- **Every statement doubled.** Each of my `ai_query` statements with an `ORDER BY` logged two calls per row. The dry runs show the same: 2 calls for 1 area, 6 for 3, 12 for 6, 64 for 32. The one-row name test, without an `ORDER BY`, logged 1.
+- **The exact cost.** At the rates above, the run cost 0.523 DBU, about **US$0.05**. That is twice the calls, and 1,029 input tokens per call against the 909 the characters suggested.
+- **A likely cause, not tested.** The sort's sampling pass may evaluate `ai_query` a second time. Dropping the `ORDER BY` from `explain.ai_sql` should halve the calls, since `generate.py` matches the answers to areas by name. That is a code change for a later commit.
+
 ```sql
 SELECT count(*) AS calls, sum(input_tokens) AS input_tokens, sum(output_tokens) AS output_tokens
 FROM system.ai_gateway.usage
@@ -223,3 +229,79 @@ Window D's review (`docs/checks/review_tier_explanations.md`, findings 3 and 4) 
 **The copy, updated at 23:53:44 SGT, and only the copy.** The live draft was read again first and was unchanged (`update_time` 07:19:18 UTC, the same `etag`). The copy was built from it with the patch. Read back, the copy equals the body sent: the six columns, the new note, still unpublished. The live dashboard was not touched, and `generate.py` was not run: 27 Oct's sentences wait for the 00:45 SGT job and the user's word.
 
 `test_briefing_dashboard.py` through Databricks Connect: 33 of 33 passed (temp views only, 215 s).
+
+## The second run: 27 Oct (27 Oct 2026, 00:55 SGT)
+
+The user's OK was for one run, after the 00:45 SGT heat forecast. It came after window D's re-review 3 (`cffdf6c`), which found that the check with rule (d) catches every wrong sentence D had tried.
+
+**Read-only checks first:**
+- **The forecast job ran.** Job 131450384398104, run 1102490184153637: periodic, 00:45:01 to 00:50:22 SGT, `SUCCESS`.
+- **27 Oct's rows are in.** `gold.area_heat_risk` holds 41 rows for 27 Oct, 32 of them rated: 9 Medium, 23 Low, none High, 9 Not rated, no "No forecast". They were scored at 00:50:09 SGT, and 27 Oct is the latest date.
+- **The observations are in.** `gold.observed_heat_daily` has usable rows for 30 stations on 26 Oct.
+- **The table held only 26 Oct.** `gold.area_tier_explanation` had 26 Oct's 32 rows and nothing else.
+
+**The run:**
+- **Code:** commit `cffdf6c` (`7f66d1f`'s check with rule (d), and D's re-review 3). The tree was clean, and the script printed "files this run uses unchanged from it".
+- **Command:** `.venv\Scripts\python scripts/explanations/generate.py --target-date 2026-10-27 --out <scratch>/run_27oct.json`, run once.
+- **When:** 2026-10-26 16:55:44 to 16:56:23 UTC (27 Oct, 00:55 to 00:56 SGT).
+- **What it did:** it read 32 rated areas with a tier, each with an observed peak for 26 Oct. `ai_query` returned 32 answers in 12 s. It sent 116,386 characters and received 4,554. By the count above, the gateway should record 64 calls; the exact tokens come a few hours later.
+
+**Counts:** 32 "AI, checked", 0 "Template". No sentence failed a check, so no template is shown and there are no failed checks to list.
+
+**Read-back** (the script's, and a separate read-only query):
+- 32 rows for 2026-10-27, one per area, all "AI, checked".
+- 26 Oct's 32 rows are unchanged.
+- All 10 columns have a comment, and the tags are `source` and `licence`.
+- The table comment now names the observation rule too: `comment_sqls` rewrote it to the current code's text.
+
+**The 32 sentences in briefing order.** The order is read through the dashboard's own query (by tier, then within the tier as the page orders it; only the position is read). Items 1 to 10 are the top-10 table. With 9 Medium areas, the table under it shows "None: every High or Medium area is in the top 10".
+
+1. **Woodlands** (Medium): "Medium: forecast Moderate heat and the upper third for vulnerability, with 3,817 1-2 room rental flats (6th most of 32 rated areas) and 11,700 residents aged 75+."
+2. **Toa Payoh** (Medium): "Medium: forecast Moderate heat and the upper third for vulnerability, with 3,835 1-2 room rental flats (5th most of 32 rated areas) and 14,290 residents aged 75+."
+3. **Punggol** (Medium): "Medium: forecast Moderate heat and the middle third for vulnerability, with 2,268 1-2 room rental flats and 60% of HDB flats beyond 400 m of a refuge."
+4. **Kallang** (Medium): "Medium: forecast Moderate heat and the upper third for vulnerability, with 5,921 1-2 room rental flats and an 11% share of residents aged 75+."
+5. **Sengkang** (Medium): "Medium: forecast Moderate heat and the middle third for vulnerability, with 12,260 residents aged 75+ and 1,687 1-2 room rental flats."
+6. **Geylang** (Medium): "Medium: forecast Moderate heat and the middle third for vulnerability, with 3,182 1-2 room rental flats and 10,740 residents aged 75+."
+7. **Sembawang** (Medium): "Medium: forecast Moderate heat and the middle third for vulnerability, with 1,838 1-2 room rental flats and 59% of HDB flats beyond 400 m of a refuge."
+8. **Hougang** (Medium): "Medium: forecast Moderate heat and the upper third for vulnerability, with 17,410 residents aged 75+ and 52% of HDB flats beyond 400 m of a refuge."
+9. **Serangoon** (Medium): "Medium: forecast Moderate heat and the middle third for vulnerability, with 11,260 residents aged 75+ and a 10% share of residents aged 75+."
+10. **Bishan** (Low): "Low: forecast Moderate heat and the lower third for vulnerability, with a 10% share of residents aged 75+."
+11. **Changi** (Low): "Low: forecast Moderate heat and the lower third for vulnerability, with no component above the middle of the rated areas; its station observed a peak WBGT of 30.5 °C on 26 Oct."
+12. **Ang Mo Kio** (Low): "Low: forecast Low heat and the upper third for vulnerability, with 4,169 1-2 room rental flats and 18,760 residents aged 75+."
+13. **Bedok** (Low): "Low: forecast Low heat and the upper third for vulnerability, with 4,155 1-2 room rental flats and 27,590 residents aged 75+."
+14. **Yishun** (Low): "Low: forecast Low heat and the upper third for vulnerability, with 14,030 residents aged 75+ and 2,192 1-2 room rental flats."
+15. **Bukit Merah** (Low): "Low: forecast Low heat and the upper third for vulnerability, with 7,933 1-2 room rental flats and 17,300 residents aged 75+."
+16. **Queenstown** (Low): "Low: forecast Low heat and the middle third for vulnerability, with 2,763 1-2 room rental flats and an 11% share of residents aged 75+."
+17. **Tengah** (Low): "Low: forecast Moderate heat and the lower third for vulnerability, with 64% of HDB flats beyond 400 m of a refuge and 55% of HDB flats beyond 400 m of a park."
+18. **Marine Parade** (Low): "Low: forecast Low heat and the middle third for vulnerability, with an 11% share of residents aged 75+ and 52% of HDB flats beyond 400 m of a refuge."
+19. **Tampines** (Low): "Low: forecast Low heat and the upper third for vulnerability, with 18,360 residents aged 75+ and 2,570 1-2 room rental flats."
+20. **Tanglin** (Low): "Low: forecast Low heat and the lower third for vulnerability, with no refuges in the area for 4,070 residents aged 65+."
+21. **Jurong West** (Low): "Low: forecast Low heat and the upper third for vulnerability, with 15,590 residents aged 75+ and 2,255 1-2 room rental flats."
+22. **Jurong East** (Low): "Low: forecast Low heat and the upper third for vulnerability, with 72% of HDB flats beyond 400 m of a refuge and a 10% share of residents aged 75+."
+23. **Novena** (Low): "Low: forecast Low heat and the lower third for vulnerability, with a 9% share of residents aged 75+ and 61% of HDB flats beyond 400 m of a park."
+24. **Bukit Timah** (Low): "Low: forecast Low heat and the lower third for vulnerability, with 2 refuges in the area for 15,970 residents aged 65+ and a 9% share of residents aged 75+."
+25. **Choa Chu Kang** (Low): "Low: forecast Low heat and the middle third for vulnerability, with 55% of HDB flats beyond 400 m of a refuge and 68% of HDB flats beyond 400 m of a park."
+26. **Outram** (Low): "Low: forecast Low heat and the middle third for vulnerability, with 2,747 1-2 room rental flats and a 13% share of residents aged 75+."
+27. **Bukit Batok** (Low): "Low: forecast Low heat and the middle third for vulnerability, with 1,703 1-2 room rental flats and 10,540 residents aged 75+."
+28. **Clementi** (Low): "Low: forecast Low heat and the middle third for vulnerability, with a 10% share of residents aged 75+ and 10,410 residents aged 75+."
+29. **Bukit Panjang** (Low): "Low: forecast Low heat and the lower third for vulnerability, with 5 refuges in the area for 25,690 residents aged 65+ and 57% of HDB flats beyond 400 m of a park."
+30. **Rochor** (Low): "Low: forecast Low heat and the lower third for vulnerability, with 59% of HDB flats beyond 400 m of a refuge and an 11% share of residents aged 75+."
+31. **Pasir Ris** (Low): "Low: forecast Low heat and the lower third for vulnerability, with 47% of HDB flats beyond 400 m of a refuge and 5 refuges in the area for 24,320 residents aged 65+."
+32. **Downtown Core** (Low): "Low: forecast Low heat and the lower third for vulnerability, with no component above the middle of the rated areas; its station observed a peak WBGT of 29.1 °C on 26 Oct."
+
+**Read against their facts (window C):**
+- **All 32 are right.** Every sentence:
+  - begins with its tier and states its forecast heat level and third;
+  - gives each measure exactly as in the facts;
+  - adds nothing else.
+- **The tiers follow the 3×3 rule.** The 9 Medium areas have Moderate heat in the upper or middle third. The Low areas have Low heat, or Moderate heat in the lower third (Bishan, Changi, Tengah).
+- **The two ranks given are right:** Woodlands 6th and Toa Payoh 5th for rental flats.
+- **The two observations are right.** Changi's and Downtown Core's are the 26 Oct peaks in the facts, after the semicolon.
+- **All different.** The 32 sentences differ from one another, and run from 18 to 32 words.
+
+The three flags of 26 Oct still stand:
+- Tanglin's "no refuges" rests on a partial refuge list.
+- 30 of the 32 give values without ranks.
+- Seven Low areas in the upper third read "Low … upper third, with …": Ang Mo Kio, Bedok, Yishun, Bukit Merah, Tampines, Jurong West and Jurong East.
+
+**Not done:** nothing was applied to the live dashboard. The apply waits for window D's review and the user's go, by `patch_live_briefing.py`.
