@@ -384,3 +384,51 @@ Reviewed by window D, read-only, on window C's `7f66d1f` (27 Oct, 00:11 SGT). It
 - 2: fixed in `93a6dd9`.
 - 3 and 4: fixed in `e61e224` and `7f66d1f`.
 - 5 to 8: unchanged.
+
+## 27 Oct rows (27 Oct 2026, about 01:05 to 01:25 SGT)
+
+Window D, read-only: the faithfulness check on 27 Oct's rows of `coolcheck.gold.area_tier_explanation`. Window C's single run wrote them at 00:55 SGT from `cffdf6c` (C's check doc, "The second run"). The code at `cffdf6c` is `7f66d1f`'s: `git diff --name-only 7f66d1f cffdf6c -- src scripts` is empty. No `ai_query`, no `generate.py`, no `lakeview` writes.
+
+**Result: all 32 sentences are true to their facts and say nothing beyond them. I would keep none of them off screen today.**
+
+**What was read** (SELECT only, no never-shown column):
+- the new table's rows for 27 Oct and for 26 Oct;
+- `area_heat_risk` for 27 Oct, and `area_vulnerability`;
+- `observed_heat_daily` for 26 Oct, and the `refuge_layer` counts;
+- `DESCRIBE HISTORY` of the new table.
+
+What it shows:
+- **27 Oct:** 32 rows, one per rated area, all "AI, checked", none with a failed check, model Llama 3.3 70B.
+  - Written once (Delta version 24, `REPLACE WHERE target_date = DATE '2026-10-27'`, 00:56 SGT), after the forecast was scored (00:50 SGT).
+  - Each shown sentence is its model sentence, trimmed.
+- **26 Oct:** its 32 rows are unchanged since last night's read.
+- **The forecast for 27 Oct:** 32 rated areas, 9 Medium and 23 Low, none High. Heat is Moderate in 12 and Low in 20.
+
+**Facts, recomputed by my own code.** It does not import `coolcheck.explain`; it is section 1's script, given 27 Oct and the day before, and it first reproduced 26 Oct's result.
+- My facts equal the stored ones for **32 of 32**: the tier, heat level and third, each measure's text and rank, and the 26 Oct peak with its category.
+- Every tier is the 3×3 rule's. The third and the reason agree between the two tables.
+- The usable sets match the small-area rule, and the refuge counts match `refuge_layer`.
+- Each forecast station is the Observed heat page's station for 26 Oct. No share falls on a rounding tie.
+
+**Sentences:**
+- Each of the 32 begins with its tier, says "forecast <heat> heat" and "<third> third", and gives each measure word for word.
+- The two ranks given are right: Toa Payoh's 5th and Woodlands' 6th most rental flats.
+- Changi's peak (30.5 °C) and Downtown Core's (29.1 °C) are the facts' peaks, each in its own clause after the semicolon.
+- With the facts' own phrases taken out, only joining words are left: "and the … third for vulnerability, with", "and", and "; its station observed a peak WBGT of … on …". No sentence makes a claim about residents, gives advice, or names a cause.
+- `explain.check` at `cffdf6c` passes all 32 AI sentences. It also passes all 32 templates, which equal the templates the code rebuilds from the stored facts.
+- **Two areas with different facts never read the same.** The 32 sentences are all different, from 18 to 32 words, and each carries its own values.
+
+**On screen today:** with 9 Medium areas and none High, the top-10 table holds the 9 Medium areas and one Low area, and the table under it shows "None: every High or Medium area is in the top 10". So 10 of the 32 sentences show, and all 10 are true. The Low area is Bishan, by C's report of the page's order; I did not re-run that order, because it reads `tier_rank`.
+
+**Sentences I would not want on screen today: none.** Two wording notes, neither a reason to hold back:
+- Four of the ten give a mid-table value without its rank, which can look more notable than it is: Sengkang's 1,687 1-2 room rental flats (16th of 32), Geylang's 10,740 residents aged 75+ and Sembawang's 1,838 rental flats (14th of 32), and Bishan's 10% share (13th of 31). They are the reason's components, stated as given (C's flag 2 of 26 Oct).
+- Serangoon's "11,260 residents aged 75+ and a 10% share of residents aged 75+" says "residents aged 75+" twice. It is true.
+
+Off screen (the Low areas ranked 11 to 32), two things read as they did on 26 Oct: Tanglin's "no refuges" (finding 7), and the seven Low areas in the upper third (C's flag 3).
+
+**Verdict: finding 1 is closed.** 27 Oct's sentences are written and read, which was re-reviews 2 and 3's condition for switching on.
+- What remains is the apply itself, on the user's go, by `patch_live_briefing.py`.
+- No dashboard, patch or dashboard-test file has changed since `e61e224`, where re-review 2 checked the patch on the live JSON. `4395668` changes only C's check doc.
+- The design note's step 1 takes a fresh get right before the apply.
+- After the 00:45 SGT run on 28 Oct, the column falls back to the tier sentence until `generate.py` runs for 28 Oct.
+- Findings 5 to 8 stand: after Demo Day, or a team decision.
