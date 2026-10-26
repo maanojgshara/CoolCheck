@@ -305,3 +305,40 @@ The three flags of 26 Oct still stand:
 - Seven Low areas in the upper third read "Low … upper third, with …": Ang Mo Kio, Bedok, Yishun, Bukit Merah, Tampines, Jurong West and Jurong East.
 
 **Not done:** nothing was applied to the live dashboard. The apply waits for window D's review and the user's go, by `patch_live_briefing.py`.
+
+## The apply to the live dashboard (27 Oct 2026, 01:29 SGT)
+
+The user's go came after window D's read-only check of 27 Oct's rows (`d1b3096`: all 32 true to their facts). It covered applying the explanation change to the live briefing `01f1cfb36fe51bb8906bbd306b88c9bc` as `docs/design/tier_explanations.md`, "Applying it", says. The run went from a clean tree at `d1b3096`, in Git Bash, with `SCR` = `%TEMP%/coolcheck-ops`, outside the repo.
+
+**Before the apply (reads only).**
+- The published version was revision 07:19:20.248 UTC, with warehouse `7aa1dc56400d5b33` and credentials embedded.
+- `SCR` held no earlier `briefing_*explanations*` file, so nothing was overwritten.
+
+**Step 1, the restore point.** The design note's step 1 command, as written, saved the live draft to `$SCR/briefing_before_explanations.get.json`. It wrote the restore body `$SCR/briefing_before_explanations.body.json` and asserted that the body's `serialized_dashboard` equals the draft's, with no `Â`. It printed "restore body = live draft of 2026-10-26T07:19:18.685Z": the draft of the user's 15:19 editor changes, unchanged since.
+
+**Step 2, the body.** The design note's step 3 ran `patch_live_briefing.py` on that saved draft and wrote `$SCR/briefing_with_explanations.body.json`; its own check passed. The body equals the copy dashboard as checked at 23:53, so the copy step was not repeated.
+
+**Step 3, update and publish.** The design note's step 5 ran `lakeview update` with that body, `--dataset-catalog coolcheck --dataset-schema gold`, then `lakeview publish` with `--warehouse-id 7aa1dc56400d5b33 --embed-credentials`.
+- The draft was updated at 17:29:52.911 UTC (01:29:52 SGT).
+- The published revision is 17:29:53.334 UTC (01:29:53 SGT), with warehouse `7aa1dc56400d5b33` and `embed_credentials` true.
+
+**Step 4, the read-back (reads only).** Every check passed:
+- **The draft equals the body sent.**
+- **Only the patch's changes.** Against the saved draft, `patch_live_briefing.check` passed: only the patch's changes, so every editor change of 26 Oct, 15:19 is kept. The patch's changes are:
+  - the queries of `ds_area_map`, `ds_top_areas` and `ds_more_areas`;
+  - the two tables' fields and columns;
+  - the note at (0, 30, 12, 1);
+  - `more-areas` and `trend-chart` one row lower.
+
+  The page order (About first) and `uiSettings` are unchanged.
+- **Both area tables show six columns:** #, Planning area, Tier, Why, in a sentence, 1-2 room rental flats, and Actions (a proposal).
+- **The published version is newer than the update** (17:29:53.334 against 17:29:52.911 UTC), with that warehouse and embedded credentials.
+- **The top-10 query returns 27 Oct's rows.** The `ds_top_areas` query as the draft holds it (its catalog `coolcheck`, schema `gold`) was run read-only through the statement API. It returned 27 Oct's ten rows, positions 1 to 10, Woodlands to Bishan. Each row's "Why, in a sentence" equals the table's 27 Oct sentence for the area.
+
+**The one-command restore** (Git Bash or PowerShell 7). It puts the saved draft back and publishes it as before:
+
+```bash
+databricks lakeview update 01f1cfb36fe51bb8906bbd306b88c9bc -p coolcheck --dataset-catalog coolcheck --dataset-schema gold --json "@C:/Users/<user>/AppData/Local/Temp/coolcheck-ops/briefing_before_explanations.body.json" && databricks lakeview publish 01f1cfb36fe51bb8906bbd306b88c9bc -p coolcheck --warehouse-id 7aa1dc56400d5b33 --embed-credentials
+```
+
+**Not done:** no bundle deploy, no job change, nothing else on the workspace. The copy dashboard `01f1d14e8fd0135a9fb1f6639088d3b3` stays as it was, unpublished.
