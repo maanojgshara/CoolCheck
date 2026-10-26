@@ -12,10 +12,11 @@ later. NEVER_READ (P(High), p_moderate, p_low, V, its rank, tier_rank, model_ver
 Words by the model: Llama 3.3 70B through Databricks AI Functions (ai_query on the SQL warehouse) at temperature 0.
 Checked by code (check): the tier word first; the heat level and the third said, and right; each measure's value given;
 every number in the facts (the App's coolcheck.agent.check_summary), and each date, temperature and rank its own fact;
-at most 35 words in one sentence; the banned words; and window D's three rules: each measure's text as given, each
-bracket its own fact, nothing but the facts and FRAME words. A sentence that fails, or a failed call, is replaced by
-template(), written by code from the same facts in the dashboard's wording; both are kept, with who wrote the one shown
-and the checks it failed. It explains the tier from its inputs, not the model's own reasoning.
+at most 35 words in one sentence; the banned words; and window D's four rules: each measure's text as given, each
+bracket its own fact, nothing but the facts and FRAME words, the observation in its own clause after the first
+semicolon. A sentence that fails, or a failed call, is replaced by template(), written by code from the same facts in
+the dashboard's wording; both are kept, with who wrote the one shown and the checks it failed. It explains the tier from
+its inputs, not the model's own reasoning.
 """
 import json
 import re
@@ -109,9 +110,10 @@ COLUMNS = [
 COMMENT = ("Why each rated planning area has its tier, in one sentence per area and target date "
            "(docs/design/tier_explanations.md): written by Llama 3.3 70B through Databricks AI Functions (ai_query) from "
            "facts code builds, checked by code (the tier, heat and third words; each measure as given; every number in "
-           "the facts and each date, temperature, rank and bracket its own; nothing but the facts and joining words; at "
-           "most 35 words; banned words), else the template sentence. It explains the tier from its inputs, not the model's own reasoning. P(High), the score and V are "
-           "never read. A date's rows are replaced by scripts/explanations/generate.py.")
+           "the facts and each date, temperature, rank and bracket its own; nothing but the facts and joining words; the "
+           "observation in its own clause; at most 35 words; banned words), else the template sentence. It explains the "
+           "tier from its inputs, not the model's own reasoning. P(High), the score and V are never read. A date's rows "
+           "are replaced by scripts/explanations/generate.py.")
 TAGS = {"source": "gold.area_heat_risk; gold.area_vulnerability; gold.observed_heat_daily; "
                   "Llama 3.3 70B through Databricks AI Functions (ai_query)",
         "licence": "Singapore Open Data Licence v1.0 (source data); CoolCheck text and Llama 3.3 70B output "
@@ -427,6 +429,35 @@ def beyond_frame(t, f):
     return [w for w in re.findall(r"[A-Za-z]+|\d+(?:[.,]\d+)*", s) if w.lower() not in FRAME]
 
 
+# Rule (d), window D's re-review 2: a sentence of facts and frame words alone could still swap the forecast and the
+# observation ("forecast Moderate heat on 25 Oct", "its station observed Moderate heat"), so each keeps to its clause
+OBSERVATION_WORDS = re.compile(r"\b(?:observ\w*|peak\w*|wbgt|station\w*)\b", re.I)
+FORECAST_OR_LEVEL = re.compile(r"\b(?:forecast\w*|low|moderate|high)\b", re.I)
+
+
+def observation_out_of_place(t, f):
+    """Rule (d): the observation keeps to its own clause. The observed peak, its date, its category in brackets and the
+    words observed, peak, WBGT and station appear only after the sentence's first semicolon (and only when the facts
+    hold an observation); that clause holds no forecast word and no heat-level word, but the category in the bracket
+    right after the peak."""
+    head, _, tail = t.partition(";")
+    o, out = f.get("observed_heat"), []
+    seen = [m.group(0) for m in OBSERVATION_WORDS.finditer(head)]
+    if o:
+        seen += [m.group(0) for m in re.finditer(_peak(o), head)]
+        seen += [m.group(0).strip().rstrip(".") for m in DATE.finditer(head) if _same_day(m, o["date"])]
+        seen += [m.group(0) for m in re.finditer(rf"\(\s*{re.escape(o['nea_category'])}\s*\)", head)]
+        tail = re.sub(_peak(o) + rf"\s*\(\s*{re.escape(o['nea_category'])}\s*\)", " ", tail)
+    elif OBSERVATION_WORDS.search(tail):
+        out.append("observation: none in the facts, but the sentence gives one")
+    if seen:
+        out.append("observation before the first semicolon: " + ", ".join(dict.fromkeys(seen)))
+    words = [m.group(0) for m in FORECAST_OR_LEVEL.finditer(tail)]
+    if words:
+        out.append("observation clause holds a forecast or heat-level word: " + ", ".join(dict.fromkeys(words)))
+    return out
+
+
 def check(text, f):
     """The checks the sentence fails ([] if none): it begins with the tier, says the forecast heat level and the third
     in words, and every tier, heat level and third it names is the area's (a heat word may also be the observed
@@ -434,8 +465,8 @@ def check(text, f):
     its own fact (wrong_facts); numbers are digits, and the App's other checks pass (coolcheck.agent.check_summary:
     P(High) or a score, a send claim, medical advice, a planning area not in the facts); at most MAX_WORDS words in one
     sentence; no banned word that no fact holds; the observed peak is not tied to the forecast or the tier. Then window
-    D's three rules: each measure as given (not_verbatim), each bracket its own fact (wrong_brackets), and nothing but
-    the facts and frame words (beyond_frame)."""
+    D's four rules: each measure as given (not_verbatim), each bracket its own fact (wrong_brackets), nothing but the
+    facts and frame words (beyond_frame), and the observation in its own clause (observation_out_of_place)."""
     t = clean(text)
     if not t:
         return ["empty"]
@@ -489,6 +520,7 @@ def check(text, f):
     extra = beyond_frame(t, f)
     if extra:
         failed.append("beyond the facts: " + ", ".join(dict.fromkeys(extra)))
+    failed += observation_out_of_place(t, f)
     return failed
 
 

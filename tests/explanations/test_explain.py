@@ -337,9 +337,58 @@ def test_every_group_of_window_ds_table_is_covered_by_a_case_only_the_new_rules_
         "values swapped", "labels dropped or changed", "ranks in other words", "residents", "superlatives",
         "reassurance", "the peak as the cause", "confidence in words", "tier and heat words mixed", "advice",
         "numbers in words outside the App's list", "observed values", "other"}
-    new = ("not as given", "bracket", "beyond the facts")
+    new = ("not as given", "bracket", "beyond the facts", "observation")  # rules (a) to (d)
     only_new = {g for g, f, s, _ in D_CASES if all(x.startswith(new) for x in E.check(s, f))}
     assert only_new == {c[0] for c in D_CASES}
+
+
+# Rule (d), window D's re-review 2: its six misses (the first six, on Toa Payoh's facts: the forecast is Moderate, for 26
+# Oct; the station observed 30.5 °C, Low, on 25 Oct), each of facts and frame words only, then similar swaps
+NO_PEAK_TP = {k: v for k, v in TOA_PAYOH.items() if k != "observed_heat"}
+SWAPS = [
+    (TOA_PAYOH, BASE.replace("forecast Moderate heat", "its station observed Moderate heat")),
+    (TOA_PAYOH, BASE.replace("forecast Moderate heat", "forecast Moderate heat on 25 Oct")),
+    (TOA_PAYOH, BASE.replace("forecast Moderate heat", "forecast Moderate heat with a peak of 30.5 °C on 25 Oct")),
+    (TOA_PAYOH, BASE[:-1] + "; forecast peak WBGT of 30.5 °C on 25 Oct."),
+    (TOA_PAYOH, BASE[:-1] + "; its station observed 30.5 °C on 25 Oct with Moderate heat."),
+    (TOA_PAYOH, BASE.replace("forecast Moderate heat", "forecast Moderate heat on 25 Oct: 30.5 °C (Low),")),
+    (TOA_PAYOH, BASE[:-1] + "; its station observed a peak WBGT of 30.5 °C (Low) on 25 Oct, Moderate heat."),
+    (TOA_PAYOH, BASE.replace("Medium: forecast Moderate heat", "Medium: a peak WBGT of 30.5 °C on 25 Oct; forecast Moderate heat")),
+    (TOA_PAYOH, BASE.replace("forecast Moderate heat", "forecast Moderate heat at its station")),
+    (TOA_PAYOH, BASE[:-1] + "; its station observed a peak WBGT of 30.5 °C on 25 Oct, as forecast."),
+    (TOA_PAYOH, BASE[:-1] + "; its station observed High heat, a peak WBGT of 30.5 °C on 25 Oct."),
+    (HIGH_TP, BASE.replace("Medium: forecast Moderate heat", "High: forecast High heat")[:-1]
+     + "; its station observed High heat, a peak WBGT of 30.5 °C on 25 Oct."),
+    (NO_PEAK_TP, BASE[:-1] + "; its station observed a peak."),
+]
+
+
+@pytest.mark.parametrize("facts, sentence", SWAPS, ids=[f"swap-{i}" for i in range(len(SWAPS))])
+def test_the_forecast_and_the_observation_swapped_fall_back(facts, sentence):
+    failed = E.check(sentence, facts)
+    assert any(f.startswith("observation") for f in failed), failed
+    assert E.choose(facts, sentence)["written_by"] == E.TEMPLATE
+
+
+def test_window_ds_six_misses_were_caught_by_rule_d_alone():
+    for facts, sentence in SWAPS[:6]:
+        assert E.check(sentence, facts) == E.observation_out_of_place(sentence, facts) != [], sentence
+
+
+def test_rule_d_costs_two_true_wordings():
+    """True, but outside the rule: the observation after a comma, not a semicolon; and the category as a heat word
+    rather than in the bracket after the peak (window D's prototype let Changi's pass). Both fall back to the template."""
+    assert E.observation_out_of_place(BASE[:-1] + ", and its station observed a peak WBGT of 30.5 °C (Low) on 25 Oct.",
+                                      TOA_PAYOH)
+    changi = FACTS["CHANGI"]
+    true = SAID["CHANGI"].replace("its station observed a peak", "its station observed Moderate heat, a peak")
+    assert changi["observed_heat"]["nea_category"] == "Moderate"
+    assert E.check(true, changi) == ["observation clause holds a forecast or heat-level word: Moderate"]
+
+
+def test_every_stored_template_keeps_the_observation_in_its_own_clause():
+    assert [r["planning_area"] for r in STORED if E.observation_out_of_place(r["template_sentence"], r["facts"])] == []
+    assert sum("observed_heat" in r["facts"] for r in STORED) == 32  # every row has the clause to test
 
 
 # --- the prompt and the SQL --------------------------------------------------------------------------------------------
