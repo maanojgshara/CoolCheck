@@ -12,9 +12,10 @@ later. NEVER_READ (P(High), p_moderate, p_low, V, its rank, tier_rank, model_ver
 Words by the model: Llama 3.3 70B through Databricks AI Functions (ai_query on the SQL warehouse) at temperature 0.
 Checked by code (check): the tier word first; the heat level and the third said, and right; each measure's value given;
 every number in the facts (the App's coolcheck.agent.check_summary), and each date, temperature and rank its own fact;
-at most 35 words in one sentence; the banned words. A sentence that fails, or a failed call, is replaced by template(),
-written by code from the same facts in the dashboard's wording; both are kept, with who wrote the one shown and the
-checks it failed. It explains the tier from its inputs, not the model's own reasoning.
+at most 35 words in one sentence; the banned words; and window D's three rules: each measure's text as given, each
+bracket its own fact, nothing but the facts and FRAME words. A sentence that fails, or a failed call, is replaced by
+template(), written by code from the same facts in the dashboard's wording; both are kept, with who wrote the one shown
+and the checks it failed. It explains the tier from its inputs, not the model's own reasoning.
 """
 import json
 import re
@@ -107,9 +108,9 @@ COLUMNS = [
 ]
 COMMENT = ("Why each rated planning area has its tier, in one sentence per area and target date "
            "(docs/design/tier_explanations.md): written by Llama 3.3 70B through Databricks AI Functions (ai_query) from "
-           "facts code builds, checked by code (the tier, heat and third words, each measure's value, every number in the "
-           "facts and each date, temperature and rank its own, at most 35 words, banned words), else the template "
-           "sentence. It explains the tier from its inputs, not the model's own reasoning. P(High), the score and V are "
+           "facts code builds, checked by code (the tier, heat and third words; each measure as given; every number in "
+           "the facts and each date, temperature, rank and bracket its own; nothing but the facts and joining words; at "
+           "most 35 words; banned words), else the template sentence. It explains the tier from its inputs, not the model's own reasoning. P(High), the score and V are "
            "never read. A date's rows are replaced by scripts/explanations/generate.py.")
 TAGS = {"source": "gold.area_heat_risk; gold.area_vulnerability; gold.observed_heat_daily; "
                   "Llama 3.3 70B through Databricks AI Functions (ai_query)",
@@ -329,13 +330,18 @@ def _rank(m):
     return (int(m.group(1) or 1), m.group(2).lower()) if m else None
 
 
+def _same_day(m, date_text):
+    """Whether a DATE match is the facts' date ("25 Oct"), however written ("25 October", "Oct 25")."""
+    day, mon = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+    return f"{int(day)} {mon[:3].lower()}" == date_text.lower()
+
+
 def wrong_facts(t, f):
     """The dates, temperatures and ranks in the sentence that are not their own fact: a date must be the observed day,
     a temperature the observed peak, and a rank the rank of the measure whose value comes last before it."""
     o, out = f.get("observed_heat"), []
     for m in DATE.finditer(t):
-        day, mon = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
-        if not o or f"{int(day)} {mon[:3].lower()}" != o["date"].lower():
+        if not o or not _same_day(m, o["date"]):
             out.append(f"date: {m.group(0).strip().rstrip('.')}")
     for m in DEGREES.finditer(t):
         if not o or abs(float(m.group(1)) - float(o["peak_wbgt"].split()[0])) > 1e-9:
@@ -358,13 +364,78 @@ def wrong_facts(t, f):
     return out
 
 
+# Window D's three rules (its review of 26 Oct, finding 3): the sentence states each fact as given, and nothing more. In
+# D's scratch test the checks above let 36 of 54 wrong sentences through: values swapped between measures, labels
+# dropped, ranks in other words, claims about residents, reassurance, the peak as a cause, confidence, advice.
+# FRAME is D's list of joining words without its tier, heat and third words: beyond_frame takes the area's own out
+# where they belong (the tier first, "<level> heat", "<third> third", "(<category>)"), so any other use of one, as in
+# "High vulnerability" (D's prototype let it through), is left over and fails.
+FRAME = frozenset("and the third for vulnerability with its station observed a peak wbgt of on forecast heat in at".split())
+BRACKET = re.compile(r"\(([^()]*)\)")
+
+
+def _peak(o):
+    """The observed peak as a pattern: its value, with or without a space before °C."""
+    return re.escape(o["peak_wbgt"].split()[0]) + r"\s*°\s*C\b"
+
+
+def not_verbatim(t, f):
+    """Rule (a): each measure's text (or the note, for an area with no measure) is in the sentence exactly as given."""
+    want = [m["measure"] for m in f.get("vulnerable_because", [])] or [f.get("vulnerability_note") or ""]
+    return [p for p in want if p not in t]
+
+
+def wrong_brackets(t, f):
+    """Rule (b): a bracket comes right after a measure and holds that measure's rank as given, or right after the
+    observed peak and holds its NEA category; a bracket anywhere else fails."""
+    measures, o, out = f.get("vulnerable_because", []), f.get("observed_heat"), []
+    own = [(k, k + len(x["measure"])) for x in measures for k in range(len(t)) if t.startswith(x["measure"], k)]
+    for m in BRACKET.finditer(t):
+        if any(a <= m.start() and m.end() <= b for a, b in own):
+            continue  # a bracket inside a measure's own text
+        before, inside = t[:m.start()].rstrip(), m.group(1).strip()
+        owner = next((x for x in measures if before.endswith(x["measure"])), None)
+        if owner is not None:
+            if inside != owner["rank"]:
+                out.append(f"bracket: ({inside}) is not the rank of {owner['measure']}")
+        elif o and re.search(_peak(o) + "$", before):
+            if inside != o["nea_category"]:
+                out.append(f"bracket: ({inside}) after the peak is not its category, {o['nea_category']}")
+        else:
+            out.append(f"bracket: ({inside}) is not right after a measure or the peak")
+    return out
+
+
+def beyond_frame(t, f):
+    """Rule (c): what is left of the sentence once the facts' own phrases are taken out (the measures, the ranks, the
+    note, the observed peak, its date and its category in brackets; the tier as the first word, the heat level before
+    "heat", the observed category before "heat", the third before "third"): every word not in FRAME, and every number."""
+    s = " " + t + " "
+    phrases = [m[k] for m in f.get("vulnerable_because", []) for k in ("measure", "rank")]
+    phrases += [f["vulnerability_note"]] if f.get("vulnerability_note") else []
+    for p in sorted(phrases, key=len, reverse=True):
+        s = s.replace(p, " ")
+    o = f.get("observed_heat")
+    if o:
+        s = re.sub(_peak(o), " ", s)
+        s = DATE.sub(lambda m: " " if _same_day(m, o["date"]) else m.group(0), s)
+        s = re.sub(rf"\(\s*{re.escape(o['nea_category'])}\s*\)", " ", s)
+    s = re.sub(rf"^\W*{re.escape(f['tier'])}\b", " ", s, flags=re.I)
+    heat_words = "|".join(map(re.escape, {f["forecast_heat_level"], *([o["nea_category"]] if o else [])}))
+    s = re.sub(rf"\b(?:{heat_words})(?=[- ]heat\b)", " ", s, flags=re.I)
+    s = re.sub(rf"\b{re.escape(f['vulnerability_third'])}(?=[- ](?:vulnerability[- ])?third\b)", " ", s, flags=re.I)
+    return [w for w in re.findall(r"[A-Za-z]+|\d+(?:[.,]\d+)*", s) if w.lower() not in FRAME]
+
+
 def check(text, f):
     """The checks the sentence fails ([] if none): it begins with the tier, says the forecast heat level and the third
     in words, and every tier, heat level and third it names is the area's (a heat word may also be the observed
     category); it gives every required() number; every number is in the facts, and every date, temperature and rank is
     its own fact (wrong_facts); numbers are digits, and the App's other checks pass (coolcheck.agent.check_summary:
     P(High) or a score, a send claim, medical advice, a planning area not in the facts); at most MAX_WORDS words in one
-    sentence; no banned word that no fact holds; the observed peak is not tied to the forecast or the tier."""
+    sentence; no banned word that no fact holds; the observed peak is not tied to the forecast or the tier. Then window
+    D's three rules: each measure as given (not_verbatim), each bracket its own fact (wrong_brackets), and nothing but
+    the facts and frame words (beyond_frame)."""
     t = clean(text)
     if not t:
         return ["empty"]
@@ -413,6 +484,11 @@ def check(text, f):
     failed += [f"banned: {name}" for name, rx in BANNED if re.search(rx, t, re.I) and not re.search(rx, ft, re.I)]
     if observed and OBSERVATION_AS_CAUSE.search(t):
         failed.append("observation tied to the forecast or the tier")
+    failed += [f"not as given: {p}" for p in not_verbatim(t, f)]
+    failed += wrong_brackets(t, f)
+    extra = beyond_frame(t, f)
+    if extra:
+        failed.append("beyond the facts: " + ", ".join(dict.fromkeys(extra)))
     return failed
 
 

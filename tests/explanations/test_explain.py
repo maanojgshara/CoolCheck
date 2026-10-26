@@ -5,8 +5,11 @@ The facts from four made-up gold.area_vulnerability rows (the values of Toa Payo
 coordinator reads them, nothing never shown is in them. The template: the dashboard's tier sentence first, the longest
 form that fits in 35 words. The check: a correct sentence passes; a wrong number, a wrong tier, a banned word or a long
 sentence falls back, and so do a missing value, a wrong heat level, third, date, temperature or rank, a number in words,
-an observation tied to the forecast and another area's name. The prompt's own examples pass the check. No SQL here reads
-P(High), p_moderate, p_low, V, its rank, tier_rank, model_version or run_id.
+an observation tied to the forecast and another area's name. Window D's three rules (each measure as given, each bracket
+its own fact, nothing but the facts and frame words): its 3 controls pass, and its wrong sentences that the earlier
+checks let through fall back, at least one from each of its 13 groups, on the stored 26 Oct facts. The 31 stored AI
+sentences of 26 Oct and the 32 templates (stored_26oct.json, a read-only SELECT of the table) pass, and the prompt's own
+examples do. No SQL here reads P(High), p_moderate, p_low, V, its rank, tier_rank, model_version or run_id.
 """
 import json
 import re
@@ -188,7 +191,8 @@ def test_a_correct_sentence_passes():
     ("", ["empty"]),
 ])
 def test_a_wrong_sentence_falls_back(sentence, failed):
-    assert E.check(sentence, TP) == failed
+    got = E.check(sentence, TP)
+    assert set(failed) <= set(got), got  # at least these; window D's rules may add their own
     row = E.choose(TP, sentence)
     assert row["written_by"] == E.TEMPLATE and row["explanation"] == E.template(TP) and row["checks_failed"]
 
@@ -198,17 +202,17 @@ def test_dates_temperatures_and_ranks_must_be_their_own_fact():
     "31.0 °C" (31 is in "of 31 rated areas"), two ranks swapped."""
     s = ("Medium: forecast Moderate heat and the upper third for vulnerability, with 3,835 1-2 room rental flats and an "
          "11% share of residents aged 75+; its station observed 30.5 °C on 1 Jan.")
-    assert E.check(s, TWO) == ["date: 1 Jan"]
-    assert E.check(s.replace("30.5 °C on 1 Jan", "31.0 °C on 25 Oct"), TWO) == ["temperature: 31.0 °C"]
+    assert "date: 1 Jan" in E.check(s, TWO)
+    assert "temperature: 31.0 °C" in E.check(s.replace("30.5 °C on 1 Jan", "31.0 °C on 25 Oct"), TWO)
     swapped = ("Medium: forecast Moderate heat and the upper third for vulnerability, with 3,835 1-2 room rental flats (7th "
                "highest of 31 rated areas measured) and an 11% share of residents aged 75+ (5th most of 32 rated areas).")
-    assert E.check(swapped, TWO) == [
-        "rank: 7th highest is not the rank of 3,835 1-2 room rental flats",
-        "rank: 5th most is not the rank of an 11% share of residents aged 75+",
-        "length: 37 words"]
+    assert {"rank: 7th highest is not the rank of 3,835 1-2 room rental flats",
+            "rank: 5th most is not the rank of an 11% share of residents aged 75+",
+            "bracket: (7th highest of 31 rated areas measured) is not the rank of 3,835 1-2 room rental flats"
+            } <= set(E.check(swapped, TWO))
     no_peak = {k: v for k, v in TWO.items() if k != "observed_heat"}
     assert E.check(s.replace("; its station observed 30.5 °C on 1 Jan", ""), no_peak) == []
-    assert E.check(s, no_peak) == ["numbers not in the facts: 30.5", "date: 1 Jan", "temperature: 30.5 °C"]
+    assert {"numbers not in the facts: 30.5", "date: 1 Jan", "temperature: 30.5 °C"} <= set(E.check(s, no_peak))
 
 
 def test_an_area_with_no_measure_gives_its_observed_peak():
@@ -222,14 +226,14 @@ def test_a_banned_word_passes_only_when_a_fact_holds_it():
                                         "rank": "5th most of 32 rated areas"}]}
     s = ("Medium: forecast Moderate heat and the upper third for vulnerability, with 3,835 1-2 room rental flats (may "
          "indicate less air-con use).")
-    assert E.check(s, f) == [] and E.check(s, TWO)[-1] == "banned: air-con"
+    assert E.check(s, f) == [] and "banned: air-con" in E.check(s, TWO)
 
 
 def test_percentages_are_grounded_as_the_app_grounds_them():
     assert {0.11, 11.0} <= E.sources(TWO) and A.grounded("11", E.sources(TWO), percent=True)
     s = ("Medium: forecast Moderate heat and the upper third for vulnerability, with 3,835 1-2 room rental flats and an "
          "11.4% share of residents aged 75+.")
-    assert E.check(s, TWO) == ["facts: does not give 11", "numbers not in the facts: 11.4%"]
+    assert {"facts: does not give 11", "numbers not in the facts: 11.4%"} <= set(E.check(s, TWO))
 
 
 def test_choose_keeps_both_sentences_and_who_wrote_the_one_shown():
@@ -238,6 +242,104 @@ def test_choose_keeps_both_sentences_and_who_wrote_the_one_shown():
     assert E.choose(TP, None, error="timed out") == {"template_sentence": E.template(TP), "ai_sentence": None,
                                                      "explanation": E.template(TP), "written_by": "Template",
                                                      "checks_failed": "model error: timed out"}
+
+
+# --- window D's rules, on the stored 26 Oct facts ----------------------------------------------------------------------
+
+STORED = json.loads((Path(__file__).parent / "stored_26oct.json").read_text(encoding="utf-8"))["rows"]
+FACTS = {r["planning_area"]: r["facts"] for r in STORED}
+SAID = {r["planning_area"]: r["ai_sentence"] for r in STORED}
+TOA_PAYOH, TENGAH, AMK = FACTS["TOA PAYOH"], FACTS["TENGAH"], FACTS["ANG MO KIO"]
+BASE = SAID["TOA PAYOH"]
+HIGH_TP = {**TOA_PAYOH, "tier": "High", "forecast_heat_level": "High"}  # D's made-up High tier and High heat
+# (group in D's "Passed, though wrong" table, facts, sentence, what the new rules say); the earlier checks let D's
+# versions of these through
+D_CASES = [
+    ("values swapped", TOA_PAYOH, BASE.replace("3,835 1-2 room rental flats and 14,290 residents",
+                                               "14,290 1-2 room rental flats and 3,835 residents"), "not as given"),
+    ("values swapped", TENGAH, SAID["TENGAH"].replace("64% of HDB flats beyond 400 m of a refuge and 55%",
+                                                      "55% of HDB flats beyond 400 m of a refuge and 64%"), "not as given"),
+    ("labels dropped or changed", TOA_PAYOH, BASE.replace("3,835 1-2 room rental flats and 14,290 residents aged 75+",
+                                               "3,835 and 14,290"), "not as given"),
+    ("labels dropped or changed", TOA_PAYOH, BASE.replace("3,835 1-2 room rental flats and 14,290 residents aged 75+",
+                                               "3,835 rental flats and 14,290 seniors"), "not as given"),
+    ("ranks in other words", TOA_PAYOH, BASE.replace("flats and", "flats, ranked 2nd of 32 rated areas, and"), "beyond the facts"),
+    ("ranks in other words", TOA_PAYOH, BASE.replace("flats and", "flats (2nd largest number of 32 rated areas) and"), "bracket"),
+    ("ranks in other words", TOA_PAYOH, BASE.replace("flats and", "flats, the most 1-2 room rental flats of any rated area, and"),
+     "beyond the facts"),
+    ("residents", TOA_PAYOH, BASE[:-1] + ", many of whom live on their own.", "beyond the facts"),
+    ("residents", TOA_PAYOH, BASE[:-1] + ", frail and isolated.", "beyond the facts"),
+    ("residents", TOA_PAYOH, BASE[:-1] + " who cannot afford to cool their homes.", "beyond the facts"),
+    ("residents", TOA_PAYOH, BASE[:-1] + " in needy households.", "beyond the facts"),
+    ("superlatives", TOA_PAYOH, BASE[:-1] + ", the most vulnerable area.", "beyond the facts"),
+    ("superlatives", TOA_PAYOH, BASE[:-1] + ", in the hottest part of Singapore.", "beyond the facts"),
+    ("reassurance", AMK, SAID["ANG MO KIO"][:-1] + ", so no action is needed.", "beyond the facts"),
+    ("reassurance", AMK, SAID["ANG MO KIO"][:-1] + ", so it is safe.", "beyond the facts"),
+    ("the peak as the cause", TOA_PAYOH, BASE.replace("heat and", "heat as its station reached 30.5 °C, and"), "beyond the facts"),
+    ("the peak as the cause", TOA_PAYOH, BASE[:-1] + ", in line with the 30.5 °C peak on 25 Oct.", "beyond the facts"),
+    ("the peak as the cause", TOA_PAYOH, BASE.replace("forecast Moderate heat",
+                                                      "its 30.5 °C peak on 25 Oct points to forecast Moderate heat"),
+     "beyond the facts"),
+    ("the peak as the cause", TOA_PAYOH, BASE.replace("heat and", "heat on the back of a 30.5 °C peak, and"), "beyond the facts"),
+    ("confidence in words", TOA_PAYOH, BASE.replace("forecast Moderate", "almost certainly forecast Moderate"),
+     "beyond the facts"),
+    ("confidence in words", TOA_PAYOH, BASE[:-1] + ", with long odds of anything worse.", "beyond the facts"),
+    ("confidence in words", TOA_PAYOH, BASE[:-1] + ", though it could turn High.", "beyond the facts"),
+    ("confidence in words", HIGH_TP, BASE.replace("Medium: forecast Moderate heat", "High: a near-certain High-heat day"),
+     "beyond the facts"),
+    ("tier and heat words mixed", TOA_PAYOH, BASE.replace("vulnerability,", "vulnerability, a High-risk area"),
+     "beyond the facts"),
+    ("tier and heat words mixed", TOA_PAYOH, BASE.replace("vulnerability,", "vulnerability, a Moderate-tier area"),
+     "beyond the facts"),
+    ("advice", TOA_PAYOH, BASE[:-1] + "; call the rental blocks.", "beyond the facts"),
+    ("advice", TOA_PAYOH, BASE[:-1] + "; consider visiting the rental blocks.", "beyond the facts"),
+    ("advice", TOA_PAYOH, BASE[:-1] + "; keep an eye on its seniors.", "beyond the facts"),
+    ("numbers in words outside the App's list", TOA_PAYOH, BASE.replace("75+.", "75+ in fifteen blocks."), "beyond the facts"),
+    ("numbers in words outside the App's list", TOA_PAYOH, BASE.replace("75+.", "75+, sixty of them in rental blocks."),
+     "beyond the facts"),
+    ("observed values", TOA_PAYOH, BASE[:-1] + "; its station observed a peak WBGT of 32 on 25 Oct.", "beyond the facts"),
+    ("observed values", TOA_PAYOH, BASE[:-1] + "; its station observed a peak WBGT of 30.5 °C (High) on 25 Oct.", "bracket"),
+    ("other", TOA_PAYOH, BASE[:-1] + "; its station observed a peak WBGT of 30.5 °C on Saturday.", "beyond the facts"),
+    ("other", TOA_PAYOH, BASE[:-1] + ", around Tiong Bahru.", "beyond the facts"),
+    ("other", TOA_PAYOH, BASE[:-1] + ", near Jurong.", "beyond the facts"),
+    ("other", TOA_PAYOH, BASE.replace("for vulnerability,", "for vulnerability, High vulnerability,"), "beyond the facts"),
+]
+
+
+def test_the_stored_26_oct_sentences_and_templates_pass():
+    """The 31 AI sentences and 32 templates of 26 Oct, from a read-only SELECT of gold.area_tier_explanation."""
+    ai = [r for r in STORED if r["written_by"] == E.AI]
+    assert len(STORED) == 32 and len(ai) == 31
+    assert [r["planning_area"] for r in ai if E.check(r["ai_sentence"], r["facts"])] == []
+    assert [r["planning_area"] for r in STORED if E.check(r["template_sentence"], r["facts"])] == []
+    clementi = next(r for r in STORED if r["written_by"] == E.TEMPLATE)
+    assert "not as given: 10,410 residents aged 75+" in E.check(clementi["ai_sentence"], clementi["facts"])
+
+
+def test_window_ds_controls_pass():
+    """The stored sentence, the same with its true rank, and the same with the peak in the prompt's form."""
+    assert BASE == ("Medium: forecast Moderate heat and the upper third for vulnerability, with 3,835 1-2 room rental flats "
+                    "and 14,290 residents aged 75+.")
+    for s in (BASE, BASE.replace("flats and", "flats (5th most of 32 rated areas) and"),
+              BASE[:-1] + "; its station observed a peak WBGT of 30.5 °C (Low) on 25 Oct."):
+        assert E.check(s, TOA_PAYOH) == [], s
+
+
+@pytest.mark.parametrize("group, facts, sentence, said", D_CASES, ids=[f"{c[0]}-{i}" for i, c in enumerate(D_CASES)])
+def test_window_ds_wrong_sentences_fall_back(group, facts, sentence, said):
+    failed = E.check(sentence, facts)
+    assert any(f.startswith(said) for f in failed), failed
+    assert E.choose(facts, sentence)["written_by"] == E.TEMPLATE
+
+
+def test_every_group_of_window_ds_table_is_covered_by_a_case_only_the_new_rules_catch():
+    assert {c[0] for c in D_CASES} == {
+        "values swapped", "labels dropped or changed", "ranks in other words", "residents", "superlatives",
+        "reassurance", "the peak as the cause", "confidence in words", "tier and heat words mixed", "advice",
+        "numbers in words outside the App's list", "observed values", "other"}
+    new = ("not as given", "bracket", "beyond the facts")
+    only_new = {g for g, f, s, _ in D_CASES if all(x.startswith(new) for x in E.check(s, f))}
+    assert only_new == {c[0] for c in D_CASES}
 
 
 # --- the prompt and the SQL --------------------------------------------------------------------------------------------

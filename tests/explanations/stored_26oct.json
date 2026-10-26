@@ -1,0 +1,907 @@
+{
+ "source": "coolcheck.gold.area_tier_explanation, target_date 2026-10-26, read-only SELECT on 26 Oct 2026 (written by generate.py at 75013d9)",
+ "rows": [
+  {
+   "planning_area": "ANG MO KIO",
+   "facts": {
+    "area": "Ang Mo Kio",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "4,169 1-2 room rental flats",
+      "rank": "3rd most of 32 rated areas"
+     },
+     {
+      "measure": "18,760 residents aged 75+",
+      "rank": "2nd most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.7 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the upper third for vulnerability, with 4,169 1-2 room rental flats (3rd most of 32 rated areas) and 18,760 residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, upper third for vulnerability, with 4,169 1-2 room rental flats (3rd most of 32 rated areas) and 18,760 residents aged 75+ (2nd most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "BEDOK",
+   "facts": {
+    "area": "Bedok",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "4,155 1-2 room rental flats",
+      "rank": "4th most of 32 rated areas"
+     },
+     {
+      "measure": "27,590 residents aged 75+",
+      "rank": "the most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.1 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the upper third for vulnerability, with 4,155 1-2 room rental flats and 27,590 residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, upper third for vulnerability, with 4,155 1-2 room rental flats (4th most of 32 rated areas) and 27,590 residents aged 75+ (the most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "BISHAN",
+   "facts": {
+    "area": "Bishan",
+    "tier": "Low",
+    "forecast_heat_level": "Moderate",
+    "vulnerability_third": "lower",
+    "vulnerable_because": [
+     {
+      "measure": "a 10% share of residents aged 75+",
+      "rank": "13th highest of 31 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.5 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Moderate heat and the lower third for vulnerability, with a 10% share of residents aged 75+.",
+   "template_sentence": "Low: forecast Moderate heat, lower third for vulnerability, with a 10% share of residents aged 75+ (13th highest of 31 rated areas measured); peak WBGT observed at its station on 25 Oct: 30.5 °C (Low).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "BUKIT BATOK",
+   "facts": {
+    "area": "Bukit Batok",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "1,703 1-2 room rental flats",
+      "rank": "15th most of 32 rated areas"
+     },
+     {
+      "measure": "10,540 residents aged 75+",
+      "rank": "15th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.2 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the middle third for vulnerability, with 1,703 1-2 room rental flats and 10,540 residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, middle third for vulnerability, with 1,703 1-2 room rental flats (15th most of 32 rated areas) and 10,540 residents aged 75+ (15th most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "BUKIT MERAH",
+   "facts": {
+    "area": "Bukit Merah",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "7,933 1-2 room rental flats",
+      "rank": "the most of 32 rated areas"
+     },
+     {
+      "measure": "17,300 residents aged 75+",
+      "rank": "5th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.2 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the upper third for vulnerability, with 7,933 1-2 room rental flats and 17,300 residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, upper third for vulnerability, with 7,933 1-2 room rental flats (the most of 32 rated areas) and 17,300 residents aged 75+ (5th most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "BUKIT PANJANG",
+   "facts": {
+    "area": "Bukit Panjang",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "lower",
+    "vulnerable_because": [
+     {
+      "measure": "5 refuges in the area for 25,690 residents aged 65+",
+      "rank": "10th fewest per resident of 30 rated areas measured"
+     },
+     {
+      "measure": "57% of HDB flats beyond 400 m of a park",
+      "rank": "13th highest of 29 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.4 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the lower third for vulnerability, with 5 refuges in the area for 25,690 residents aged 65+ and 57% of HDB flats beyond 400 m of a park.",
+   "template_sentence": "Low: forecast Low heat, lower third for vulnerability, with 5 refuges in the area for 25,690 residents aged 65+ and 57% of HDB flats beyond 400 m of a park.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "BUKIT TIMAH",
+   "facts": {
+    "area": "Bukit Timah",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "lower",
+    "vulnerable_because": [
+     {
+      "measure": "2 refuges in the area for 15,970 residents aged 65+",
+      "rank": "4th fewest per resident of 30 rated areas measured"
+     },
+     {
+      "measure": "a 9% share of residents aged 75+",
+      "rank": "15th highest of 31 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.1 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the lower third for vulnerability, with 2 refuges in the area for 15,970 residents aged 65+ and a 9% share of residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, lower third for vulnerability, with 2 refuges in the area for 15,970 residents aged 65+ and a 9% share of residents aged 75+.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "CHANGI",
+   "facts": {
+    "area": "Changi",
+    "tier": "Low",
+    "forecast_heat_level": "Moderate",
+    "vulnerability_third": "lower",
+    "vulnerability_note": "no component above the middle of the rated areas",
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "32.1 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Moderate heat and the lower third for vulnerability, with no component above the middle of the rated areas; its station observed a peak WBGT of 32.1 °C on 25 Oct.",
+   "template_sentence": "Low: forecast Moderate heat, lower third for vulnerability, with no component above the middle of the rated areas; peak WBGT observed at its station on 25 Oct: 32.1 °C (Moderate).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "CHOA CHU KANG",
+   "facts": {
+    "area": "Choa Chu Kang",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "55% of HDB flats beyond 400 m of a refuge",
+      "rank": "7th highest of 29 rated areas measured"
+     },
+     {
+      "measure": "68% of HDB flats beyond 400 m of a park",
+      "rank": "5th highest of 29 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.4 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the middle third for vulnerability, with 55% of HDB flats beyond 400 m of a refuge and 68% of HDB flats beyond 400 m of a park.",
+   "template_sentence": "Low: forecast Low heat, middle third for vulnerability, with 55% of HDB flats beyond 400 m of a refuge and 68% of HDB flats beyond 400 m of a park.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "CLEMENTI",
+   "facts": {
+    "area": "Clementi",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "a 10% share of residents aged 75+",
+      "rank": "9th highest of 31 rated areas measured"
+     },
+     {
+      "measure": "10,410 residents aged 75+",
+      "rank": "16th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.2 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the middle third for vulnerability, with a 10% share of residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, middle third for vulnerability, with a 10% share of residents aged 75+ (9th highest of 31 rated areas measured) and 10,410 residents aged 75+ (16th most of 32 rated areas).",
+   "written_by": "Template",
+   "checks_failed": "facts: does not give 10,410"
+  },
+  {
+   "planning_area": "DOWNTOWN CORE",
+   "facts": {
+    "area": "Downtown Core",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "lower",
+    "vulnerability_note": "no component above the middle of the rated areas",
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "29.9 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the lower third for vulnerability, with no component above the middle of the rated areas; its station observed a peak WBGT of 29.9 °C on 25 Oct.",
+   "template_sentence": "Low: forecast Low heat, lower third for vulnerability, with no component above the middle of the rated areas; peak WBGT observed at its station on 25 Oct: 29.9 °C (Low).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "GEYLANG",
+   "facts": {
+    "area": "Geylang",
+    "tier": "Medium",
+    "forecast_heat_level": "Moderate",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "3,182 1-2 room rental flats",
+      "rank": "7th most of 32 rated areas"
+     },
+     {
+      "measure": "10,740 residents aged 75+",
+      "rank": "14th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.5 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Medium: forecast Moderate heat and the middle third for vulnerability, with 3,182 1-2 room rental flats (7th most of 32 rated areas) and 10,740 residents aged 75+.",
+   "template_sentence": "Medium: forecast Moderate heat, middle third for vulnerability, with 3,182 1-2 room rental flats (7th most of 32 rated areas) and 10,740 residents aged 75+ (14th most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "HOUGANG",
+   "facts": {
+    "area": "Hougang",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "17,410 residents aged 75+",
+      "rank": "4th most of 32 rated areas"
+     },
+     {
+      "measure": "52% of HDB flats beyond 400 m of a refuge",
+      "rank": "10th highest of 29 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.2 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the upper third for vulnerability, with 17,410 residents aged 75+ and 52% of HDB flats beyond 400 m of a refuge.",
+   "template_sentence": "Low: forecast Low heat, upper third for vulnerability, with 17,410 residents aged 75+ and 52% of HDB flats beyond 400 m of a refuge.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "JURONG EAST",
+   "facts": {
+    "area": "Jurong East",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "72% of HDB flats beyond 400 m of a refuge",
+      "rank": "the highest of 29 rated areas measured"
+     },
+     {
+      "measure": "a 10% share of residents aged 75+",
+      "rank": "10th highest of 31 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.2 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the upper third for vulnerability, with 72% of HDB flats beyond 400 m of a refuge and a 10% share of residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, upper third for vulnerability, with 72% of HDB flats beyond 400 m of a refuge and a 10% share of residents aged 75+.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "JURONG WEST",
+   "facts": {
+    "area": "Jurong West",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "15,590 residents aged 75+",
+      "rank": "6th most of 32 rated areas"
+     },
+     {
+      "measure": "2,255 1-2 room rental flats",
+      "rank": "12th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.2 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the upper third for vulnerability, with 15,590 residents aged 75+ and 2,255 1-2 room rental flats.",
+   "template_sentence": "Low: forecast Low heat, upper third for vulnerability, with 15,590 residents aged 75+ (6th most of 32 rated areas) and 2,255 1-2 room rental flats (12th most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "KALLANG",
+   "facts": {
+    "area": "Kallang",
+    "tier": "Medium",
+    "forecast_heat_level": "Moderate",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "5,921 1-2 room rental flats",
+      "rank": "2nd most of 32 rated areas"
+     },
+     {
+      "measure": "an 11% share of residents aged 75+",
+      "rank": "5th highest of 31 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.5 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Medium: forecast Moderate heat and the upper third for vulnerability, with 5,921 1-2 room rental flats and an 11% share of residents aged 75+.",
+   "template_sentence": "Medium: forecast Moderate heat, upper third for vulnerability, with 5,921 1-2 room rental flats (2nd most of 32 rated areas) and an 11% share of residents aged 75+ (5th highest of 31 rated areas measured).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "MARINE PARADE",
+   "facts": {
+    "area": "Marine Parade",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "an 11% share of residents aged 75+",
+      "rank": "6th highest of 31 rated areas measured"
+     },
+     {
+      "measure": "52% of HDB flats beyond 400 m of a refuge",
+      "rank": "11th highest of 29 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.1 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the middle third for vulnerability, with an 11% share of residents aged 75+ and 52% of HDB flats beyond 400 m of a refuge.",
+   "template_sentence": "Low: forecast Low heat, middle third for vulnerability, with an 11% share of residents aged 75+ and 52% of HDB flats beyond 400 m of a refuge.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "NOVENA",
+   "facts": {
+    "area": "Novena",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "lower",
+    "vulnerable_because": [
+     {
+      "measure": "a 9% share of residents aged 75+",
+      "rank": "16th highest of 31 rated areas measured"
+     },
+     {
+      "measure": "61% of HDB flats beyond 400 m of a park",
+      "rank": "11th highest of 29 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.6 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the lower third for vulnerability, with a 9% share of residents aged 75+ and 61% of HDB flats beyond 400 m of a park.",
+   "template_sentence": "Low: forecast Low heat, lower third for vulnerability, with a 9% share of residents aged 75+ and 61% of HDB flats beyond 400 m of a park.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "OUTRAM",
+   "facts": {
+    "area": "Outram",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "2,747 1-2 room rental flats",
+      "rank": "9th most of 32 rated areas"
+     },
+     {
+      "measure": "a 13% share of residents aged 75+",
+      "rank": "the highest of 31 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.8 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the middle third for vulnerability, with 2,747 1-2 room rental flats and a 13% share of residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, middle third for vulnerability, with 2,747 1-2 room rental flats (9th most of 32 rated areas) and a 13% share of residents aged 75+ (the highest of 31 rated areas measured).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "PASIR RIS",
+   "facts": {
+    "area": "Pasir Ris",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "lower",
+    "vulnerable_because": [
+     {
+      "measure": "47% of HDB flats beyond 400 m of a refuge",
+      "rank": "14th highest of 29 rated areas measured"
+     },
+     {
+      "measure": "5 refuges in the area for 24,320 residents aged 65+",
+      "rank": "11th fewest per resident of 30 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.0 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the lower third for vulnerability, with 47% of HDB flats beyond 400 m of a refuge and 5 refuges in the area for 24,320 residents aged 65+.",
+   "template_sentence": "Low: forecast Low heat, lower third for vulnerability, with 47% of HDB flats beyond 400 m of a refuge and 5 refuges in the area for 24,320 residents aged 65+.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "PUNGGOL",
+   "facts": {
+    "area": "Punggol",
+    "tier": "Medium",
+    "forecast_heat_level": "Moderate",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "2,268 1-2 room rental flats",
+      "rank": "11th most of 32 rated areas"
+     },
+     {
+      "measure": "60% of HDB flats beyond 400 m of a refuge",
+      "rank": "3rd highest of 29 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "32.6 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Medium: forecast Moderate heat and the middle third for vulnerability, with 2,268 1-2 room rental flats and 60% of HDB flats beyond 400 m of a refuge.",
+   "template_sentence": "Medium: forecast Moderate heat, middle third for vulnerability, with 2,268 1-2 room rental flats and 60% of HDB flats beyond 400 m of a refuge.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "QUEENSTOWN",
+   "facts": {
+    "area": "Queenstown",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "2,763 1-2 room rental flats",
+      "rank": "8th most of 32 rated areas"
+     },
+     {
+      "measure": "an 11% share of residents aged 75+",
+      "rank": "4th highest of 31 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.2 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the middle third for vulnerability, with 2,763 1-2 room rental flats and an 11% share of residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, middle third for vulnerability, with 2,763 1-2 room rental flats (8th most of 32 rated areas) and an 11% share of residents aged 75+ (4th highest of 31 rated areas measured).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "ROCHOR",
+   "facts": {
+    "area": "Rochor",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "lower",
+    "vulnerable_because": [
+     {
+      "measure": "59% of HDB flats beyond 400 m of a refuge",
+      "rank": "5th highest of 29 rated areas measured"
+     },
+     {
+      "measure": "an 11% share of residents aged 75+",
+      "rank": "7th highest of 31 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "29.9 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the lower third for vulnerability, with 59% of HDB flats beyond 400 m of a refuge and an 11% share of residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, lower third for vulnerability, with 59% of HDB flats beyond 400 m of a refuge and an 11% share of residents aged 75+.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "SEMBAWANG",
+   "facts": {
+    "area": "Sembawang",
+    "tier": "Medium",
+    "forecast_heat_level": "Moderate",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "1,838 1-2 room rental flats",
+      "rank": "14th most of 32 rated areas"
+     },
+     {
+      "measure": "59% of HDB flats beyond 400 m of a refuge",
+      "rank": "4th highest of 29 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.4 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Medium: forecast Moderate heat and the middle third for vulnerability, with 1,838 1-2 room rental flats and 59% of HDB flats beyond 400 m of a refuge.",
+   "template_sentence": "Medium: forecast Moderate heat, middle third for vulnerability, with 1,838 1-2 room rental flats and 59% of HDB flats beyond 400 m of a refuge.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "SENGKANG",
+   "facts": {
+    "area": "Sengkang",
+    "tier": "Medium",
+    "forecast_heat_level": "Moderate",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "12,260 residents aged 75+",
+      "rank": "9th most of 32 rated areas"
+     },
+     {
+      "measure": "1,687 1-2 room rental flats",
+      "rank": "16th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.7 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Medium: forecast Moderate heat and the middle third for vulnerability, with 12,260 residents aged 75+ and 1,687 1-2 room rental flats.",
+   "template_sentence": "Medium: forecast Moderate heat, middle third for vulnerability, with 12,260 residents aged 75+ (9th most of 32 rated areas) and 1,687 1-2 room rental flats (16th most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "SERANGOON",
+   "facts": {
+    "area": "Serangoon",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "middle",
+    "vulnerable_because": [
+     {
+      "measure": "11,260 residents aged 75+",
+      "rank": "11th most of 32 rated areas"
+     },
+     {
+      "measure": "a 10% share of residents aged 75+",
+      "rank": "11th highest of 31 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.2 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the middle third for vulnerability, with 11,260 residents aged 75+ and a 10% share of residents aged 75+.",
+   "template_sentence": "Low: forecast Low heat, middle third for vulnerability, with 11,260 residents aged 75+ (11th most of 32 rated areas) and a 10% share of residents aged 75+ (11th highest of 31 rated areas measured).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "TAMPINES",
+   "facts": {
+    "area": "Tampines",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "18,360 residents aged 75+",
+      "rank": "3rd most of 32 rated areas"
+     },
+     {
+      "measure": "2,570 1-2 room rental flats",
+      "rank": "10th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.9 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the upper third for vulnerability, with 18,360 residents aged 75+ and 2,570 1-2 room rental flats.",
+   "template_sentence": "Low: forecast Low heat, upper third for vulnerability, with 18,360 residents aged 75+ (3rd most of 32 rated areas) and 2,570 1-2 room rental flats (10th most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "TANGLIN",
+   "facts": {
+    "area": "Tanglin",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "lower",
+    "vulnerable_because": [
+     {
+      "measure": "no refuges in the area for 4,070 residents aged 65+",
+      "rank": "the fewest per resident of 30 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.1 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the lower third for vulnerability, with no refuges in the area for 4,070 residents aged 65+.",
+   "template_sentence": "Low: forecast Low heat, lower third for vulnerability, with no refuges in the area for 4,070 residents aged 65+ (the fewest per resident of 30 rated areas measured).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "TENGAH",
+   "facts": {
+    "area": "Tengah",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "lower",
+    "vulnerable_because": [
+     {
+      "measure": "64% of HDB flats beyond 400 m of a refuge",
+      "rank": "2nd highest of 29 rated areas measured"
+     },
+     {
+      "measure": "55% of HDB flats beyond 400 m of a park",
+      "rank": "15th highest of 29 rated areas measured"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.0 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the lower third for vulnerability, with 64% of HDB flats beyond 400 m of a refuge and 55% of HDB flats beyond 400 m of a park.",
+   "template_sentence": "Low: forecast Low heat, lower third for vulnerability, with 64% of HDB flats beyond 400 m of a refuge and 55% of HDB flats beyond 400 m of a park.",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "TOA PAYOH",
+   "facts": {
+    "area": "Toa Payoh",
+    "tier": "Medium",
+    "forecast_heat_level": "Moderate",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "3,835 1-2 room rental flats",
+      "rank": "5th most of 32 rated areas"
+     },
+     {
+      "measure": "14,290 residents aged 75+",
+      "rank": "7th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.5 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Medium: forecast Moderate heat and the upper third for vulnerability, with 3,835 1-2 room rental flats and 14,290 residents aged 75+.",
+   "template_sentence": "Medium: forecast Moderate heat, upper third for vulnerability, with 3,835 1-2 room rental flats (5th most of 32 rated areas) and 14,290 residents aged 75+ (7th most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "WOODLANDS",
+   "facts": {
+    "area": "Woodlands",
+    "tier": "Medium",
+    "forecast_heat_level": "Moderate",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "3,817 1-2 room rental flats",
+      "rank": "6th most of 32 rated areas"
+     },
+     {
+      "measure": "11,700 residents aged 75+",
+      "rank": "10th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "31.4 °C",
+     "nea_category": "Moderate"
+    }
+   },
+   "ai_sentence": "Medium: forecast Moderate heat and the upper third for vulnerability, with 3,817 1-2 room rental flats (6th most of 32 rated areas) and 11,700 residents aged 75+.",
+   "template_sentence": "Medium: forecast Moderate heat, upper third for vulnerability, with 3,817 1-2 room rental flats (6th most of 32 rated areas) and 11,700 residents aged 75+ (10th most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  },
+  {
+   "planning_area": "YISHUN",
+   "facts": {
+    "area": "Yishun",
+    "tier": "Low",
+    "forecast_heat_level": "Low",
+    "vulnerability_third": "upper",
+    "vulnerable_because": [
+     {
+      "measure": "14,030 residents aged 75+",
+      "rank": "8th most of 32 rated areas"
+     },
+     {
+      "measure": "2,192 1-2 room rental flats",
+      "rank": "13th most of 32 rated areas"
+     }
+    ],
+    "observed_heat": {
+     "date": "25 Oct",
+     "where": "the area's WBGT station",
+     "peak_wbgt": "30.7 °C",
+     "nea_category": "Low"
+    }
+   },
+   "ai_sentence": "Low: forecast Low heat and the upper third for vulnerability, with 14,030 residents aged 75+ and 2,192 1-2 room rental flats.",
+   "template_sentence": "Low: forecast Low heat, upper third for vulnerability, with 14,030 residents aged 75+ (8th most of 32 rated areas) and 2,192 1-2 room rental flats (13th most of 32 rated areas).",
+   "written_by": "AI, checked",
+   "checks_failed": ""
+  }
+ ]
+}

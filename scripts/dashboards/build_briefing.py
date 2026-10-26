@@ -93,7 +93,8 @@ ordered AS (
 # used only where nothing sorts: the map tooltip and the Blocks map's detail text.
 AREA_COLUMNS = "briefing_order, area, tier, explanation, tier_sentence, reason, rental_1_2_room, actions"
 EXPLANATION_NOTE = ("Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code "
-                    "checks the tier and every number, or shows the template sentence.")
+                    "checks that it states the tier, heat level, third and each measure as given, and nothing but the "
+                    "facts, or shows the template sentence.")
 NAMES = "CASE WHEN size(nr) = 1 THEN nr[0] ELSE concat(array_join(slice(nr, 1, size(nr) - 1), ', '), ' and ', element_at(nr, -1)) END"
 LONG_DATE = "date_format(target_date, 'EEEE, d MMMM yyyy')"
 NOTICES = [  # copied exactly from docs/attribution.md (register notices 1, 3, 7, 9, 12, 14, 16, 19, 22, 23)

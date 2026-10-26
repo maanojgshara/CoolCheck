@@ -197,3 +197,29 @@ WHERE service_name = 'system.ai.meta-llama-3-3-70b-instruct'
   - So at that width Actions would show its header and the Low rows' "Routine.", but the Medium rows' 128-character action only for its first 20 or so characters. The table would still scroll sideways, with about 73% in view instead of 54%.
   - The user can look at the copy to see it as rendered.
 - **Window D's finding 2 is fixed.** The design note's restore step 1 now writes the get to a file, reads it as UTF-8 and asserts that the restore body equals the live draft. Run read-only into a scratch folder at about 23:34 SGT, the body equalled the live draft and "Peak WBGT (°C)" was intact.
+
+## The check tightened, after window D's review (26 Oct, 23:40 to 00:00 SGT)
+
+Window D's review (`docs/checks/review_tier_explanations.md`, findings 3 and 4) found that the check let 36 of 54 wrong sentences through. The user chose to tighten it before 27 Oct's sentences are made. `explain.check` gained D's three rules, beside the checks it had (`docs/design/tier_explanations.md`, "Why the check"):
+- (a) each measure's text, or the note, as given;
+- (b) each bracket its own fact: a measure's rank right after the measure, the NEA category right after the observed peak;
+- (c) nothing but the facts' own phrases and 18 frame words.
+
+**The stored 26 Oct sentences, re-checked offline.** A read-only SELECT of `gold.area_tier_explanation` for 2026-10-26, at about 23:45 SGT, read back 32 rows. They are kept as `tests/explanations/stored_26oct.json`, a regression test. Under the tightened check:
+- **31 of the 31** model sentences that were shown ("AI, checked") still pass. D's prototype found the same.
+- **32 of the 32** templates pass.
+- Clementi's model sentence still fails: it now also reports "not as given: 10,410 residents aged 75+".
+- The prompt's 3 worked examples pass.
+
+**Tests.** `tests/explanations` passed 76, offline, in 0.16 s: the earlier 37 and 39 new.
+- D's 3 controls pass: Toa Payoh's stored sentence, the same with its true rank, and the same with the peak in the prompt's form.
+- 36 wrong sentences from D's section 2 fall back: 13 groups, one or more cases each, on the stored facts of Toa Payoh, Tengah and Ang Mo Kio (and Toa Payoh with a made-up High tier, for "a near-certain High-heat day").
+  - The checks before the rules let 35 of the 36 through. The 36th ("its 30.5 °C peak on 25 Oct points to forecast Moderate heat") was already caught, because "points to" ties the peak to the forecast.
+  - A test requires every group to keep at least one case that only the new rules catch.
+- The 15 offline structural tests of `test_briefing_dashboard.py` passed. The whole file ran through Databricks Connect: see the last line of this section.
+
+**The note under the top 10 (D's finding 4)** now reads: "Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code checks that it states the tier, heat level, third and each measure as given, and nothing but the facts, or shows the template sentence." It is "each measure", not "each fact", because the ranks and the observed peak are optional. The change is in `build_briefing.py` and the regenerated JSON, and the dashboard test checks the exact wording. `patch_live_briefing.py` copies the note from the committed JSON, so it needed no change; its tests pass with the new note.
+
+**The copy, updated at 23:53:44 SGT, and only the copy.** The live draft was read again first and was unchanged (`update_time` 07:19:18 UTC, the same `etag`). The copy was built from it with the patch. Read back, the copy equals the body sent: the six columns, the new note, still unpublished. The live dashboard was not touched, and `generate.py` was not run: 27 Oct's sentences wait for the 00:45 SGT job and the user's word.
+
+`test_briefing_dashboard.py` through Databricks Connect: 33 of 33 passed (temp views only, 215 s).

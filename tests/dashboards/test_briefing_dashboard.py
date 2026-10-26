@@ -154,8 +154,9 @@ def test_the_note_on_who_writes_the_sentences_is_under_the_top_ten():
     pos = {w["name"]: p for _, w, p in widgets()}
     note = next(w for _, w, _ in widgets() if w["name"] == "explanation-note")
     assert "".join(note["multilineTextboxSpec"]["lines"]).strip() == (
-        "Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code checks the "
-        "tier and every number, or shows the template sentence.")
+        "Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code checks that "
+        "it states the tier, heat level, third and each measure as given, and nothing but the facts, or shows the "
+        "template sentence.")  # window D's finding 4: no more than the check does (coolcheck.explain.check)
     top = pos["top-areas"]
     assert pos["explanation-note"] == {"x": 0, "y": top["y"] + top["height"], "width": 12, "height": 1}
     assert pos["more-areas"]["y"] == top["y"] + top["height"] + 1

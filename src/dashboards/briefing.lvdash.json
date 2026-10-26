@@ -484,7 +484,7 @@
             "name": "explanation-note",
             "multilineTextboxSpec": {
               "lines": [
-                "Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code checks the tier and every number, or shows the template sentence.\n"
+                "Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code checks that it states the tier, heat level, third and each measure as given, and nothing but the facts, or shows the template sentence.\n"
               ]
             }
           },

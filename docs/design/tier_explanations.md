@@ -14,7 +14,9 @@ How a sentence is made, in order:
 4. **The table.** `scripts/explanations/generate.py` stores the result in `gold.area_tier_explanation`, replacing the date's rows.
 5. **The dashboard.** It reads the table through a `LEFT JOIN` on `(target_date, planning_area)` with `coalesce(explanation, tier_sentence)`. A missing row shows the existing tier sentence, never a blank. No dataset calls `ai_query`.
 
-The note under the top-10 table says who writes the sentences and how they are checked.
+The note under the top-10 table says who writes the sentences and how they are checked: "Each sentence is written by Llama 3.3 70B through Databricks AI Functions from the row's facts; code checks that it states the tier, heat level, third and each measure as given, and nothing but the facts, or shows the template sentence."
+- **Why this wording.** It replaced "code checks the tier and every number" on 26 Oct. Window D's review (finding 4) found that the old wording claimed more than the check then caught: a number could be in the facts and still sit by the wrong measure.
+- **Why "each measure", not "each fact".** The ranks and the observed peak are optional, and the check holds them to their facts only when the sentence gives them.
 
 **Six columns, not eight (the user, 26 Oct 23:28).** Both area tables now show #, Planning area, Tier, Why, in a sentence, 1-2 room rental flats, and Actions (a proposal). "Why this tier" and "Why vulnerable" are hidden, for two reasons:
 - At the presenting laptop's width the top-10 table scrolled sideways: "Why this tier" was cut off, and "Why vulnerable", "1-2 room rental flats" and "Actions (a proposal)" were off-screen.
@@ -70,9 +72,27 @@ A model can change a number, mix the tier and heat words, drop a fact, add advic
 - **The App's other checks.** P(High) or a score, a claim that something was sent, medical advice, a planning area that is not in the facts.
 - **The observation.** The observed peak may not be tied to the forecast or the tier.
 
+**Window D's three rules, added on 26 Oct after its review (finding 3).** In D's scratch test, the checks above let 36 of 54 wrong sentences through. They failed to catch values swapped between measures, labels dropped, ranks in other words, claims about residents, reassurance, the peak as a cause in other words, and confidence or advice in words. The rules state the facts-and-nothing-more requirement directly, beside the checks above:
+
+- **(a) Each measure as given.** Each measure's text in `vulnerable_because`, or the `vulnerability_note` for an area with no measure, appears in the sentence exactly as in the facts (`not_verbatim`). "14,290 1-2 room rental flats and 3,835 residents aged 75+" fails, though every number is in the facts.
+- **(b) Each bracket its own fact.** A bracket must come right after a measure and hold that measure's rank as given, or right after the observed peak and hold its NEA category. A bracket anywhere else fails (`wrong_brackets`). "(2nd largest number of 32 rated areas)" fails, and so does "30.5 °C (High)" when the category was Low.
+- **(c) Nothing but the facts and joining words.** The facts' own phrases are taken out of the sentence (`beyond_frame`):
+  - the measures, their ranks and the note;
+  - the observed peak (with or without a space before °C), its date however written, and its category in brackets;
+  - the tier as the first word, the heat level or the observed category before "heat", and the third before "third".
+
+  What is left must be punctuation and these 18 frame words: **and, the, third, for, vulnerability, with, its, station, observed, a, peak, wbgt, of, on, forecast, heat, in, at**. A number left over fails. So does any other word, such as "ranked", "own", "safe", "certainly", "risk", "call" or "Saturday".
+
+The frame words are D's list (`and the upper middle lower third for vulnerability with its station observed a peak wbgt of on forecast heat low moderate high medium in at`) with one change, and no word added:
+- **What was dropped.** The seven tier, heat and third words (upper, middle, lower, low, moderate, high, medium) were taken out of the list.
+- **Why.** Rule (c) already takes the area's own tier, heat level, third and observed category out where they belong. Kept in the frame, any of the seven would pass wherever it stood, as in "High vulnerability", which D's prototype let through, or "low vulnerability" for an upper-third area. Taken out, such a use is left over and fails.
+- **The cost.** A wording the frame does not cover, such as "heat is forecast to be Moderate", "the top third" or naming the area, also fails. The fallback is the template, which is right by construction.
+
+On 26 Oct's stored sentences, read back from the table, all 31 model sentences and all 32 templates pass the three rules, and so do the prompt's 3 examples (`docs/checks/tier_explanations.md`). Clementi's model sentence, which left out a measure, still fails.
+
 **When a sentence fails.** A failed sentence, or a failed call, is replaced by the template. The template is the dashboard's tier sentence followed by the measures, their ranks, then the observed peak. It takes the first of four forms that fits in 35 words: with ranks and the peak, ranks only, values and the peak, values only. Both sentences are kept, with `written_by` ("AI, checked" or "Template") and `checks_failed`.
 
-**What the check cannot see.** It cannot see a fact that is true of the data but rests on a partial source: Tanglin's "no refuges" comes from a list with 93 of about 223 Active Ageing Centres. Nor can it see a value given without the rank that would put it in context. A person read all 32 of 26 Oct's sentences (`docs/checks/tier_explanations.md`, "Flagged").
+**What the check cannot see.** It cannot see a fact that is true of the data but rests on a partial source: Tanglin's "no refuges" comes from a list with 93 of about 223 Active Ageing Centres. Nor can it see a value given without the rank that would put it in context. It also cannot see the order of the frame words: "Medium: forecast Moderate heat in at the upper third for vulnerability, with 3,835 1-2 room rental flats of on 14,290 residents aged 75+." passes (tested), since it is all facts and frame words, however odd it reads. A person read all 32 of 26 Oct's sentences (`docs/checks/tier_explanations.md`, "Flagged").
 
 ## Why materialised, not at view time
 
