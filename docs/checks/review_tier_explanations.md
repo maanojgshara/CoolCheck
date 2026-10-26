@@ -352,3 +352,35 @@ C's design note says the check "cannot see the order of the frame words" and cal
 - **3, a check narrower than the note:** fixed in `e61e224` for all 54 cases. A narrow remainder (6 of 15 new cases) is left; rule (d) is advised.
 - **4, the note:** fixed in `e61e224`; it now says what the check does. With the remainder, "nothing but the facts" holds word by word, but not for order: "forecast Moderate heat on 25 Oct" uses only facts. Low.
 - **5 to 8:** unchanged (after Demo Day, or a team decision).
+
+## Re-review 3: `7f66d1f` (27 Oct 2026, about 00:12 to 00:20 SGT)
+
+Reviewed by window D, read-only, on window C's `7f66d1f` (27 Oct, 00:11 SGT). It adds re-review 2's rule (d) to `src/coolcheck/explain.py` (`observation_out_of_place`), with tests and C's design note:
+- The observed peak, its date, its category and the words observed, peak, WBGT and station appear only after the sentence's first semicolon.
+- That clause holds no forecast word and no Low, Moderate or High, except the category in the bracket right after the peak.
+- An observation that the facts do not hold fails.
+
+`7f66d1f` changes no dashboard, patch or SQL file, so re-review 2's check 4 stands. Everything was run from a `git archive` of `7f66d1f`, offline: no `ai_query`, no `generate.py`, no `lakeview` writes.
+
+**Result: every wrong sentence is caught, and nothing that should pass fails. Verdict unchanged: switch it on once 27 Oct's sentences are written and read.**
+
+| Set | At `7f66d1f` |
+|---|---|
+| This review's 54 wrong sentences | 54 caught |
+| Re-review 2's 15 new wrong sentences | 15 caught: the 9 caught before, plus the 6 that swap the forecast and the observation, now caught by rule (d) |
+| The 3 controls of section 2 | 3 pass |
+| Re-review 2's 4 controls | 3 pass. The fourth, Changi's "its station observed … with Moderate heat", is true but now falls back to the template, by design: the category is allowed only in its bracket. The same fact as "32.1 °C (Moderate)" passes. |
+| The 31 stored AI sentences | 31 pass. Clementi's model sentence still fails, as stored. |
+| The 32 stored templates | 32 pass |
+| The prompt's 3 examples | 3 pass |
+| `tests/explanations` (offline) | 92 passed: the 76 before, 13 swap cases, and 3 tests on rule (d). Those 3 check that it alone catches the six misses, that it costs two true wordings, and that every stored template keeps the observation in its own clause. |
+
+**Two probes of the rule's edges:**
+- The observation after a comma instead of a semicolon (Changi, true) falls back. That is a false rejection, and safe.
+- An early semicolon, then the observation, then the vulnerability, passes: "Medium: forecast Moderate heat; its station observed … on 25 Oct and the upper third for vulnerability, with …". It reads oddly but states nothing false. Low; requiring the observation's clause to come last is optional.
+
+**The findings now:**
+- 1, the 27 Oct rows: open. Must be done before the apply.
+- 2: fixed in `93a6dd9`.
+- 3 and 4: fixed in `e61e224` and `7f66d1f`.
+- 5 to 8: unchanged.
