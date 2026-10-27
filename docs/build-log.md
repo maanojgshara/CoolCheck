@@ -651,3 +651,73 @@ Written by window E on 23 Oct from the project notes kept outside the repo (`Coo
 - **Decisions and why:** The user's: the other windows' build-log entries committed by path under one message naming them (`ed96ed5`), since they were already in the file; fix forward as before, no rewrite and no force-push; nothing changed beyond steps 1 and 4; no deploy and no workspace call. Mine: a trace ID, a run ID, a deployment ID, an approval ID, a job ID or an experiment ID names an object in the trial workspace and grants nothing, so each is an identifier, not a secret; values first pushed in `c956b83..4cb9c1e` were to be listed apart, and there are none; the push and the new baseline come after this entry's commit, so their result is not in it (as on 25 Oct).
 - **Stuck:** My sed on the table checker wrote a null byte into it (the x00 replacement text became the byte): rewritten with `chr(92)`. A Bash heredoc holding the entry's apostrophes failed with "unexpected EOF", as in my fifth entry: the script was written with the Write tool. The loose IPv6 pattern matches Python slices: read in context. A 64-character test name sorted with the digests by length: classed by the scanner's class instead. Nothing open.
 - **Challenges and questions:** `requirements_evidence.md` rows 32, 53 and 66 say the scan of the final commit (task 14) is not run yet and that `main` is 33 ahead; after this push they are stale, and the file is C's (not changed here). For the mentor: the result files and the design note carry the trial workspace's trace, run, deployment and experiment IDs; they identify objects the judges cannot reach and are not credentials. Should they stay when the repository is opened, or be masked?
+
+## 2026-10-27: Window A: Monday's checks, the App's four stops, the 15-minute switch, the runbook record (work run 26 Oct 10:04 to 16:45 and 27 Oct 11:01 to 11:20 SGT; commit `a6dbbc2`)
+
+- **Tried and approach:**
+  - Task 19, the Monday-morning read-only check, with the runbook's helpers copied by `sed` into a script outside the repo. The App was found stopped: recorded (`update_time`, both messages, the apps audit events, the APPS billing rows), then started with `databricks apps start`.
+  - The live page's job moved to every 15 minutes at 12:06, by the runbook's direct `jobs update`, with its JSON diffed before and after outside the repo. The hotspot test ran 12:50 to 13:01. The afternoon check found the App stopped again: recorded, and started at 16:41.
+  - On 27 Oct: the runbook, `docs/attribution.md` and the README updated from the notes and from reads (App record and deployments, audit since deploy 5, billing, the job, `ops_status`). The added lines were checked for personal data; `wording_scan.py` gives the same 2 hits before and after.
+- **Learned:**
+  - The App stopped four times: 25 Oct 04:57:51, then 26 Oct 01:28:16, 16:27:46 and about 22:57. That is 6 h 1 min, 6 h 11 min, 6 h 16 min and about 6 h 13 min after its last deployment, while the time since the last start ranged from 9 h 36 min to 6 h 15 min. The fourth is seen in billing only: 0.4765 DBU for 22:00 to 23:00, then no App row, with billing read to 09:10 on 27 Oct.
+  - Since deploy 5, the only App events in the audit log are `startApp` at 10:09:21, 16:41:48 and 08:41:23 (27 Oct), with 2,705 other events from 22:30 to 23:30, so not lag. Each start made a SNAPSHOT deployment with no `deployApp`, 2 min 37 s to 2 min 42 s from `startApp` to SUCCEEDED.
+  - `jobs update` changed the job's `edit_mode` from `UI_LOCKED` to `EDITABLE`; nothing else changed. The first 15-minute run, `281234271879846`, took 71 s and succeeded.
+  - The night of 26 Oct: run `122713094152251` SUCCESS, no retry, 41 rows. Its dq_day forecast part reads "12 of None times, None stations" (cosmetic, `src/coolcheck/live_model.py`). The laptop's browser showed the briefing at 25 Oct until refreshed; the phone had shown 26 Oct.
+  - WBGT's title, "Wet Bulb Globe Temperature (WBGT) Observations", is on two dataset pages (`DAISI Brief.md` §12.3). Which page is the API feed is not established.
+- **Decisions and why:**
+  - The user's: `apps start` alone after each stop, since it redeploys the last snapshot with no worktree, rather than `bundle run`. On Tuesday, `apps stop` then `apps start` at 13:30 to 14:00, not a deploy, so the App runs past 16:30. The direct `jobs update` rather than two bundle deploys on Demo Day. `edit_mode` stays `EDITABLE` until the revert after the results.
+  - Mine: the runbook records four stops, not the three in the brief, because billing shows the fourth. The WBGT title went only into `attribution.md` and the README, as asked; the register, the write-up and the About page are listed in flag 3.
+- **Stuck:**
+  - `TZ=Asia/Singapore date` printed UTC in Git Bash: plain `date` is used instead (the laptop is on UTC+8).
+  - The audit lags. The 10:09:21 start was missing at 10:15:47 and there by 11:31:37. The afternoon start ran 12 minutes after the record was finished; the cause is not established.
+- **Challenges and questions:**
+  - Open: the stops' cause, and `apps stop`, untried before today's restart. Still to align: `docs/datasets.md` and the write-up (the old WBGT name) and the live page's "hourly" note. Whether the stale briefing was an old tab or a cached result.
+  - For the mentor: is a roughly 6-hour App limit known on trial workspaces ("workspace or account status")?
+
+## 2026-10-27: Window C, fourth entry: the tier explanations, from the first run to the live briefing, and the requirements table for Demo Day (work run 26 Oct evening to 27 Oct 11:27 SGT; commits `75013d9`, `a30b32d`, `e41cc38`, `b84c674`, `93a6dd9`, `e61e224`, `7f66d1f`, `4395668`, `d605807`, `1cedb63`, `c87db98`)
+
+- **Tried and approach:**
+  - One sentence per rated area on why it has its tier. Code builds the facts: tier, heat level, third, the two measures `reason` names with their ranks, and the station's observed peak the day before. Llama 3.3 70B writes the words through `ai_query` at temperature 0; `src/coolcheck/explain.py` checks them, else the template is used. `scripts/explanations/generate.py` writes them to `gold.area_tier_explanation`. P(High), V and their ranks are never read. A fixed template (59 words) was dropped for an adaptive one within 35 words.
+  - The column went on with `patch_live_briefing.py` over the live JSON, which keeps the user's editor changes of 26 Oct 15:19; it was tried first on an unpublished copy. The requirements table was then refreshed in 11 rows and aligned with window A's runbook.
+- **Learned:**
+  - The 26 Oct run gave 31 "AI, checked" and 1 Template. The 27 Oct run (00:55, from `cffdf6c`) gave 32 of 32 "AI, checked", all true to their facts by window D (`d1b3096`).
+  - At `7f66d1f` the check catches all 54 of D's wrong sentences and the 15 of re-review 2. `tests/explanations`: 92 passed.
+  - `ai_query` in a query with `ORDER BY` logs 2 calls per row in `system.ai_gateway.usage`. The 26 Oct run was 64 calls, 65,834 input and 2,476 output tokens, about US$0.05.
+  - Applied 27 Oct at 01:29 SGT (published revision 17:29:53 UTC). The read-back showed only the patch's changes, and the top-10 query returns the table's sentences.
+  - Billing puts the App's 26 Oct stops at about 01:27, 16:27 and 22:57; the App record has 01:28:16 and 16:27:46. The live page ran 92 times from 26 Oct 12:05 to 27 Oct 10:50, all SUCCESS.
+- **Decisions and why:**
+  - The user's: the observed peak is an observation, not the model's input. "Why this tier" and "Why vulnerable" are hidden, since the sentence carries both. Apply to live only after D's check of 27 Oct's rows.
+  - D's rules (a) to (d) taken. The first check let 36 of D's 54 wrong sentences through; keeping it with a note was rejected.
+  - Materialised, with no `ai_query` in a dashboard dataset, for cost and repeatability. Patch the live JSON, with a restore body saved. Rejected: the committed JSON, which would undo the user's layout, and a bundle deploy, which resets the live page's job to hourly.
+  - Requirements rows take dated additions with statuses unchanged. Where my reads and A's runbook differ, both sources are named.
+- **Stuck:**
+  - "refresh token is invalid": the user logged out, then in. A regex named `TEMPERATURE` overwrote the float and broke the SQL; it was renamed `DEGREES`.
+  - Under `python -I`, stdin was read as cp1252 (D's finding 2); fixed in `93a6dd9`. `AssertionError: (16, 4)` was an empty table cell; the parser was fixed.
+  - `gh: command not found`: the repo's visibility is taken from the user's observation.
+- **Challenges and questions:**
+  - Open: drop `ORDER BY` from `explain.ai_sql`; `generate.py` in the nightly job (deploy 6); the 15:19 redesign into `build_briefing.py` before any bundle deploy; from 28 Oct the column shows the tier sentence under the Llama note until `generate.py` runs; the README, write-up and deck don't mention the column.
+  - For the mentor: is a checked LLM sentence with a template fallback enough to explain a tier, or should the model's SHAP attributions be shown as well?
+
+## 2026-10-27: Window D: the independent review of the tier explanations (26 Oct 23:00 to 27 Oct 01:25 SGT; commits `35c7a79`, `4f26f7f`, `f16321c`, `cffdf6c`, `d1b3096`, all in `docs/checks/review_tier_explanations.md`)
+
+- **Tried and approach:**
+  - Read-only throughout: SELECTs only, through a runner that refused anything else, `SELECT *` and the never-shown columns, plus `lakeview get` and `get-published`. Each commit was reviewed from a `git archive` of it, outside the repo.
+  - Recomputed the facts with my own code (not `coolcheck.explain`), wrote adversarial sentences, diffed the patch output against a fresh live get, and replicated the restore step.
+  - Reviewed `75013d9`, then `93a6dd9` (six columns), `e61e224` (rules a to c), `7f66d1f` (rule d), and 27 Oct's rows written from `cffdf6c`.
+- **Learned:**
+  - The facts equal my rebuild for 32 of 32 rows on 26 Oct and on 27 Oct. Every shown sentence gives its own tier, heat level, third and measures, and all differ.
+  - The first check let 36 of 54 wrong sentences through. At `7f66d1f`, all 54 and 15 newer ones are caught, while the 31 stored AI sentences, the 32 templates and the 3 examples pass.
+  - Under `python -I`, stdin is read as cp1252, so the first restore body had "Peak WBGT (Â°C)" twice. `-X utf8` fixed it (`93a6dd9`).
+  - The live draft (`update_time` 07:19:18.685Z) was unchanged through 00:02 SGT. Tests at `7f66d1f`: 92 passed offline.
+- **Decisions and why:**
+  - The verdict was "switch on after fixes", and later "once 27 Oct's sentences are written and read". Rejected: switching on before 27 Oct's rows existed, because the column would then fall back under a note claiming Llama wrote it.
+  - Proposed rules (a) to (d) after prototypes passed all stored data. A model-free template was offered to the team as the alternative.
+  - Agreed with C's 18-word frame list: it catches "High vulnerability", which my 25-word list let through.
+  - Did not re-run the page's order query, because it reads `tier_rank`; Bishan's 10th place is taken from C.
+- **Stuck:**
+  - My own test cases were wrong twice: a "36-word" sentence had 33 words, and two advice cases were caught only by the ordinal "first". Both were corrected before any count was reported.
+  - `IndexError: list index out of range` was an argument I forgot to pass.
+  - The fixture's `checks_failed` is `''` where the table has NULL; this is cosmetic and left open.
+- **Challenges and questions:**
+  - Open: the stale-sentence join (finding 5), `code_commit` (finding 6), and the wording of Tanglin's "no refuges" (finding 7).
+  - For the mentor: when the model adds only joining words, does it earn its place over the template?
