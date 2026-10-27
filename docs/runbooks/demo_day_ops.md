@@ -1,6 +1,8 @@
-# Demo Day operations: the Free Edition redeploy, the checks to Tuesday, the App stop
+# Demo Day operations: the Free Edition redeploy, the checks to Tuesday, the App's stops
 
 Window A, 25 Oct 2026, written 17:00 to 18:20 SGT, for Guide §A3 tasks 15, 19 and 25. Read-only on both workspaces while writing: listings, gets, SELECTs, `bundle validate`, `bundle plan` and one `copy_live_free.py --dry-run`. The state below is as read at 17:42 SGT, after deploy 4 (`e07a8db`, 16:56 to 17:00 SGT; `docs/design/agent_app.md`). Steps marked **writes** wait for the user's OK; deploys go from a clean worktree, one at a time, by Claude Code (`CLAUDE.md`). `<user>` stands for the user's e-mail and user name.
+
+**Updated 27 Oct 2026 by window A, docs only:** Monday's checks (section 2, under "Monday 26 Oct, morning"), the 15-minute refresh as it was switched on, Tuesday's App plan (section 2) and the App's four stops (section 3). Taken from window A's notes of 26 Oct and from read-only reads on 27 Oct, 11:03 to 11:16 SGT; nothing was written to either workspace.
 
 ## 0. Before any command
 
@@ -20,7 +22,7 @@ Put `MSYS_NO_PATHCONV=1` before every command that passes a path starting with `
 | | Trial (`-p coolcheck`, target `dev`) | Free Edition (`-p freeedition`, target `free`) |
 |---|---|---|
 | Nightly job "heat forecast" | `131450384398104`: 00:45 SGT, UNPAUSED; one retry per task after 5 minutes (since deploy 4) | `107197531541954`: PAUSED |
-| Live page job "latest readings" | `997063708299006`: hourly at :05, UNPAUSED; `edit_mode` `UI_LOCKED` | `456499726092564`: PAUSED |
+| Live page job "latest readings" | `997063708299006`: every 15 minutes since 26 Oct 12:06 SGT (`0 5,20,35,50 * * * ?`, by `jobs update`; hourly at :05 before), UNPAUSED; `edit_mode` `EDITABLE` since that update (`UI_LOCKED` before); back to hourly after Tuesday's results (section 2, "The 15-minute refresh") | `456499726092564`: PAUSED |
 | Pipeline | `dbff017a-3751-4806-b529-5d347b49d9bb` | `0b6e55e9-e41e-4137-819f-806307665b48` |
 | SQL warehouse | `7aa1dc56400d5b33`, "Serverless Starter Warehouse", Small, auto-stop 10 min | looked up by the same name |
 | App | `coolcheck`, compute MEDIUM | none: the App and its experiment are defined for `dev` only |
@@ -286,7 +288,24 @@ Deploy 5's redeploy moves the times in section 3 ("What to watch"): 6 h 1 min af
 3. The collector for 26 Oct, as tonight (no forecast file from 02:00 to 05:30 is by design).
 4. The phone hotspot: over it, `databricks apps get coolcheck -p coolcheck`, then the App and the briefing in the browser.
 
+**Done on 26 Oct 2026 (window A).** Steps 1 to 3 at 10:04 to 11:32 SGT, read-only but for the App's start (step 2); step 4 at 12:50 to 13:01, once the user was back at the laptop. The tree was clean at `e98fcc9` before and after.
+
+| Step | Result |
+|---|---|
+| 1. `night 2026-10-26` | Run `122713094152251`, PERIODIC, 00:45, SUCCESS; `refresh` and `score` attempt 0, SUCCESS: no retry ran. The log lines as expected: `heat forecast for 2026-10-26; git 4d60f78163a0ef1353c30841492d90e24aaf0b81; …; job run 122713094152251`; the model line (`coolcheck.ml.heat_model` version 1, alias champion, trained on 2025-01-17..2026-10-22; the target date out of sample); `silver.dq_day for 2026-10-25 (the day before the target date): wbgt ok (96 of 96 times, 30 stations, …); rainfall ok (288 of 288 times, 89 stations, …); forecast ok (12 of None times, None stations, 12 rows; 12 issues)`, where the "None" is cosmetic (`src/coolcheck/live_model.py` prints the forecast row's empty fields as they are); and both `latest …` lines (WBGT and forecast to 23:45, rainfall to 23:55 on 25 Oct, 30 stations). 41 rows, 41 areas, `scored_at` 2026-10-25T16:49:48Z (00:49:48 SGT). `FINAL` `4d60f78`; both tasks `max_retries` 1 |
+| 2. `ops_status`, 10:06:13 | **The App STOPPED** / UNAVAILABLE since 01:28:16, the second stop (section 3). Recorded, then started with `databricks apps start coolcheck -p coolcheck` at 10:09:20 (`startApp` 10:09:21 in the audit log); the start made deployment `01f1d0e29195` (created 10:11:34, SUCCEEDED 10:12:03, "App started successfully"; no `deployApp`); RUNNING at 10:12:07. The live page's job: 12 runs from 23:05 to 10:05, one an hour, all SUCCESS, 66 to 74 s |
+| 3. The collector, 10:14:48 | WBGT, air temperature and rainfall: 45 files each from 00:00:42 to 10:00:39, the newest 14.2 minutes old, a file in every quarter-hour slot. WBGT's largest gap 15.4 minutes (03:45:23 to 04:00:45); extra WBGT files at 01:36:35, 04:01:16 and 08:41:38 and a doubled 06:30 make 5 gaps under 10 minutes (25 Oct: 9). Forecast: 29 files, none from 01:45:24 to 05:45:24 (by design) |
+| 4. The hotspot, 12:50 to 13:01 | Over the phone's hotspot, `ops_status` at 12:50:50 answered in about 2 s: the App ACTIVE / RUNNING on `01f1d0e29195`, the live page's 12:50 run RUNNING, the warehouse STOPPED. In the laptop's browser over the hotspot the App loaded (Monday 26 Oct; Diagnostics: commit `4d60f78…`, tracing on). The briefing first showed "Heat risk for Sunday, 25 October 2026, prepared 25 Oct 2026 00:49 SGT", and Monday's (High 0, Medium 7, Low 25, Not rated 9) only after the user clicked refresh ("If something fails" below). Back on the home Wi-Fi, `ops_status` at 13:01:01: the same; the 12:50 run SUCCESS; the warehouse RUNNING. Earlier (reported at 11:58), the App and the briefing (26 Oct) had loaded on the user's phone over 5G |
+
+Also on Monday:
+
+- **Spend at list price**, read at 10:14: US$139.14 to 25 Oct 13:00 SGT (section 3 has US$139.13), US$183.41 in all, billed to 2026-10-25T23:00:00Z.
+- **12:06:14: the live page's job to every 15 minutes**, with the direct command under "The 15-minute refresh" (below), sent once. The 12:05 run (`65744485557840`) had just ended, SUCCESS. The first 15-minute run, `281234271879846`, ran from 12:20:01 to 12:21:11, SUCCESS; `gold.stream_status` at 12:23:16: `loaded_at` 12:20:18.
+- **16:28 to 16:45: the afternoon App check.** STOPPED since 16:27:46, the third stop (section 3), 6 h 16 min after the morning start's deployment. Recorded, then started at 16:41:46 (the command returned at 16:44:00); deployment `01f1d11963b5` (created 16:44:00, SUCCEEDED 16:44:25); RUNNING at 16:44:29.
+
 ### Tuesday 27 Oct, before 15:15 (task 25)
+
+**This morning:** the App, stopped since about 22:57 on Monday (the fourth stop, section 3), was started at about 08:45 (`startApp` 08:41:23 in the audit log; deployment `01f1d19f6020`, created 08:43:06, SUCCEEDED 08:44:03, "App started successfully"), and its self-check was all OK (the user's report). At 11:08 (`ops_status`, window A): the App ACTIVE / RUNNING on `01f1d19f6020`; the night of 27 Oct, run `1102490184153637` at 00:45, SUCCESS; the live page's job at 11:05, SUCCESS; the warehouse RUNNING. By section 3's pattern this start's App would stop at about 14:44 to 14:59, before the talk: hence step 6.
 
 From home in the morning:
 
@@ -296,39 +315,41 @@ From home in the morning:
 4. The dashboards' published revisions: `databricks lakeview get-published $BRIEF -p coolcheck -o json`, and the same with `$LIVE`, field `revision_create_time`. Today: the briefing 2026-10-25T08:57:01Z (16:57:01 SGT, deploy 4; a later deploy that changes it republishes it); the live page 2026-10-23T09:35:21Z (17:35:21 SGT, 23 Oct), unchanged since.
 5. The evaluation's traces: `MSYS_NO_PATHCONV=1 databricks api get "/api/2.0/mlflow/traces?experiment_ids=751187284353678&max_results=1" -p coolcheck` returns one trace.
 
-At about 13:00 to 14:00, before leaving:
+At 13:30 to 14:00, before leaving (today's plan):
 
-6. **Restart the App** (below), wait for RUNNING, open it once: Diagnostics shows the deployed commit (`APP_COMMIT`; the API returns env names only, not values); draft once.
-7. A fresh browser window: sign in and open everything under "What to open"; every dashboard page once.
+6. **Restart the App: stop, then start** (not a deploy; "Restarting the App" below): `databricks apps stop coolcheck -p coolcheck`, then `databricks apps start coolcheck -p coolcheck`; `ops_status` until RUNNING; open it once: Diagnostics shows the deployed commit (`APP_COMMIT`; the API returns env names only, not values); draft once. By the pattern, the App then runs to about 19:33 to 20:19, past the talk at 16:30.
+7. A fresh browser window: sign in and open everything under "What to open"; every dashboard page once. The briefing's headline must read Tuesday, 27 October 2026; if it shows the day before, click refresh (Monday's step 4).
 8. Nothing for the warehouse: it starts on the first query in 2 to 3 s (21 starts since 23 Oct, `system.compute.warehouse_events`) and stops after 10 idle minutes.
 
 At 2 Central Boulevard, about 15:00:
 
-9. `ops_status` over the venue's network, then over the hotspot; the App RUNNING.
-10. The 15-minute refresh, if you turn it on (below): switch it on now.
+9. `ops_status` over the venue's network, then over the hotspot; the App RUNNING. (Monday's test over the hotspot passed: step 4 above.)
+10. The 15-minute refresh has been on since Monday 12:06 (below): nothing to switch; `ops_status` shows the live page's job run within the last 15 minutes.
 
 ### Restarting the App
 
-- **If the App is stopped** (`compute_status.state` STOPPED): `databricks apps start coolcheck -p coolcheck` (writes). The command exists in CLI 1.21.0 (`databricks apps start --help`: NAME, waits for ACTIVE, `--timeout` default 20 minutes, `--no-wait`); given a NAME it calls the API directly, from any folder. It is enough on its own: at window B's restart today, after `startApp` at 16:57:02 SGT the platform itself made a deployment of the last snapshot at 16:59:15, with no `deployApp` call in the audit log, and it reached "App started successfully" at 16:59:38 (`databricks apps list-deployments coolcheck -p coolcheck`; `docs/design/agent_app.md` reads it the same way). So the start brings back the last deployed code and needs no worktree. Then `ops_status` until the App reads RUNNING.
-- **If the App is running and a fresh start is wanted:** `databricks bundle run coolcheck_app -t dev -p coolcheck`, from a clean worktree of `FINAL` (section 1), as window B ran it today (16:57:01 to 16:59:59). It starts the compute if needed and makes a new deployment of `.bundle/coolcheck/dev/files/src` with the bundle's command and environment. The environment comes from the local bundle (the audit log's `deployApp` request carries the env names), so from the shared folder it would stamp `APP_COMMIT` with that folder's HEAD instead of the deployed commit. Not `databricks apps deploy` by hand: `src/` has no `app.yaml`, so the command and environment come only from the bundle. What `apps start` does to a running App: not tried.
-- **Time to come up:** 2 min 35 s today (`startApp` 16:57:02 to SUCCEEDED 16:59:38) and 2 min 43 s on 24 Oct (`startApp` 19:21:45 to the bundle's deployment SUCCEEDED 19:24:28). Allow 5 minutes.
-- **When:** a restart at 13:00 to 14:00 keeps 15:15 to 19:00 inside both 24 hours of the start (the Free Edition limit in `DAISI Brief.md` §7.6; nothing shows the trial has it) and 9 h 36 min (the one stop seen on the trial, section 3). A restart before about 09:25 would put 19:00 beyond 9 h 36 min.
+- **If the App is stopped** (`compute_status.state` STOPPED): `databricks apps start coolcheck -p coolcheck` (writes). The command exists in CLI 1.21.0 (`databricks apps start --help`: NAME, waits for ACTIVE, `--timeout` default 20 minutes, `--no-wait`); given a NAME it calls the API directly, from any folder. It is enough on its own: at window B's restart on 25 Oct, after `startApp` at 16:57:02 SGT the platform itself made a deployment of the last snapshot at 16:59:15, with no `deployApp` call in the audit log, and it reached "App started successfully" at 16:59:38 (`databricks apps list-deployments coolcheck -p coolcheck`; `docs/design/agent_app.md` reads it the same way). So the start brings back the last deployed code and needs no worktree. Then `ops_status` until the App reads RUNNING. Used so on 26 Oct at 10:09:20 and 16:41:46 and on 27 Oct at 08:41: each start made its own deployment of the last snapshot (`01f1d0e29195`, `01f1d11963b5`, `01f1d19f6020`), with no `deployApp` call.
+- **If the App is running and a fresh start is wanted** (Tuesday's plan, 13:30 to 14:00; not a deploy): `databricks apps stop coolcheck -p coolcheck`, then `databricks apps start coolcheck -p coolcheck` as above (both write). In CLI 1.21.0 `apps stop`, given a NAME, calls the API directly from any folder and waits for STOPPED (`--timeout` default 20 minutes, `--no-wait`); without a NAME, in a folder with `databricks.yml`, it takes the App's name from the bundle. The start then makes a new deployment of the last snapshot, as above, so the code and environment stay those of the last deploy and Diagnostics keeps showing its commit. `apps stop` on this App: not tried before 27 Oct.
+- **A new deployment through the bundle** (not Tuesday's plan): `databricks bundle run coolcheck_app -t dev -p coolcheck`, from a clean worktree of `FINAL` (section 1), as window B ran it on 25 Oct (16:57:01 to 16:59:59). It starts the compute if needed and makes a new deployment of `.bundle/coolcheck/dev/files/src` with the bundle's command and environment. The environment comes from the local bundle (the audit log's `deployApp` request carries the env names), so from the shared folder it would stamp `APP_COMMIT` with that folder's HEAD instead of the deployed commit. Not `databricks apps deploy` by hand: `src/` has no `app.yaml`, so the command and environment come only from the bundle. What `apps start` does to a running App: not tried.
+- **Time to come up:** 2 min 35 s on 25 Oct (`startApp` 16:57:02 to SUCCEEDED 16:59:38) and 2 min 43 s on 24 Oct (`startApp` 19:21:45 to the bundle's deployment SUCCEEDED 19:24:28); for the starts of 26 and 27 Oct, 2 min 42 s, 2 min 37 s and 2 min 39 s (`startApp` 10:09:21, 16:41:48 and 08:41:23 to SUCCEEDED 10:12:03, 16:44:25 and 08:44:03). Allow 5 minutes.
+- **When:** the App has stopped each time about 6 hours after its last deployment (6 h 1 min to 6 h 16 min, four times; section 3), and a start makes its deployment about 2 minutes in. So a start must come after about 12:57 to keep 15:15 to 19:00 inside 6 h 1 min; the stop and start at 13:30 to 14:00 puts the next stop at about 19:33 to 20:19. This morning's start (deployment 08:43:06) would stop at about 14:44 to 14:59. (Written on 25 Oct from the first stop alone: 13:00 to 14:00, inside both 24 hours of the start, Free Edition's limit in `DAISI Brief.md` §7.6, and 9 h 36 min.)
 - **Cost while running:** 0.5 DBU an hour (the App's billing rows of 24 Oct), about US$0.41 an hour at list price.
 
 ### The 15-minute refresh (§A4 row 9, your decision)
 
-Now: every hour at :05 (`quartz_cron_expression: "0 5 * * * ?"` in `resources/latest_readings.job.yml`, deployed the same). The job is `UI_LOCKED`, so the UI cannot change it. Two ways; neither tried:
+**On since 26 Oct 2026, 12:06:14 SGT** (window A, the direct command below, sent once, exit 0, no output; Monday's record above), until after Tuesday's results. Before: every hour at :05 (`quartz_cron_expression: "0 5 * * * ?"` in `resources/latest_readings.job.yml`, deployed the same), `edit_mode` `UI_LOCKED`, so the UI could not change it. After: `0 5,20,35,50 * * * ?`, Asia/Singapore, UNPAUSED, and `edit_mode` `EDITABLE`, which the command did not ask for (`resources/latest_readings.job.yml` sets no `edit_mode`); nothing else in the job's settings changed (the job's JSON before and after, outside the repo: `$SCR/task_switch_before.json`, `task_switch_after.json`). Read again on 27 Oct at 11:08: the same; the newest run at 11:05, SUCCESS. The two ways, as written on 25 Oct:
 
-- **Direct, no deploy (my recommendation for the day).** On, at about 15:55 SGT (writes):
+- **Direct, no deploy (used).** On (writes; sent on 26 Oct at 12:06:14, not on Tuesday at 15:55 as first planned):
 
   ```bash
   databricks jobs update -p coolcheck --json '{"job_id": 997063708299006, "new_settings": {"schedule": {"quartz_cron_expression": "0 5,20,35,50 * * * ?", "timezone_id": "Asia/Singapore", "pause_status": "UNPAUSED"}}}'
   ```
 
-  It runs at :05, :20, :35 and :50, five minutes after each collector run (:00, :15, :30, :45). Off, after 19:00 (writes): the same command with `"0 5 * * * ?"`. Check either way with `databricks jobs get 997063708299006 -p coolcheck -o json` (`settings.schedule`). While it is on, the trial's `bundle plan -t dev` shows `update jobs.latest_readings`, and any trial deploy sets it back to hourly.
+  It runs at :05, :20, :35 and :50, five minutes after each collector run (:00, :15, :30, :45). **Off, after Tuesday's results** (writes; its own prompt then): the same command with `"0 5 * * * ?"`. On its own that leaves `edit_mode` `EDITABLE` (the update merges what it is sent), so the revert also decides whether to send `"edit_mode": "UI_LOCKED"` (not tried). Check either way with `databricks jobs get 997063708299006 -p coolcheck -o json` (`settings.schedule`, `settings.edit_mode`). While it is on, the trial's `bundle plan -t dev` shows `update jobs.latest_readings`, and any trial deploy sets it back to hourly.
 - **Through the bundle:** the cron in `resources/latest_readings.job.yml`, a commit and a deploy from a clean worktree; afterwards a revert and a second deploy. Two deploys on Demo Day, each also moving four jobs' git SHA.
-- **Cost:** US$0.1421 a run at list price (the mean of 66 billed runs, 22 Oct 19:05 to 25 Oct 12:05 SGT, `system.billing.usage`). On at 15:55 and off at 19:00: 9 extra runs (16:20, 16:35, 16:50, 17:20, 17:35, 17:50, 18:20, 18:35, 18:50), about US$1.28. Switched on before 15:50, the 15:50 run makes ten.
-- **Hourly, as now:** the page can be up to about 65 minutes old during the demo; the stale banner starts at 90.
+- **Cost:** US$0.1421 a run at list price (the mean of 66 billed runs, 22 Oct 19:05 to 25 Oct 12:05 SGT, `system.billing.usage`). On since Monday 12:06: three extra runs an hour, about US$0.43 an hour or US$10 a day (the plan of 25 Oct, on at 15:55 and off at 19:00 on Tuesday, was 9 extra runs, about US$1.28).
+- **Hourly, before the switch and after the revert:** the page can be up to about 65 minutes old; the stale banner starts at 90.
+- **The live page's own note still says hourly:** "A scheduled job refreshes the readings (hourly at :05 SGT at present)." (`src/dashboards/live_heat_stress.lvdash.json`, line 189). It is out of date while the 15-minute schedule is on and right again after the revert; the published page was not changed.
 
 ### If something fails
 
@@ -336,10 +357,23 @@ Now: every hour at :05 (`quartz_cron_expression: "0 5 * * * ?"` in `resources/la
 - **The 00:45 run failed after its retry:** the failure e-mail goes to the deploying user. The briefing reads the latest target date in `gold.area_heat_risk` (window C's entry of 24 Oct) and the App takes its default date from the same view, so both would show 26 Oct. To score the day (writes): `databricks jobs run-now 131450384398104 -p coolcheck` (the deployed job, refresh then score; its empty `target_date` means the run date in SGT), about 5 minutes; then `night 2026-10-27`.
 - **The live page is stale:** `ops_status` (the job's last run) and the collector's newest file (tonight's step 4).
 - **The network:** the phone hotspot; the video, the deck PDF and the screenshots offline (task 22).
+- **The CLI's sign-in has expired** (26 Oct, evening, window C): every call failed with "A new access token could not be retrieved because the refresh token is invalid" (with debug logging, `400 invalid_grant`), and still did after `databricks auth login --profile coolcheck` reported the profile saved, outside the sandbox too; `databricks auth profiles` showed `coolcheck` and `CoolCheck` (a second profile for the same workspace) not valid. What fixed it, by 22:26, typed by the user at that window's prompt: `! databricks auth logout --profile coolcheck --auto-approve`, then `! databricks auth login --profile coolcheck`; a `SELECT 1` on the warehouse then worked. Only the CLI uses this sign-in: the App, the jobs, the dashboards and the collector don't.
+- **The briefing shows the day before** (26 Oct, 12:52, Monday's step 4): its headline read Sunday 25 October until refresh was clicked, then Monday 26 October. Whether that was a tab opened before the night's run or the dashboard's cached result is not established; either way, check the headline's date and click refresh before presenting.
 
-## 3. The App stop of 25 Oct, 04:57 SGT
+## 3. The App's stops: 25 Oct 04:57, 26 Oct 01:28, 16:27 and about 22:57 SGT
 
-### What is known
+Four stops by the platform, each about 6 hours after the App's last deployment, whether a deploy or `apps start` made it (6 h 1 min to 6 h 16 min), while the time since the last start ranged from 9 h 36 min to about 6 h 15 min. The first three were read before the restart and read the same: compute STOPPED, "App compute was stopped due to workspace or account status."; app UNAVAILABLE, "App status is unavailable."; `active_deployment` empty; the record's `updater` `<user>`. The fourth is seen in billing only, as the next start overwrote the record. No App event in the audit log at any of them: no stop by anyone. The cause is not known. Each restart brought the App back in under 3 minutes.
+
+| Stop (SGT) | Read from | After the last deployment | After the last `startApp` | Started again |
+|---|---|---|---|---|
+| 25 Oct 04:57:51 | the record's `update_time`, read 25 Oct 16:12 | 6 h 1 min (`01f1cfbb1fd5`, 24 Oct 22:56:42, deploy 3) | 9 h 36 min (24 Oct 19:21:45) | 25 Oct 16:57:02, window B's `bundle run coolcheck_app` (deploy 4) |
+| 26 Oct 01:28:16 | `update_time`, read 26 Oct 10:06 | 6 h 11 min (`01f1d06596de`, 25 Oct 19:16:56, deploy 5) | 8 h 31 min (25 Oct 16:57:02) | 26 Oct 10:09:20, `apps start`: deployment `01f1d0e29195`, 10:11:34 |
+| 26 Oct 16:27:46 | `update_time`, read 26 Oct 16:28 | 6 h 16 min (`01f1d0e29195`, the start's) | 6 h 18 min (10:09:21) | 26 Oct 16:41:46, `apps start`: deployment `01f1d11963b5`, 16:44:00 |
+| 26 Oct, about 22:57 | billing only: 0.4765 DBU for 22:00 to 23:00 SGT (about 57 minutes) and no App row after it, with billing read to 27 Oct 09:10 SGT | about 6 h 13 min (`01f1d11963b5`, the start's) | about 6 h 15 min (16:41:48) | 27 Oct 08:41:23, `startApp`: deployment `01f1d19f6020`, 08:43:06 |
+
+If the pattern holds, the App stops 6 h 1 min to 6 h 16 min after its latest deployment: at about 14:44 to 14:59 on 27 Oct after this morning's start, or about 19:33 to 20:19 after the stop and start planned for 13:30 to 14:00 (section 2).
+
+### The first stop (25 Oct): what is known
 
 | SGT | Event | Source |
 |---|---|---|
@@ -361,18 +395,25 @@ Now: every hour at :05 (`quartz_cron_expression: "0 5 * * * ?"` in `resources/la
 - The App's compute size is MEDIUM; no budget policy applies (`effective_budget_policy_id` empty). Spend at list price to 25 Oct, 13:00 SGT: US$139.13 (`system.billing.usage` joined to `system.billing.list_prices`).
 - The Brief's "Apps run for up to 24 hours after being started, updated, or redeployed" is in its Free Edition limits table (§7.6). This stop came earlier and gave another reason.
 
+### The stops of 26 Oct: what is known
+
+- **The audit log** (`service_name = 'apps'`, every action, from 25 Oct 19:00 SGT, read 27 Oct at 11:15): after deploy 5's `createUpdate` and `deployApp` (19:16:52 and 19:16:56 on 25 Oct), the App's only events are the three starts, `startApp` at 10:09:21 and 16:41:48 on 26 Oct and at 08:41:23 on 27 Oct. Not lag: at least 294 other events from 01:00 to 02:00 on 26 Oct, and 2,705 from 12 services from 22:30 to 23:30.
+- **Billing** (`billing_origin_product = 'APPS'`; 0.5 DBU a full hour): 0.2265 DBU for 01:00 to 02:00 (about 27 minutes: a stop at about 01:27); for 16:00 to 17:00, 0.2265 to the stop and 0.1356 after the start (about 16 minutes); 0.5 for each hour from 17:00 to 22:00; 0.4765 for 22:00 to 23:00 (to about 22:57), then no App row to 09:10 on 27 Oct, the end of billing when read.
+- **The starts:** each `apps start` made a deployment of the last snapshot with no `deployApp` call ("App started successfully"), so the code stayed deploy 5's: Diagnostics showed commit `4d60f78…` on 26 Oct at 12:50.
+
 ### What is not known
 
-- The cause. The message names "workspace or account status"; nothing in the audit log, the billing or the App record says more.
-- Whether it happens again, and after how long; whether the trial limits an App's run time at all.
+- The cause. The message names "workspace or account status"; nothing in the audit log, the billing or the App record says more, and no trial page names an App limit (`DAISI Brief.md` §12.7).
+- Whether the 6-hour interval holds; whether the trial limits an App's run time at all.
+- The fourth stop's exact time and messages: the start of 27 Oct, 08:41, overwrote its record.
 - Whether Databricks e-mailed the user at that time (the user's inbox).
 - The trial's credit balance: the account console shows it, the workspace does not.
 
 ### What to watch
 
-- **When to look:** tonight about 22:00 (5 hours after the restart); Monday morning, which covers 02:35 (9 h 36 min after 16:59); Monday about 17:00 (24 hours); Tuesday before leaving and at the venue. Deploy 5 or a restart moves these times.
+- **When to look:** within 6 hours of the latest deployment (the newest `create_time` in `databricks apps list-deployments coolcheck -p coolcheck`); the earliest stop came 6 h 1 min after it. On Tuesday: before the stop and start at 13:30 to 14:00, after it, and at the venue (section 2, steps 6 and 9). (Written on 25 Oct from the first stop: 5 hours, 9 h 36 min and 24 hours after the start.)
 - **What to look at:** `ops_status`, or `databricks apps get coolcheck -p coolcheck -o json` for `compute_status` (state, message), `app_status`, `update_time` and `active_deployment`.
-- **If it has stopped, record before restarting:** the `update_time` (the stop), both messages word for word, the time since the last `startApp` and the last deployment (`databricks apps list-deployments coolcheck -p coolcheck`), and the two queries below (UTC in both tables; the audit lags by minutes, billing by 3 to 4 hours). Then restart (section 2) and add a line to the build log.
+- **If it has stopped, record before restarting:** the `update_time` (the stop), both messages word for word, the time since the last `startApp` and the last deployment (`databricks apps list-deployments coolcheck -p coolcheck`), and the two queries below, with both start times moved to just before the last start (UTC in both tables; the audit lags by minutes, billing by hours: on 26 Oct at 16:29 the App's rows reached only 11:00 SGT). Then restart (section 2) and add a line to the build log.
 
 ```bash
 q "SELECT event_time, action_name, response.status_code FROM system.access.audit WHERE service_name = 'apps' AND event_time >= '2026-10-25 08:50:00' ORDER BY event_time"

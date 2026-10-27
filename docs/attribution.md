@@ -4,7 +4,7 @@ What each surface of CoolCheck must show for the datasets it uses. Built 23 Oct 
 - the dataset register, `docs/datasets.md` (section "Attribution notice per dataset", `926e186`), the source of every notice text below;
 - the licence duties in the project Guide §A13, read from the terms saved in `../Docs/`;
 - the refuge and park report, `docs/checks/refuge_park_access.md` (`de2a16f`), for which refuge and park files are used and how;
-- data.gov.sg's dataset metadata for the NEA feed titles (calls recorded below).
+- data.gov.sg's dataset metadata for the NEA feed titles (calls recorded below) and, for WBGT, its dataset pages as read on 26 Oct 2026 (`../DAISI Brief.md` §12.3, source S19).
 
 My reading of the terms, not legal advice.
 
@@ -32,7 +32,7 @@ Numbers are the register's row and notice numbers. "Score" means the dataset fee
 
 | # | dataset | agency | where used | date of access | dashboard | live page | README | write-up |
 |---|---|---|---|---|---|---|---|---|
-| 1 | WBGT heat stress (real-time API) | National Environment Agency | score (the model's label and its P(High) heat term); live page readings | 20 October 2026 (see flag 4 on live dates) | yes | yes | yes | yes |
+| 1 | WBGT heat stress (real-time API); data.gov.sg title "Wet Bulb Globe Temperature (WBGT) Observations" | National Environment Agency | score (the model's label and its P(High) heat term); live page readings | 20 October 2026 (see flag 4 on live dates) | yes | yes | yes | yes |
 | 2 | Rainfall (real-time API); data.gov.sg title "Rainfall across Singapore" | National Environment Agency | score (model input); live page ("rain in the hour to …") | 20 October 2026 | yes | yes | yes | yes |
 | 3 | 24-hour Weather Forecast (API); data.gov.sg title "24-hour Weather Forecast" | National Environment Agency | score (model input) | 20 October 2026 | yes | no | yes | yes |
 | 4 | Air temperature (real-time API); data.gov.sg title "Air Temperature across Singapore" | National Environment Agency | live page only (D9) | 22 October 2026 | no | yes | yes | yes |
@@ -50,9 +50,9 @@ Numbers are the register's row and notice numbers. "Score" means the dataset fee
 
 Every notice carries the same licence link: https://data.gov.sg/open-data-licence. Every dataset in use has a notice in the register, so nothing had to be written here.
 
-## Notice texts (copied exactly from `docs/datasets.md`)
+## Notice texts (copied exactly from `docs/datasets.md`, but for notice 1's title: flag 3)
 
-1. "Contains information from Heat stress (WBGT) real-time readings accessed on 20 October 2026 from National Environment Agency via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence."
+1. "Contains information from Wet Bulb Globe Temperature (WBGT) Observations accessed on 20 October 2026 from National Environment Agency via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence."
 2. "Contains information from Rainfall across Singapore accessed on 20 October 2026 from National Environment Agency via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence."
 3. "Contains information from 24-hour Weather Forecast accessed on 20 October 2026 from National Environment Agency via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence."
 4. "Contains information from Air Temperature across Singapore accessed on 22 October 2026 from National Environment Agency via data.gov.sg which is made available under the terms of the Singapore Open Data Licence version 1.0 https://data.gov.sg/open-data-licence."
@@ -100,10 +100,12 @@ For WBGT (row 1), two read-only calls were made, and neither returned a title:
 
 No further call was made, and no catalogue crawl (about 470 calls).
 
+On 26 Oct 2026, about 16:50 to 17:05 SGT, the advisor chat read WBGT's dataset pages (`../DAISI Brief.md` §12.3, source S19): https://data.gov.sg/datasets/d_5406ce77e1d364f43317cb3e9f3d6725/view and https://data.gov.sg/datasets/d_87884af1f85d702d4f74c6af13b4853d/view both carry the title "Wet Bulb Globe Temperature (WBGT) Observations", National Environment Agency, "Updated every 15 minutes", under the Open Data Licence. The first is the release notes' ID, which the metadata call above answered with 404. Neither page shows the endpoint (an API spec to download only), so which of the two IDs is the `weather?api=wbgt` feed is not established. This closes flag 3.
+
 ## Flags
 
 1. **data.gov.sg API terms not saved.** The real-time API rows (1 to 4) rely on the data.gov.sg API terms (https://data.gov.sg/privacy-and-terms), which are not in `../Docs/` (checked 23 Oct; only the Open Data Licence and the SingStat terms are in its root).
 2. **EMA's page footer and Excel download link never captured.** The saved Chapter 3 page ends before the footer's terms or copyright wording, and the download box (screenshot 7) shows no URL (§A13 items 1 and 4). Record both from the browser when the page is next opened.
-3. **WBGT's official title and managing agency are not confirmed** (table above). The ID in data.gov.sg's release notes of February 2025, `d_5406ce77e1d364f43317cb3e9f3d6725`, returned HTTP 404 "The dataset id is invalid." on 23 Oct at 18:30:54 SGT, and no other ID for the WBGT dataset is recorded. Notice 1 keeps its descriptive name until the title is copied from the dataset page in a browser, or found with a catalogue crawl or by looking up the three unchecked datasets of collection 1459.
-4. **Resolved 25 Oct 2026:** register notices 2 and 4 now carry the data.gov.sg titles "Rainfall across Singapore" and "Air Temperature across Singapore" (from the metadata read on 23 Oct, table above); notice 3's name already matched, and notice 1 waits on flag 3. The README and the write-up copy the new texts. The register also says a live feed's notice should use the date of the data shown, its "last updated" time, rather than the first pull.
-5. **The live page's notice is not the register's text.** `src/dashboards/live_heat_stress.lvdash.json` carries one combined notice: "Contains information from NEA's WBGT, Rainfall and Air Temperature real-time datasets, accessed continuously from data.gov.sg, which is made available under the terms of the [Singapore Open Data Licence version 1.0](https://data.gov.sg/open-data-licence)." It names the three datasets by description and gives no date. It fits the register's note on combined notices, but should use the official titles once flag 3 is settled.
+3. **Resolved 26 Oct 2026; in the documents on 27 Oct:** WBGT's data.gov.sg title is "Wet Bulb Globe Temperature (WBGT) Observations", managed by the National Environment Agency, read from its dataset pages ("NEA feed titles" above). Until then it was open: the ID in data.gov.sg's release notes of February 2025, `d_5406ce77e1d364f43317cb3e9f3d6725`, returned HTTP 404 "The dataset id is invalid." to the metadata call on 23 Oct at 18:30:54 SGT, and notice 1 kept a descriptive name, "Heat stress (WBGT) real-time readings". Notice 1 here and in the README now carries the title, with the register's date of access. Still with the descriptive name: the register (`docs/datasets.md`, row 1 and notice 1), the write-up's notice 1 and its [TBD] (`docs/submission/writeup.md`), and the briefing dashboard's About page (`scripts/dashboards/build_briefing.py`, `src/dashboards/briefing.lvdash.json`), whose change waits until after Demo Day (`../DAISI Brief.md` §12.8, item 5).
+4. **Resolved 25 Oct 2026:** register notices 2 and 4 now carry the data.gov.sg titles "Rainfall across Singapore" and "Air Temperature across Singapore" (from the metadata read on 23 Oct, table above); notice 3's name already matched, and notice 1 was left to flag 3. The README and the write-up copy the new texts. The register also says a live feed's notice should use the date of the data shown, its "last updated" time, rather than the first pull.
+5. **The live page's notice is not the register's text.** `src/dashboards/live_heat_stress.lvdash.json` carries one combined notice: "Contains information from NEA's WBGT, Rainfall and Air Temperature real-time datasets, accessed continuously from data.gov.sg, which is made available under the terms of the [Singapore Open Data Licence version 1.0](https://data.gov.sg/open-data-licence)." It names the three datasets by description and gives no date. It fits the register's note on combined notices, but should use the official titles once flag 3 is settled. Flag 3 is settled (26 Oct); the live page was not changed for Demo Day.
