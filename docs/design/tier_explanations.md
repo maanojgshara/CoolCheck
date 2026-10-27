@@ -119,9 +119,9 @@ Why the model forecast Moderate rather than High heat for an area is the forecas
   - Its failure must not fail the night, because the page falls back to the tier sentence.
   - The job's identity needs the right to call the model through `ai_query` and to use the warehouse.
 
-## Applying it to the dashboard (prepared, not run)
+## Applying it to the dashboard
 
-Nothing is applied to the live dashboard. The apply waits for window D's review and the user's go.
+Applied on 27 Oct 2026, 01:29 SGT, as below: the run, its read-back and the one-command restore are in `docs/checks/tier_explanations.md`, "The apply to the live dashboard".
 
 Found on 26 Oct, from 22:40 to 23:00 SGT, by reads only (`lakeview get`, `lakeview get-published`):
 
